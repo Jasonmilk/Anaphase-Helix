@@ -1,9 +1,0 @@
-{
-  "version": "1.0",
-  "domain_patches": {
-    "python_coding": [
-      "永远在文件头部加上 utf-8 编码声明。",
-      "在使用 json.loads 之前，必须考虑异常捕获 (try-except)。"
-    ]
-  }
-}

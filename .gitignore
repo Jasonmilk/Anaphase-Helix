@@ -6,3 +6,8 @@ __pycache__/
 *.log
 graveyard_logs.txt
 .DS_Store
+# 屏蔽所有带 backup 字样的目录
+*_backup_*/
+# 屏蔽所有历史遗留的 workspaces
+workspaces/
+workspace_v1*/
