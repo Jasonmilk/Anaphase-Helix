@@ -1,0 +1,7 @@
+.env
+venv/
+workspaces/
+core/__pycache__/
+__pycache__/
+*.log
+graveyard_logs.txt

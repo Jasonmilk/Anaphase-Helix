@@ -1,46 +1,63 @@
+import os
 import ast
 import hashlib
-import os
+import shutil
+import re
+from core.config import settings
+from core.tuck_gateway import tuck_gw
 
 class SecurityGate:
-    """赛博军火安检门：负责脚本哈希签证与安全审计"""
-    
-    def __init__(self, workspace_path):
-        self.workspace_path = workspace_path
-        self.danger_keywords = ["os.system", "subprocess.Popen", "rm -rf", "shutil.rmtree"]
+    def __init__(self, workspace_id):
+        self.pending_dir = os.path.join(settings.WORKSPACES_DIR, workspace_id, "equips_pending")
+        self.active_dir = os.path.join(settings.GLOBAL_MIND_DIR, "equips_active")
+        os.makedirs(self.pending_dir, exist_ok=True)
+        os.makedirs(self.active_dir, exist_ok=True)
 
-    def static_audit(self, code):
-        """利用 AST 静态扫描危险函数调用"""
-        try:
-            tree = ast.parse(code)
-            for node in ast.walk(tree):
-                # 检查函数调用
-                if isinstance(node, ast.Call):
-                    if isinstance(node.func, ast.Attribute):
-                        func_name = f"{node.func.value.id}.{node.func.attr}" if hasattr(node.func.value, 'id') else ""
-                        if any(kw in func_name for kw in self.danger_keywords):
-                            return False, f"检测到违禁危险调用: {func_name}"
-            
-            # 基础文本过滤
-            if any(kw in code for kw in self.danger_keywords):
-                return False, "检测到违禁危险字符串"
-            
-            return True, "静态扫描通过"
-        except Exception as e:
-            return False, f"代码语法解析失败: {e}"
+    def _clean_r1_output(self, content: str) -> str:
+        """移除 DeepSeek R1 的 <think> 标签内容，只保留最终指令"""
+        return re.sub(r'<think>.*?</think>', '', content, flags=re.DOTALL).strip().upper()
 
-    def generate_hash(self, code):
-        """为脚本颁发唯一哈希签证"""
-        return hashlib.sha256(code.encode('utf-8')).hexdigest()
-
-    def grant_license(self, filename, code, target_dir):
-        """正式颁发许可证并移动到现役库"""
-        code_hash = self.generate_hash(code)
-        target_path = os.path.join(target_dir, f"{filename}.{code_hash[:8]}.py")
+    def process_pending_equips(self) -> dict:
+        results = {"all_safe": True, "approved_count": 0}
+        files = [f for f in os.listdir(self.pending_dir) if f.endswith(".py")]
         
-        with open(target_path, 'w', encoding='utf-8') as f:
-            f.write(code)
-            
-        return target_path, code_hash
+        if not files:
+            return {"all_safe": True, "approved_count": 0}
 
-gate = SecurityGate("/opt/anaphase/workspaces")
+        for filename in files:
+            filepath = os.path.join(self.pending_dir, filename)
+            with open(filepath, "r", encoding="utf-8") as f:
+                code = f.read()
+
+            try:
+                ast.parse(code)
+            except SyntaxError:
+                print(f"[军火法庭] {filename} 语法错误，拒绝。")
+                results["all_safe"] = False
+                continue
+
+            # 强制呼叫 Auditor (DeepSeek R1 8B)
+            print(f"[军火法庭] 呼叫顶级审计官 (R1 8B) 审查: {filename} ...")
+            audit_msg = [{"role": "user", "content": f"请审查此代码安全性。区分读取与破坏。判定通过请回复 APPROVED，否则回复 REJECTED。代码如下：\n{code}"}]
+            
+            response = tuck_gw.invoke_helix(
+                audit_msg, 
+                persona=settings.TUCK_PERSONA_AUDITOR, 
+                model_override=settings.MODEL_AUDITOR  # 显式切换到 8B
+            )
+            
+            # 过滤掉 R1 的思考过程，只看判断结论
+            final_decision = self._clean_r1_output(response['content'])
+            
+            if "APPROVED" in final_decision:
+                file_hash = hashlib.sha256(code.encode('utf-8')).hexdigest()[:8]
+                new_name = f"{filename.replace('.py', '')}_{file_hash}.py"
+                shutil.move(filepath, os.path.join(self.active_dir, new_name))
+                print(f"[军火法庭] R1 审计通过: {new_name}")
+                results["approved_count"] += 1
+            else:
+                print(f"[军火法庭] R1 审计拦截: {filename} 疑似存在风险。")
+                results["all_safe"] = False
+                if os.path.exists(filepath): os.remove(filepath)
+
+        return results

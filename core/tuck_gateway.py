@@ -1,41 +1,41 @@
 import requests
-import json
 from core.config import settings
 
 class TuckGateway:
-    """Tuck 动态人格网关：负责与 .54 塔台通信"""
-    
     def __init__(self):
-        self.api_url = f"{settings.TUCK_HOST}/chat/completions"
-        self.headers = {
+        self.api_url = f"{settings.TUCK_HOST.rstrip('/')}/v1/chat/completions"
+
+    def invoke_helix(self, messages: list, persona: str, model_name: str = None) -> dict:
+        """
+        100% 串行同步调用。
+        发送请求后，Python 进程会阻塞，直到模型返回或彻底超时。
+        """
+        final_model = model_name if model_name else settings.MODEL_WORKER
+        
+        headers = {
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {settings.TUCK_KEY}"
+            "X-Tuck-Persona": persona,
+            "Authorization": f"Bearer {settings.TUCK_API_KEY}"
         }
-
-    def invoke_helix(self, messages, persona="Helix_Worker"):
-        """
-        :param persona: 对应 Tuck 面板中的 Persona ID (如 Helix_Worker, Helix_Auditor)
-        """
-        payload = {
-            "model": "Qwen3.5-4B-Chat-Q4_0.gguf", # 默认载体
-            "messages": messages,
-            "temperature": 0.7
-        }
-        # 如果您在 Tuck 中实现了 X-Tuck-Persona Header 切换逻辑：
-        self.headers["X-Tuck-Persona"] = persona 
-
+        payload = {"model": final_model, "messages": messages, "temperature": 0.2}
+        
         try:
-            # 这里的 timeout 设置为 300s，确保 Tuck 能处理完
-            response = requests.post(self.api_url, headers=self.headers, json=payload, timeout=300)
-            response.raise_for_status()
-            res_json = response.json()
+            # 针对 ARM 算力，我们将超时设为 600 秒 (10分钟)
+            # 这保证了 R1 8B 有充足的时间慢慢磨，而不会中途断连
+            print(f"[Tuck] 呼叫 {final_model}... (串行等待中)")
+            res = requests.post(self.api_url, headers=headers, json=payload, timeout=600)
             
+            if res.status_code != 200:
+                print(f"[Tuck Error] {res.status_code}: {res.text}")
+                return {"content": "", "tokens_used": -1}
+                
+            data = res.json()
             return {
-                "content": res_json['choices'][0]['message']['content'],
-                "usage": res_json.get('usage', {}).get('total_tokens', 0)
+                "content": data["choices"][0]["message"]["content"],
+                "tokens_used": data["usage"]["total_tokens"]
             }
         except Exception as e:
-            print(f"[Tuck Gateway 错误] 通讯失败: {e}")
-            return None
+            print(f"[Tuck Exception] 链路异常: {e}")
+            return {"content": "", "tokens_used": -1}
 
 tuck_gw = TuckGateway()

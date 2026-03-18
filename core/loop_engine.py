@@ -1,8 +1,14 @@
-import json
 import os
+import sys
+import json
+
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(PROJECT_ROOT)
+
 from core.tuck_gateway import tuck_gw
 from core.security_gate import gate
 from core.pareto_arbiter import arbiter
+from core.redis_cortex import cortex
 from core.config import settings
 
 class AnaphaseLoop:
@@ -11,57 +17,55 @@ class AnaphaseLoop:
         self.workspace = os.path.join(settings.WORKSPACES, task_name)
         os.makedirs(os.path.join(self.workspace, "equips_pending"), exist_ok=True)
         self.messages = []
-        self.total_tokens = 0
 
     def run_cycle(self):
-        print(f"\n[ANAPHASE] 开启任务: {self.task_name}")
+        print(f"\n[ANAPHASE OS] 开启轮回任务: {self.task_name}")
         
-        # 1. 呼叫 Helix_Worker 执行第一步任务
-        prompt = "当前任务：统计 /etc/ 目录下所有 .conf 文件的数量。请思考：你是直接推理，还是写个工具？"
+        # 1. 呼叫 Helix_Worker 执行构思
+        prompt = "任务：编写一个 Python 脚本统计 /etc 目录下文件。务必通过工具实现，不要直接输出结果。"
         self.messages.append({"role": "user", "content": prompt})
         
-        # 使用 Persona 切换
         res = tuck_gw.invoke_helix(self.messages, persona="Helix_Worker")
         if not res: return
         
-        self.total_tokens += res['usage']
-        print(f"\n[Helix 思考]:\n{res['content']}")
+        # 记录代谢 (Redis)
+        total_tokens = cortex.update_metabolism(res['usage'])
+        print(f"[Anaphase] 代谢累积: {total_tokens} Tokens")
         
-        # 假设 Helix 输出了 write_file 的 JSON (此处为 Phase 3 将实现的解析逻辑预留)
-        # 模拟 Helix 写了一个脚本并申请审计
-        fake_code = "import os\nprint(len([f for f in os.listdir('/etc') if f.endswith('.conf')]))"
+        # 模拟 Helix 生成的代码内容
+        fake_code = "import os\nprint(len(os.listdir('/etc')))"
         
-        print("\n[Anaphase] 检测到 Helix 制造了工具，启动【赛博法庭】审计...")
-        
-        # 2. 呼叫 Helix_Auditor 审计代码 (串行切换)
-        audit_messages =[
-            {"role": "system", "content": "你是一个无情的代码审计官。"},
-            {"role": "user", "content": f"请审计以下代码安全性：\n{fake_code}"}
+        # 2. 开启【赛博军火法庭】：群体智慧分工
+        print("\n[Anaphase] 正在呼叫 Auditor 人格进行逻辑审计...")
+        audit_messages = [
+            {"role": "system", "content": "你是一个严厉的审计官。只回复 APPROVED 或 REJECTED。"},
+            {"role": "user", "content": f"代码如下：\n{fake_code}"}
         ]
         audit_res = tuck_gw.invoke_helix(audit_messages, persona="Helix_Auditor")
-        
-        # 3. 物理安检门校验
+        audit_verdict = audit_res['content'].strip().upper()
+        print(f"[Auditor 结论]: {audit_verdict}")
+
+        # 3. 终极逻辑闭环：Auditor 与 SecurityGate 双重通过
         is_safe, msg = gate.static_audit(fake_code)
         
-        if is_safe and "approve" in audit_res['content'].lower():
+        # --- 核心修正：只有当两者都通过时才发放签证 ---
+        if is_safe and "APPROVED" in audit_verdict:
             print("[Anaphase] 审计通过！颁发哈希许可证。")
-            target_path, code_hash = gate.grant_license("conf_counter", fake_code, os.path.join(settings.GLOBAL_MIND, "equips_active"))
-            print(f"[Anaphase] 工具已入库: {target_path} | Hash: {code_hash[:8]}")
+            target_path, code_hash = gate.grant_license(
+                "task_tool", 
+                fake_code, 
+                os.path.join(settings.GLOBAL_MIND, "equips_active")
+            )
+            print(f"[Anaphase] 武器入库: {target_path}")
+            
+            # 4. 执行天道仲裁 (判断是否产生进化)
+            metrics = {"token_usage": res['usage'], "tool_reuse": 1.0}
+            arbiter.evaluate_evolution(metrics)
         else:
-            print(f"[Anaphase] 审计拦截：{msg}")
-
-        # 4. 轮回结束，执行天道仲裁
-        metrics = {"token_usage": self.total_tokens, "tool_reuse": 0.0}
-        arbiter.evaluate_evolution(metrics)
+            print(f"[Anaphase] 拦截成功！理由: {'Auditor驳回' if 'REJECTED' in audit_verdict else msg}")
+            # 审计失败，强制回滚（抹杀这一世的错误突变）
+            arbiter.obliterate()
 
 if __name__ == "__main__":
-    # 初始化 Git (仅需一次)
-    os.chdir("/opt/anaphase")
-    if not os.path.exists(".git"):
-        import subprocess
-        subprocess.run(["git", "init"])
-        subprocess.run(["git", "add", "."])
-        subprocess.run(["git", "commit", "-m", "Initial Reincarnation"])
-        
-    loop = AnaphaseLoop("task_001")
+    loop = AnaphaseLoop("task_002")
     loop.run_cycle()
