@@ -1,1 +1,5 @@
-{"best_tokens": 999999, "knowledge_reuse_count": 0}
+{
+  "best_tokens": 999999,
+  "best_runtime": 999.0,
+  "total_evolutions": 0
+}
