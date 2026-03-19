@@ -2,7 +2,7 @@ import time
 from arbiter_loop import ArbiterLoop
 
 # --- 配置区 ---
-TOTAL_CYCLES = 10  # 设置你想让它自主轮回多少次
+TOTAL_CYCLES = 50  # 设置你想让它自主轮回多少次
 TASK = "分析 /proc/meminfo，写一个 Python 统计脚本并封装在函数内，放入 equips_pending。"
 
 def main():
