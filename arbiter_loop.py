@@ -17,31 +17,22 @@ class ArbiterLoop:
         defaults = {"best_tokens": 999999, "best_runtime": 999.0, "total_evolutions": 0}
         if not os.path.exists(self.metrics_file): current = defaults
         else:
-            with open(self.metrics_file, "r") as f:
-                try: current = json.load(f)
-                except: current = defaults
-        with open(self.metrics_file, "w") as f: json.dump(current, f, indent=2)
+            try: current = json.load(open(self.metrics_file))
+            except: current = defaults
+            for k, v in defaults.items():
+                if k not in current: current[k] = v
+        json.dump(current, open(self.metrics_file, "w"), indent=2)
 
-    def _extract_code(self, content, workspace_id):
-        pending_dir = os.path.join(settings.WORKSPACES_DIR, workspace_id, "equips_pending")
-        os.makedirs(pending_dir, exist_ok=True)
-        code_blocks = re.findall(r'```python\n(.*?)\n```', content, re.DOTALL)
-        paths = []
-        for i, code in enumerate(code_blocks):
-            path = os.path.join(pending_dir, f"tool_{int(time.time())}_{i}.py")
-            with open(path, 'w') as f: f.write(code)
-            paths.append(path)
-        return paths
-
-    def trigger_obliteration(self, reason: str, content: str, task: str):
-        print(f"\n[物理淘汰] 此个体不适应环境: {reason}")
-        # 呼叫 Worker 记录最后的挣扎
-        prompt = [{"role": "user", "content": f"你因『{reason}』失败。请写下反思录。"}]
+    def trigger_obliteration(self, reason: str, assistant_content: str, task: str):
+        """淘汰处理"""
+        print(f"\n[物理淘汰] {reason}")
+        # 获取 Helix 的临终反思
+        prompt = [{"role": "user", "content": f"你因『{reason}』失败。请用一句话总结你的不甘。"}]
         res = tuck_gw.invoke_helix(prompt, settings.TUCK_PERSONA_WORKER, settings.MODEL_WORKER)
-        last_words = re.sub(r'<think>.*?</think>', '', res['content'], flags=re.DOTALL).strip()
+        reflection = re.sub(r'<think>.*?</think>', '', res['content'], flags=re.DOTALL).strip()
         
         best = json.load(open(self.metrics_file))
-        summary = chronicler.write_briefing("FAILURE", task, best, last_words)
+        summary = chronicler.write_briefing("FAILURE", task, best, reflection)
         
         subprocess.run(["git", "-C", settings.ANAPHASE_ROOT, "checkout", "HEAD", "global_mind/"], stdout=subprocess.DEVNULL)
         subprocess.run(["git", "-C", settings.ANAPHASE_ROOT, "add", "."], stdout=subprocess.DEVNULL)
@@ -51,7 +42,7 @@ class ArbiterLoop:
 
     def run_cycle(self, request: str, expected_keyword: str = None):
         heritage = librarian.get_knowledge_context()
-        print(f"\n>>> 轮回开启 | 自然选择模式 v5.1 (隐私隔离版) <<<")
+        print(f"\n>>> 轮回开启 | v5.2 史官增强版 <<<")
         
         prompt = (f"{heritage}\n\n任务: {request}\n"
                   "物理法则: 必须输出 ```python ... ``` 块。脚本必须独立运行。")
@@ -59,30 +50,33 @@ class ArbiterLoop:
         res = tuck_gw.invoke_helix([{"role": "user", "content": prompt}], settings.TUCK_PERSONA_WORKER, settings.MODEL_WORKER)
         if res["tokens_used"] <= 0: return
 
-        code_paths = self._extract_code(res["content"], self.workspace_id)
-        if not code_paths:
+        # 提取感言：取 Helix 回复中代码块前的文字
+        speech = res['content'].split('```')[0].strip()
+        speech = speech[:200] # 截取前200字作为潜在简报内容
+
+        code_blocks = re.findall(r'```python\n(.*?)\n```', res["content"], re.DOTALL)
+        if not code_blocks:
             self.trigger_obliteration("未产生物理资产", res["content"], request)
             return
 
         success_tool = None
-        for path in code_paths:
-            # 关键：在此处注入私密的 TAVILY_API_KEY，不让它留在脚本文件里
-            is_alive, runtime, output = sandbox.test_life(path, env_extra={'TAVILY_API_KEY': os.getenv("TAVILY_API_KEY")})
+        for code in code_blocks:
+            temp_path = os.path.join(settings.WORKSPACES_DIR, self.workspace_id, "test_v52.py")
+            with open(temp_path, "w") as f: f.write(code)
+            is_alive, runtime, output = sandbox.test_life(temp_path, env_extra={'TAVILY_API_KEY': os.getenv("TAVILY_API_KEY")})
             
-            is_valid = True
-            if expected_keyword and expected_keyword.lower() not in output.lower():
-                is_valid = False
-
-            if is_alive and is_valid:
+            if is_alive and (not expected_keyword or expected_keyword.lower() in output.lower()):
                 print(f"[物理法则] 试炼通过! 耗时: {runtime:.4f}s")
-                success_tool = path
+                success_tool = (code, runtime)
                 break
             else:
                 print(f"[物理法则] 试炼失败: {output[:50]}")
 
         if success_tool:
-            target_path = os.path.join(settings.GLOBAL_MIND_DIR, "equips_active", os.path.basename(success_tool))
-            shutil.move(success_tool, target_path)
+            code_text, runtime = success_tool
+            filename = f"tool_{int(time.time())}.py"
+            target_path = os.path.join(settings.GLOBAL_MIND_DIR, "equips_active", filename)
+            with open(target_path, "w") as f: f.write(code_text)
             librarian.register_tool(target_path)
             
             with open(self.metrics_file, "r") as f: best = json.load(f)
@@ -91,7 +85,9 @@ class ArbiterLoop:
             best["best_runtime"] = min(runtime, best["best_runtime"])
             with open(self.metrics_file, "w") as f: json.dump(best, f, indent=2)
             
-            summary = chronicler.write_briefing("SUCCESS", request, {**best, "tokens": res["tokens_used"], "runtime": runtime})
+            # 【关键修复】成功时将 Helix 的回复摘要传给史官
+            summary = chronicler.write_briefing("SUCCESS", request, {**best, "tokens": res["tokens_used"], "runtime": runtime}, speech)
+            
             subprocess.run(["git", "-C", settings.ANAPHASE_ROOT, "add", "."], stdout=subprocess.DEVNULL)
             subprocess.run(["git", "-C", settings.ANAPHASE_ROOT, "commit", "-m", f"EVO: {summary}"], stdout=subprocess.DEVNULL)
             if settings.ENABLE_GITHUB_SYNC:
@@ -100,10 +96,9 @@ class ArbiterLoop:
             self.trigger_obliteration("物理测试未通过", res["content"], request)
 
 if __name__ == "__main__":
-    import os
     from dotenv import load_dotenv
     load_dotenv("/opt/anaphase/.env")
     ArbiterLoop("task_initial").run_cycle(
-        request="通过网络搜索 2024 年 Qwen2.5 模型的主要技术改进，并输出总结。结果必须包含 'Qwen' 关键字。",
-        expected_keyword="Qwen"
+        request="写个 Python 脚本输出当前系统的网卡 MAC 地址 (脱敏处理，仅输出首位字母)。",
+        expected_keyword="MAC"
     )
