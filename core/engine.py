@@ -1,68 +1,63 @@
-import requests
-import time
-import re
-import os
-from core.config import settings
+import requests, time, re, os
 
 class ExecutionEngine:
     def __init__(self, registry):
-        self.registry = registry # 改为接收技能注册中心
-        
-        raw_host = getattr(settings, 'TUCK_HOST', getattr(settings, 'API_BASE', os.getenv('TUCK_HOST', 'http://10.0.0.54:8686')))
-        self.api_base = raw_host.rstrip('/')
-        if not self.api_base.endswith('/v1/chat/completions'):
-            self.api_base = f"{self.api_base}/v1/chat/completions"
-            
-        self.api_key = getattr(settings, 'TUCK_API_KEY', getattr(settings, 'API_KEY', os.getenv('TUCK_API_KEY', 'dummy')))
-        self.model = getattr(settings, 'TUCK_MODEL_WORKER', getattr(settings, 'MODEL_WORKER', os.getenv('TUCK_MODEL_WORKER', 'Qwen3.5-4B-Chat-Q4_0.gguf')))
-        self.timeout = 120 
+        from core.config import settings
+        self.registry = registry
+        self.settings = settings
 
-    def get_decision(self, memory, title, body, history):
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.api_key}"
-        }
+    def get_decision(self, history, use_commercial=False):
+        """决定使用本地 4B 还是商业云端 API"""
+        if use_commercial or self.settings.ENABLE_COMMERCIAL:
+            url = self.settings.COMMERCIAL_URL
+            key = self.settings.COMMERCIAL_KEY
+            model = self.settings.COMMERCIAL_MODEL
+            label = "☁️ 商业云端"
+        else:
+            url = self.settings.TUCK_HOST
+            key = self.settings.TUCK_API_KEY
+            model = self.settings.TUCK_MODEL
+            label = "🖥️ 本地矩阵"
 
-        payload = {
-            "model": self.model,
-            "messages": history,
-            "stream": False,
-            "temperature": 0.1,
-            "max_tokens": 1024 
-        }
+        if not url.endswith('/completions'):
+            url = f"{url.rstrip('/')}/v1/chat/completions"
 
-        for retry in range(1, 3):
+        headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+        payload = {"model": model, "messages": history, "temperature": 0.1, "max_tokens": 1024}
+
+        print(f"[Engine] {label} 发射 >> 模型: {model}")
+
+        for retry in range(2):
             try:
-                response = requests.post(self.api_base, headers=headers, json=payload, timeout=self.timeout)
-                if response.status_code in [502, 504]:
-                    print(f"[Engine Warning] 网关算力过载 (状态码 {response.status_code})。等待降温重试 ({retry}/2)...")
-                    time.sleep(5)
+                res = requests.post(url, headers=headers, json=payload, timeout=120)
+                if res.status_code == 401:
+                    return {"content": "【物理报错】API Key 鉴权失败，请检查 .env 配置。", "tokens": -1}
+                if res.status_code == 504:
+                    print(f"[Engine Warning] 504 超时，物理降温重试 {retry+1}/2...")
+                    time.sleep(10)
                     continue
-                
-                response.raise_for_status() 
-                if response.status_code == 200:
-                    data = response.json()
-                    return {
-                        "tokens_used": data.get("usage", {}).get("total_tokens", 1),
-                        "content": data["choices"][0]["message"]["content"]
-                    }
-            except requests.exceptions.Timeout:
-                print(f"[Engine Warning] 物理请求超时 ({retry}/2)...")
-                time.sleep(2)
+                res.raise_for_status()
+                data = res.json()
+                return {"content": data["choices"][0]["message"]["content"], "tokens": 1}
             except Exception as e:
-                print(f"[Engine Error] 异常: {e} ({retry}/2)...")
-                time.sleep(2)
-
-        print("[Engine] 🚨 物理底座无响应，触发熔断。")
-        return {"tokens_used": -1, "content": ""}
+                print(f"[Engine Error] {e}")
+                time.sleep(5)
+        
+        return {"content": "", "tokens": -1}
 
     def extract_and_run(self, content):
+        """解析工具调用，支持链式执行"""
         pattern = r"toolkit\.(\w+)\((.*?)\)"
-        match = re.search(pattern, content)
-        if match:
-            func_name = match.group(1)
-            args_raw = match.group(2)
-            # 动态派发给插件中心执行！
-            return self.registry.execute(func_name, args_raw)
+        matches = re.findall(pattern, content)
+        if not matches: return "[反馈] 未检测到工具调用。"
         
-        return f"[测试反馈] 未检测到工具调用 (请使用 toolkit.xxx 格式)。提取内容：{content[:40]}..."
+        feedbacks = []
+        for name, args in matches:
+            # 清理参数中的无用引号和前缀
+            clean_args = re.sub(r'^\w+\s*=\s*', '', args.strip()).strip("'\"")
+            # 兼容性纠错
+            if name in ["update_soul", "update_thought"]: name = "update_subjective_thought"
+            
+            print(f"🛠️ 执行技能: {name}({clean_args})")
+            feedbacks.append(f"【{name}反馈】: {self.registry.execute(name, clean_args)}")
+        return "\n".join(feedbacks)

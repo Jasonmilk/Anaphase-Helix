@@ -1,6 +1,4 @@
-import os
-import importlib.util
-import sys
+import os, importlib.util, sys
 
 class SkillRegistry:
     def __init__(self, workspace):
@@ -11,37 +9,33 @@ class SkillRegistry:
         self.load_all()
 
     def load_all(self):
-        """扫描并加载/重载所有技能"""
         self.skills = {}
         for filename in os.listdir(self.skills_dir):
             if filename.endswith(".py") and not filename.startswith("__"):
                 name = filename[:-3]
-                filepath = os.path.join(self.skills_dir, filename)
-                
-                # 强行重载模块，确保新写入的代码生效
-                spec = importlib.util.spec_from_file_location(name, filepath)
+                spec = importlib.util.spec_from_file_location(name, os.path.join(self.skills_dir, filename))
                 mod = importlib.util.module_from_spec(spec)
-                if name in sys.modules:
-                    del sys.modules[name]
+                if name in sys.modules: del sys.modules[name]
                 spec.loader.exec_module(mod)
-                
-                if hasattr(mod, "register"):
-                    mod.register(self)
-        return len(self.skills)
+                if hasattr(mod, "register"): mod.register(self)
 
     def add(self, name, func, desc):
         self.skills[name] = {"func": func, "desc": desc}
 
     def execute(self, name, args_raw):
-        if name not in self.skills:
-            # 尝试最后一次热加载，万一是刚生成的技能
-            self.load_all()
-            if name not in self.skills:
-                return f"[错误] 未识别技能: {name}"
-        try:
-            return self.skills[name]["func"](self.workspace, args_raw)
-        except Exception as e:
-            return f"[异常] {str(e)}"
+        if name not in self.skills: self.load_all()
+        # 即使模型带了 toolkit. 前缀，执行前也要剥离
+        clean_name = name.replace('toolkit.', '')
+        if clean_name not in self.skills: 
+            return f"Error: Skill '{clean_name}' unknown."
+        return self.skills[clean_name]["func"](self.workspace, args_raw)
 
     def get_docs(self):
-        return "\n".join([f"- `toolkit.{k}(args)`: {v['desc']}" for k, v in self.skills.items()])
+        """物理强化：直接在文档中展示 toolkit. 前缀，诱导模型正确输出"""
+        docs = []
+        for k, v in self.skills.items():
+            desc_parts = v['desc'].split('参数:')
+            usage = desc_parts[1].strip() if len(desc_parts) > 1 else "..."
+            # 这里是关键：直接展示 toolkit.
+            docs.append(f"- toolkit.{k}({usage})")
+        return "\n".join(docs)
