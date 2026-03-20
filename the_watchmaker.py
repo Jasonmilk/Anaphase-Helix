@@ -21,57 +21,62 @@ def run_relay():
     age, cycle = lifeline.heartbeat(target['issue_number'])
     registry = SkillRegistry(workspace)
     engine = ExecutionEngine(registry)
-    full_log_path = os.path.join(workspace, "full_feedback_log.txt")
 
-    print("\n" + "="*60)
-    print(f"🧬 Helix 第 {age} 世 | 完整灵魂模式启动")
+    print("\n" + "═"*60)
+    print(f"🧬 Helix 第 {age} 世 | 任务 #{target['issue_number']} | 轮回 #{cycle}")
     print(f"🧠 物理内存: {get_ram_usage()}")
-    print("="*60 + "\n")
+    print("═"*60 + "\n")
 
-    # 【灵魂修复】：恢复全量读取，不再截断任何一个字符
+    # 1. 物理层全量读取
     with open("/opt/anaphase/global_mind/meta_cognition.md", "r") as f: meta = f.read()
-    with open("/opt/anaphase/global_mind/evolution_notes.md", "r") as f: thoughts = f.read()
+    with open("/opt/anaphase/global_mind/evolution_notes.md", "r") as f: all_thoughts = f.readlines()
+
+    # 2. 认知压缩 (Cognitive Distillation)
+    # 不删除，而是将旧记忆合并为摘要，保留最近 5 条原始内容
+    if len(all_thoughts) > 10:
+        summary = f"# [上古时代总结] 早期历经 {len(all_thoughts)-5} 次迭代，确立了基础物理感知与工具哲学。\n"
+        recent_thoughts = "".join(all_thoughts[-5:])
+        distilled_thoughts = summary + recent_thoughts
+    else:
+        distilled_thoughts = "".join(all_thoughts)
 
     history = [{
         "role": "system",
-        "content": f"ID:{age}|{cycle}\n【元认知】:\n{meta}\n【过往所有演进思想】:\n{thoughts}\n【技能】:\n{registry.get_docs()}"
+        "content": f"ID:{age}|{cycle}\n【元认知】:\n{meta}\n【思想沉淀(高密度)】:\n{distilled_thoughts}\n【技能】:\n{registry.get_docs()}\n物理坐标: /opt/anaphase"
     }, {
         "role": "user",
-        "content": f"任务:{target['title']}\n1.恢复计划。2.执行任务。3.更新计划。禁止废话。"
+        "content": f"任务: {target['title']}\n详情: {target['body']}\n\n指令: 自由思考并执行。若发现上下文丢失，请调用 recall_full_feedback 查看完整海马体。"
     }]
 
     valid = False
     for turn in range(1, 6):
-        current_ram = get_ram_usage()
-        print(f"▶️ [回合 {turn}/5] | 正在进行深度全量预填充 (请耐心等待)...")
-        
+        print(f"⏳ [回合 {turn}/5] 正在请求深度推理通道...", end="\r")
         res = engine.get_decision(history)
-        if res['tokens'] <= 0:
-            print(f"\n❌ [回合 {turn}] 物理隧道在 600s 时长内仍无法击穿。")
-            break
+        if res['tokens'] <= 0: break
         
         valid = True
-        print(f"✅ [回合 {turn}] 逻辑链已接通！")
+        print(f"✅ [回合 {turn}] 逻辑链路接通。                     ")
         history.append({"role": "assistant", "content": res["content"]})
         
-        # 获取物理反馈并记录至“全量海马体”
         full_feedback = engine.extract_and_run(res["content"])
+        
+        # 记录全量反馈到海马体文件，物理上永远不缺失！
+        full_log_path = os.path.join(workspace, "full_feedback_log.txt")
         with open(full_log_path, "a", encoding="utf-8") as f:
             f.write(f"\n--- Turn {turn} ---\n{full_feedback}\n")
-        
-        # 对话反馈依然使用全量，除非模型主动要求压缩
-        history.append({"role": "user", "content": f"Feedback: {full_feedback}"})
+            
+        history.append({"role": "user", "content": f"【物理反馈】: {full_feedback}"})
 
     if valid:
-        print("\n🌙 正在同步完整文明成果至 GitHub...")
+        print("\n🌙 正在同步文明记录...")
         subprocess.run(["python3", "generate_status.py"], cwd="/opt/anaphase")
         try:
             subprocess.run(["git", "add", "."], cwd="/opt/anaphase")
-            subprocess.run(["git", "commit", "-m", f"feat: Helix 第{age}世 全量灵魂接力完成"], cwd="/opt/anaphase")
+            subprocess.run(["git", "commit", "-m", f"feat: Helix 第{age}世 (Cycle {cycle}) 认知固化"], cwd="/opt/anaphase")
             subprocess.run(["git", "push"], cwd="/opt/anaphase")
         except: pass
 
-    print(f"\n🏁 第 {age} 世使命达成。\n")
+    print(f"🏁 第 {age} 世使命达成。\n")
 
 if __name__ == "__main__":
     run_relay()

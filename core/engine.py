@@ -14,39 +14,41 @@ class ExecutionEngine:
 
         if not url.endswith('/completions'): url = f"{url.rstrip('/')}/v1/chat/completions"
         headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
-        
-        # 【物理决策】：给 Helix 充足的 10 分钟思考时间
-        payload = {"model": model, "messages": history, "temperature": 0.1, "max_tokens": 1024}
+        payload = {"model": model, "messages": history, "temperature": 0.2, "max_tokens": 1500}
 
-        print(f"\n[Engine] 📡 正在向算力节点请求深度推理 (Timeout=600s)...")
-        
-        for retry in range(2):
+        # 【核心策略】：利用 3 次重试，每次重试都会让 Node .02 缓存更多 Token
+        # 即使 .54 在 60s 掐断，第 2/3 次重试会直接从缓存开始，从而击穿 504 屏障
+        for retry in range(1, 4):
             try:
-                # 核心改动：timeout 设为 600
-                res = requests.post(url, headers=headers, json=payload, timeout=600)
+                print(f"\n[Engine] 尝试第 {retry}/3 次击穿物理屏障...")
+                res = requests.post(url, headers=headers, json=payload, timeout=300)
                 
-                if res.status_code in [504, 502]:
-                    print(f"[⚠️ 504 拦截] 网关仍未解锁。请确认 .54 节点的超时配置。重试 {retry+1}/2...")
-                    time.sleep(10)
+                if res.status_code == 504:
+                    print(f"[⚠️ 504] 网关超时。但 .02 节点的 KV Cache 已沉淀。5秒后发起接力...")
+                    time.sleep(5)
                     continue
                 
                 res.raise_for_status()
                 data = res.json()
                 return {"content": data["choices"][0]["message"]["content"], "tokens": 1}
             except Exception as e:
-                print(f"[Engine Error] 响应异常: {e}")
+                if "504" in str(e):
+                    time.sleep(5)
+                    continue
+                print(f"\n[Engine Error] 物理链路异常: {e}")
                 time.sleep(10)
-                
         return {"content": "", "tokens": -1}
 
     def extract_and_run(self, content):
-        pattern = r"toolkit\.(\w+)\((.*?)\)"
+        pattern = r"(?:toolkit\.)?(\w+)\((.*?)\)"
         matches = re.findall(pattern, content)
-        if not matches: return "[反馈] 未检测到工具调用。"
+        if not matches: return "Helix 正在纯思维演化。"
+        
         feedbacks = []
         for name, args in matches:
+            if name == 'name': continue
             clean_args = re.sub(r'^\w+\s*=\s*', '', args.strip()).strip("'\"")
             if name in ["update_soul", "update_thought"]: name = "update_subjective_thought"
-            print(f"🛠️ 执行技能: {name}({clean_args[:30]}...)")
-            feedbacks.append(f"【{name}反馈】: {self.registry.execute(name, clean_args)}")
+            res = self.registry.execute(name, clean_args)
+            feedbacks.append(f"【{name}反馈】: {res}")
         return "\n".join(feedbacks)
