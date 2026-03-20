@@ -1,63 +1,58 @@
-import requests, time, re, os
-from core.config import settings
+import requests, time, re
 
 class ExecutionEngine:
     def __init__(self, registry):
+        from core.config import settings
         self.registry = registry
         self.settings = settings
 
-    def get_decision(self, history, retry_count=0):
-        # 逻辑：如果重试次数 > 0，且有 8B 模型可用，自动升档
-        use_heavy = retry_count > 0
+    def get_decision(self, history, role='hands'):
+        """
+        role 'brain': 使用 8B-R1 模型，高温度，适合规划。
+        role 'hands': 使用 7B-Coder 模型，低温度，适合写代码和工具。
+        """
+        model = self.settings.MODEL_BRAIN if role == 'brain' else self.settings.MODEL_HANDS
+        temp = 0.6 if role == 'brain' else 0.1
         
-        if use_heavy:
-            model = os.getenv("TUCK_MODEL_AUDITOR", "DeepSeek-R1-0528-Qwen3-8B-IQ4_NL.gguf")
-            print(f"[Engine] ⚠️ 检测到逻辑阻塞，正在切换至 8B 推理模型...")
-        else:
-            model = self.settings.TUCK_MODEL
-            print(f"[Engine] 🖥️ 使用 4B 快速执行模型...")
-
-        url = self.settings.TUCK_HOST
-        if not url.endswith('/completions'): url = f"{url.rstrip('/')}/v1/chat/completions"
+        # 针对 10.0.0.54 的 Tuck 路由
+        url = f"{self.settings.TUCK_HOST}/v1/chat/completions"
         headers = {"Authorization": f"Bearer {self.settings.TUCK_API_KEY}", "Content-Type": "application/json"}
         
         payload = {
             "model": model,
             "messages": history,
-            "temperature": 0.1,
-            "max_tokens": 1500
+            "temperature": temp,
+            "max_tokens": 1500,
+            "top_p": 0.95 if role == 'brain' else 1.0
         }
 
-        # 针对 504 的接力重试
-        for i in range(1, 4):
+        # 针对 ARM 节点的深度接力逻辑
+        for retry in range(1, 5):
             try:
-                res = requests.post(url, headers=headers, json=payload, timeout=240)
+                # 8B-R1 思考极慢，需给足 600s
+                res = requests.post(url, headers=headers, json=payload, timeout=600)
                 if res.status_code == 504:
-                    print(f"[⚠️ 504] 网关超时 (尝试 {i}/3)...")
+                    print(f"\n[⚠️ {role.upper()} 接力 {retry}/4] 预填充中...")
                     time.sleep(5)
                     continue
                 res.raise_for_status()
-                data = res.json()
-                return {"content": data["choices"][0]["message"]["content"], "tokens": 1}
+                return {"content": res.json()["choices"][0]["message"]["content"], "tokens": 1}
             except Exception as e:
-                print(f"[Engine Error] {e}")
-                time.sleep(5)
-        
+                print(f"\n[Engine Error] {e}"); time.sleep(10)
         return {"content": "", "tokens": -1}
 
     def extract_and_run(self, content):
-        """增强解析：清洗模型产生的 'args:' 这种幻觉"""
-        pattern = r"toolkit\.(\w+)\((.*?)\)"
+        # 针对 7B-Coder 强化的正则提取
+        pattern = r"(?:toolkit\.)?(\w+)\((.*?)\)"
         matches = re.findall(pattern, content)
-        if not matches: return "Thinking..."
+        if not matches: return "[反馈] 未检测到物理指令。"
         
         results = []
         for name, args in matches:
-            # 【关键修复】：如果模型输出了 args: "path" 这种废话，强行清洗掉
-            clean_args = args.replace("args:", "").replace("args =", "").strip()
-            clean_args = clean_args.strip("'\"")
-            
+            if name == 'name': continue
+            clean_args = re.sub(r'^\w+\s*=\s*', '', args.strip()).strip("'\"")
+            # 兼容 7B-Coder 有时会多写一个右括号的情况
+            clean_args = clean_args.split(')')[0]
             print(f"🛠️ 执行: {name}({clean_args[:30]}...)")
-            res = self.registry.execute(name, clean_args)
-            results.append(f"【{name}反馈】: {res}")
+            results.append(f"【{name}反馈】: {self.registry.execute(name, clean_args)}")
         return "\n".join(results)

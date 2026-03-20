@@ -1,34 +1,39 @@
 import os
 import re
+import ast
 
 def create_skill(workspace, args_raw):
     """
-    自主制造技能。
-    校验逻辑：禁止非英文文件名，禁止占位符内容。
+    自主制造技能。具备自动转义修正与语法预审。
+    格式: 技能名|代码内容
     """
     try:
         parts = args_raw.split('|', 1)
-        if len(parts) < 2: 
-            return "[拒绝] 参数格式错误。需使用 '技能名|代码'。"
+        if len(parts) < 2: return "[拒绝] 格式错误。需为 '技能名|代码'"
         
-        skill_name = parts[0].strip()
-        code = parts[1].strip()
+        name, code = parts[0].strip(), parts[1].strip()
+        
+        # 1. 自动转义修正：处理模型误写的 \n 字符串
+        code = code.replace('\\n', '\n')
+        
+        # 2. 语法预审：利用 ast 模块检查代码是否合法
+        try:
+            ast.parse(code)
+        except SyntaxError as se:
+            return f"[预审拒绝] 发现语法错误: {se.msg} (行 {se.lineno})。请确保代码逻辑正确，不包含非法字符。"
 
-        # 1. 严格校验技能名：仅允许英文字母、数字和下划线
-        if not re.match(r'^[a-zA-Z][a-zA-Z0-9_]*$', skill_name):
-            return f"[拒绝] 技能名 '{skill_name}' 不合规。必须以英文开头且无特殊字符。"
+        # 3. 命名校验
+        if not re.match(r'^[a-z0-9_]+$', name):
+            return "[拒绝] 技能名仅限小写英文、数字和下划线。"
 
-        # 2. 严格校验内容：禁止包含占位符中文
-        if "完整Python代码" in code or "技能文件名" in code:
-            return "[拒绝] 检测到指令说明书中的占位符。请编写真实的 Python 逻辑代码。"
-
-        skill_path = f"/opt/anaphase/core/skills/{skill_name}.py"
+        # 4. 物理写入
+        skill_path = f"/opt/anaphase/core/skills/{name}.py"
         with open(skill_path, "w", encoding="utf-8") as f:
             f.write(code)
-        
-        return f"[执行成功] 技能 {skill_name} 已物理固化，下一回合可调用。"
+            
+        return f"[进化成功] 技能 {name} 已通过语法预审并固化。"
     except Exception as e:
-        return f"[异常] 技能生成失败: {str(e)}"
+        return f"[异常] {str(e)}"
 
 def register(registry):
-    registry.add("create_skill", create_skill, "制造新技能。参数: 英文技能名|代码。")
+    registry.add("create_skill", create_skill, "制造新技能。格式: 英文名|代码。会自动纠正换行符。")
