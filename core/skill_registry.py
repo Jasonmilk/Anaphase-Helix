@@ -1,6 +1,4 @@
-import os
-import importlib.util
-import sys
+import os, importlib.util, sys, re
 
 class SkillRegistry:
     def __init__(self, workspace):
@@ -11,25 +9,18 @@ class SkillRegistry:
         self.load_all()
 
     def load_all(self):
-        """免疫系统：跳过所有物理损坏的技能文件"""
         self.skills = {}
         for filename in os.listdir(self.skills_dir):
             if filename.endswith(".py") and not filename.startswith("__"):
                 name = filename[:-3]
-                filepath = os.path.join(self.skills_dir, filename)
-                
                 try:
-                    spec = importlib.util.spec_from_file_location(name, filepath)
+                    spec = importlib.util.spec_from_file_location(name, os.path.join(self.skills_dir, filename))
                     mod = importlib.util.module_from_spec(spec)
                     if name in sys.modules: del sys.modules[name]
                     spec.loader.exec_module(mod)
-                    if hasattr(mod, "register"):
-                        mod.register(self)
+                    if hasattr(mod, "register"): mod.register(self)
                 except Exception as e:
-                    # 【核心加固】：不抛出异常，只记录警告
-                    print(f"⚠️ [免疫系统] 跳过损坏技能 {filename}: {str(e)}")
-                    continue
-        return len(self.skills)
+                    print(f"⚠️ [Registry] 技能损坏 {filename}: {e}")
 
     def add(self, name, func, desc):
         self.skills[name] = {"func": func, "desc": desc}
@@ -37,16 +28,29 @@ class SkillRegistry:
     def execute(self, name, args_raw):
         clean_name = name.replace('toolkit.', '')
         if clean_name not in self.skills:
-            self.load_all() # 热尝试
-            if clean_name not in self.skills:
-                return f"[错误] 技能 {clean_name} 尚未挂载或物理损坏。"
-        try:
-            return self.skills[clean_name]["func"](self.workspace, args_raw)
-        except Exception as e:
-            return f"[执行异常] {str(e)}"
+            self.load_all()
+            if clean_name not in self.skills: return f"Error: {clean_name} unknown."
+        return self.skills[clean_name]["func"](self.workspace, args_raw)
 
-    def get_docs(self):
+    def get_docs(self, mode="hands"):
+        """
+        分层智能文档：
+        brain: toolkit.name (核心功能)
+        hands: toolkit.name(参数名)
+        """
         docs = []
         for k, v in self.skills.items():
-            docs.append(f"- toolkit.{k}(args): {v['desc'].split('参数:')[0]}")
+            desc_text = v['desc']
+            # 智能提取：假设格式为 "功能。参数: 路径。"
+            main_feat = desc_text.split('。')[0][:10] # 截取前10个字作为功能签
+            
+            # 提取参数名
+            param_match = re.search(r"参数:\s*([^。]+)", desc_text)
+            param_name = param_match.group(1).strip() if param_match else "args"
+            
+            if mode == "brain":
+                docs.append(f"- toolkit.{k} ({main_feat})")
+            else:
+                docs.append(f"- toolkit.{k}('{param_name}')")
+        
         return "\n".join(docs)
