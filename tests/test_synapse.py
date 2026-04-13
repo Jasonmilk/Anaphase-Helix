@@ -1,7 +1,7 @@
-"""Tests for Harness module."""
+"""Tests for Synapse module."""
 
 from ana.core.gene_lock import GeneLockValidator
-from ana.core.harness import DualTagParser, Harness
+from ana.core.synapse import DualTagParser, Synapse
 from ana.core.registry import ToolRegistry
 
 
@@ -49,42 +49,42 @@ class TestDualTagParser:
         assert not DualTagParser.has_tool_tags("no tags here")
 
 
-class TestHarness:
-    """Test cases for Harness class."""
+class TestSynapse:
+    """Test cases for Synapse class."""
 
     def test_init_default(self):
-        """Test Harness initialization with defaults."""
-        harness = Harness()
+        """Test Synapse initialization with defaults."""
+        synapse = Synapse()
 
-        assert harness.registry is not None
-        assert harness.gene_lock is not None
+        assert synapse.registry is not None
+        assert synapse.gene_lock is not None
 
     def test_init_custom(self):
-        """Test Harness initialization with custom components."""
+        """Test Synapse initialization with custom components."""
         registry = ToolRegistry()
         gene_lock = GeneLockValidator()
-        harness = Harness(registry=registry, gene_lock=gene_lock)
+        synapse = Synapse(registry=registry, gene_lock=gene_lock)
 
-        assert harness.registry == registry
-        assert harness.gene_lock == gene_lock
+        assert synapse.registry == registry
+        assert synapse.gene_lock == gene_lock
 
     def test_validate_unknown_tool(self):
         """Test validation of unknown tool."""
-        harness = Harness()
-        is_valid, error = harness.validate_tool_call("nonexistent", {})
+        synapse = Synapse()
+        is_valid, error = synapse.validate_tool_call("nonexistent", {})
 
         assert not is_valid
         assert "Unknown tool" in error
 
     def test_parse_llm_response(self):
         """Test parsing LLM response with tool calls."""
-        harness = Harness()
+        synapse = Synapse()
         text = """
         I need to search for information.
         <tool name="ana_tentacle">{"keyword": "Python"}</tool>
         Then I'll fetch the results.
         """
-        result = harness.parse_llm_response(text)
+        result = synapse.parse_llm_response(text)
 
         assert len(result) == 1
         assert result[0]["tool_name"] == "ana_tentacle"
@@ -92,9 +92,9 @@ class TestHarness:
 
     def test_parse_invalid_json_params(self):
         """Test parsing with invalid JSON parameters."""
-        harness = Harness()
+        synapse = Synapse()
         text = '<tool name="tool">invalid json</tool>'
-        result = harness.parse_llm_response(text)
+        result = synapse.parse_llm_response(text)
 
         assert len(result) == 1
         assert result[0]["tool_name"] == "tool"

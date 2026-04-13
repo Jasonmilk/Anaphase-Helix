@@ -1,137 +1,86 @@
-"""LLM Backend - Tuck gateway adapter."""
+"""Tuck gateway adapter with flexible model routing. No hardcoded model names."""
+
+import json
+from typing import Dict, Any, Optional
 
 import httpx
-from typing import Dict, Any, Optional, List
-from abc import ABC, abstractmethod
+from httpx import HTTPStatusError
 
 
-class LLMBackend(ABC):
-    """Abstract base class for LLM backends."""
+class TuckBackend:
+    """Async client for Tuck model gateway."""
 
-    @abstractmethod
-    async def generate(
-        self,
-        prompt: str,
-        model: str,
-        **kwargs
-    ) -> str:
-        """Generate text from the LLM."""
-        pass
-
-
-class TuckBackend(LLMBackend):
-    """Tuck gateway backend implementation."""
-
-    def __init__(
-        self,
-        endpoint: str,
-        api_key: str,
-        mock_mode: bool = True
-    ):
-        self.endpoint = endpoint
+    def __init__(self, endpoint: str, api_key: str):
+        # Ensure endpoint does not end with slash
+        self.endpoint = endpoint.rstrip('/')
         self.api_key = api_key
-        self.mock_mode = mock_mode
-        self._client = httpx.AsyncClient(timeout=60.0)
+        self._client: Optional[httpx.AsyncClient] = None
 
-    async def close(self):
-        """Close the HTTP client."""
-        await self._client.aclose()
-
-    async def generate(
-        self,
-        prompt: str,
-        model: str,
-        max_tokens: int = 2048,
-        temperature: float = 0.7,
-        **kwargs
-    ) -> str:
-        """
-        Generate text from Tuck gateway.
-
-        Args:
-            prompt: Input prompt
-            model: Model name to use
-            max_tokens: Maximum tokens to generate
-            temperature: Sampling temperature
-            **kwargs: Additional parameters
-
-        Returns:
-            Generated text response
-        """
-        if self.mock_mode:
-            return self._mock_generate(prompt, model)
-
-        try:
-            response = await self._client.post(
-                self.endpoint,
+    async def _get_client(self) -> httpx.AsyncClient:
+        if self._client is None:
+            self._client = httpx.AsyncClient(
+                timeout=httpx.Timeout(60.0),
                 headers={
                     "Authorization": f"Bearer {self.api_key}",
                     "Content-Type": "application/json"
-                },
-                json={
-                    "model": model,
-                    "messages": [{"role": "user", "content": prompt}],
-                    "max_tokens": max_tokens,
-                    "temperature": temperature,
-                    **kwargs
                 }
             )
-            response.raise_for_status()
-            data = response.json()
-            return data["choices"][0]["message"]["content"]
-        except Exception as e:
-            # Fallback to mock mode on error
-            return self._mock_generate(prompt, model)
+        return self._client
 
-    def _mock_generate(self, prompt: str, model: str) -> str:
-        """Mock generation for testing without real Tuck connection."""
-        # Simulate different models
-        if "coder" in model.lower():
-            return f"[MOCK {model}] Code analysis: The task requires implementing a solution. Here's a structured approach..."
-        elif "r1" in model.lower() or "deepseek" in model.lower():
-            return f"[MOCK {model}] Deep reasoning: Let me think step by step about this problem..."
-        else:
-            return f"[MOCK {model}] Response: I understand the task. Here's my answer..."
-
-    async def generate_with_constraint(
-        self,
-        prompt: str,
-        model: str,
-        schema: Dict[str, Any],
-        **kwargs
-    ) -> Dict[str, Any]:
+    async def generate(self, prompt: str, model: str, **kwargs) -> str:
         """
-        Generate constrained JSON output matching a schema.
+        Send a completion request to Tuck.
 
         Args:
-            prompt: Input prompt
-            model: Model name
-            schema: JSON Schema for constraint
-            **kwargs: Additional parameters
+            prompt: Full prompt text
+            model: Model identifier as understood by Tuck (e.g., "qwen2.5-coder:7b")
+            **kwargs: Additional parameters (temperature, max_tokens, etc.)
 
         Returns:
-            Parsed JSON response
-        """
-        if self.mock_mode:
-            # Return mock JSON matching typical tool call schema
-            return {
-                "tool": "shell_exec",
-                "params": {"command": "echo 'Mock result'"},
-                "reasoning": "Mock constrained generation"
-            }
+            Generated text response
 
-        # In real mode, would use llguidance for constraint decoding
-        response_text = await self.generate(
-            prompt=prompt,
-            model=model,
-            **kwargs
-        )
-        # Try to parse JSON from response
-        import json
-        import re
-        # Extract JSON from markdown code blocks if present
-        json_match = re.search(r'```(?:json)?\s*({.*?})\s*```', response_text, re.DOTALL)
-        if json_match:
-            return json.loads(json_match.group(1))
-        # Try parsing entire response as JSON
-        return json.loads(response_text)
+        Raises:
+            ValueError: If model is empty or invalid
+            HTTPStatusError: On HTTP errors
+        """
+        if not model or not model.strip():
+            raise ValueError("Model name cannot be empty")
+
+        # Construct full URL (OpenAI-compatible path)
+        url = f"{self.endpoint}/v1/chat/completions"
+
+        payload = {
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": kwargs.get("temperature", 0.7),
+            "max_tokens": kwargs.get("max_tokens", 2048),
+            "stream": False
+        }
+
+        client = await self._get_client()
+        try:
+            resp = await client.post(url, json=payload)
+            resp.raise_for_status()
+            data = resp.json()
+            # Extract content from OpenAI-compatible response
+            return data["choices"][0]["message"]["content"]
+        except HTTPStatusError as e:
+            # Add context to the error
+            detail = ""
+            try:
+                detail = e.response.json().get("detail", "")
+            except Exception:
+                pass
+            raise HTTPStatusError(
+                f"Tuck gateway error (model '{model}'): {detail or e.response.text}",
+                request=e.request,
+                response=e.response
+            ) from e
+        except KeyError:
+            raise ValueError(f"Unexpected response format from Tuck: {data}")
+
+    async def close(self):
+        """Close the HTTP client."""
+        if self._client:
+            await self._client.aclose()
+            self._client = None

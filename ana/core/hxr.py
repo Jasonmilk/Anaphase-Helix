@@ -1,46 +1,130 @@
-"""HXR Logger - Helix Execution Record for cognitive audit."""
+"""HXR (Helix Execution Record) logger for structured session logging."""
 
 import json
-import hashlib
-from datetime import datetime
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Any
+
+
+@dataclass
+class HXREntry:
+    """Single HXR log entry representing one step in the Agent Loop."""
+
+    session_id: str
+    loop_id: int
+    action: str
+    params: dict[str, Any]
+    result: str  # "success" or "failed"
+    reasoning: str | None
+    ts: str
+    tool_result: dict[str, Any] | None = None
+    error: str | None = None
 
 
 class HXRLogger:
-    """Helix Execution Record logger with tamper-proof hash chain."""
+    """Structured logger for Helix Execution Records.
 
-    def __init__(self, hxr_dir: str = "./memory_dag/sessions"):
+    Records each step of the Agent Loop to enable trace replay and audit.
+    Logs are stored as JSONL files organized by session ID.
+    """
+
+    def __init__(self, hxr_dir: str = "./memory_dag/sessions") -> None:
+        """Initialize HXR logger.
+
+        Args:
+            hxr_dir: Directory to store session logs
+        """
         self.hxr_dir = Path(hxr_dir)
+        self._ensure_dir()
+
+    def _ensure_dir(self) -> None:
+        """Ensure the HXR directory exists."""
         self.hxr_dir.mkdir(parents=True, exist_ok=True)
-        self._last_hash: Optional[str] = None
-        self._session_file: Optional[Path] = None
 
-    def start_session(self, session_id: str) -> None:
-        """Start a new session and initialize hash chain."""
-        self._session_file = self.hxr_dir / f"{session_id}.jsonl"
-        if self._session_file.exists():
-            with open(self._session_file, "r") as f:
-                lines = f.readlines()
-                if lines:
-                    last_record = json.loads(lines[-1])
-                    self._last_hash = last_record.get("hash_curr")
+    def _get_session_path(self, session_id: str) -> Path:
+        """Get the path to a session's log file.
 
-    def write(self, record: Dict[str, Any]) -> None:
-        """Write an HXR record with tamper-proof hash."""
-        if not self._session_file:
-            raise ValueError("Session not started. Call start_session() first.")
+        Args:
+            session_id: Unique session identifier
 
-        # Fill required fields
-        record.setdefault("ts", datetime.now().isoformat())
+        Returns:
+            Path to the session's JSONL log file
+        """
+        return self.hxr_dir / f"{session_id}.jsonl"
 
-        # Compute tamper-proof hash
-        record["hash_prev"] = self._last_hash
-        hash_input = json.dumps(record, sort_keys=True, ensure_ascii=False)
-        record["hash_curr"] = hashlib.sha256(hash_input.encode()).hexdigest()
+    def write(self, entry: dict[str, Any]) -> None:
+        """Write an HXR entry to the session log.
 
-        # Append to file
-        with open(self._session_file, "a") as f:
-            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+        Args:
+            entry: Dictionary containing HXR entry fields
+        """
+        session_id = entry.get("session_id", "unknown")
+        session_path = self._get_session_path(session_id)
 
-        self._last_hash = record["hash_curr"]
+        with open(session_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+    def read_session(self, session_id: str) -> list[dict[str, Any]]:
+        """Read all entries for a session.
+
+        Args:
+            session_id: Unique session identifier
+
+        Returns:
+            List of HXR entries in chronological order
+        """
+        session_path = self._get_session_path(session_id)
+        if not session_path.exists():
+            return []
+
+        entries = []
+        with open(session_path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    entries.append(json.loads(line))
+
+        return entries
+
+    def get_step(self, session_id: str, step: int) -> dict[str, Any] | None:
+        """Get a specific step from a session.
+
+        Args:
+            session_id: Unique session identifier
+            step: Step number (1-indexed)
+
+        Returns:
+            HXR entry for the specified step, or None if not found
+        """
+        entries = self.read_session(session_id)
+        for entry in entries:
+            if entry.get("loop_id") == step:
+                return entry
+        return None
+
+    def list_sessions(self) -> list[str]:
+        """List all available session IDs.
+
+        Returns:
+            List of session IDs
+        """
+        sessions = []
+        if self.hxr_dir.exists():
+            for file in self.hxr_dir.glob("*.jsonl"):
+                sessions.append(file.stem)
+        return sorted(sessions)
+
+    def clear_session(self, session_id: str) -> bool:
+        """Clear a session's log file.
+
+        Args:
+            session_id: Unique session identifier
+
+        Returns:
+            True if session was cleared, False if it didn't exist
+        """
+        session_path = self._get_session_path(session_id)
+        if session_path.exists():
+            session_path.unlink()
+            return True
+        return False

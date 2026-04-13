@@ -12,7 +12,7 @@ from ana.core.hxr import HXRLogger
 @click.version_option(version="0.1.0")
 @click.pass_context
 def cli(ctx):
-    """ana - Anaphase 执行引擎：Helix 生态的 Harness 层入口"""
+    """ana - Anaphase 执行引擎：Helix 生态的 Synapse 层入口"""
     ctx.ensure_object(dict)
     ctx.obj["config"] = load_config()
 

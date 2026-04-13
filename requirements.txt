@@ -1,0 +1,9 @@
+# Helix Anaphase Core Dependencies
+click
+pydantic
+pydantic-settings
+pyyaml
+httpx
+python-dotenv
+rich
+jsonschema

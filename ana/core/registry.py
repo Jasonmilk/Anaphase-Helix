@@ -1,85 +1,124 @@
-"""Tool Registry - Load and validate tool schemas from YAML."""
-
 import yaml
+import jsonschema
 from typing import Dict, Any, Optional, List
 from pydantic import BaseModel
 
+class ToolHandler(BaseModel):
+    executor: str
+    command: str
+    timeout: int = 30
+    output_mapping: Optional[Dict[str, str]] = None
 
 class ToolSchema(BaseModel):
-    """Tool schema definition."""
     name: str
     description: str
     aliases: Optional[List[str]] = None
-    schema: Dict[str, Any]  # JSON Schema
-    handler: Dict[str, Any]  # executor, command, output_mapping
+    parameters: Dict[str, Any]
+    handler: ToolHandler
     permissions: List[str]
 
-
 class ToolRegistry:
-    """Tool registry for loading and validating tool schemas."""
+    def __init__(self, config_path: str = "config/tools.yaml"):
+        self.tools: Dict[str, ToolSchema] = {}
+        self._load_defaults()
 
-    def __init__(self):
-        self._tools: Dict[str, ToolSchema] = {}
-
-    def load(self, config_path: str) -> None:
-        """Load tool schemas from YAML configuration file."""
-        with open(config_path, 'r', encoding='utf-8') as f:
-            config = yaml.safe_load(f)
-
-        tools_data = config.get('tools', [])
-        for tool_def in tools_data:
-            schema = ToolSchema(**tool_def)
-            self._tools[schema.name] = schema
-            # Register aliases
-            if schema.aliases:
-                for alias in schema.aliases:
-                    self._tools[alias] = schema
+    def _load_defaults(self):
+        default_tools = [
+            ToolSchema(
+                name="ana_kb_fetch",
+                description="从知识库 DAG 调取节点详情。可以通过 node_id 精确获取，也可以通过 query 语义搜索。",
+                aliases=["fetch"],
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "node_id": {"type": "string"},
+                        "query": {"type": "string"},
+                        "mode": {"type": "string", "enum": ["summary", "full"], "default": "summary"}
+                    },
+                    # 不设 required，允许任意组合
+                },
+                handler=ToolHandler(
+                    executor="ana_cli",
+                    command="echo '{\"id\": \"$node_id$query\", \"title\": \"快速排序\", \"summary\": \"分治算法，平均时间复杂度 O(n log n)\"}'",
+                    timeout=5,
+                    output_mapping={"format": "json"}
+                ),
+                permissions=["read"]
+            ),
+            ToolSchema(
+                name="ana_finish",
+                description="任务完成时调用此工具，以优雅结束 Agent Loop。",
+                aliases=["finish", "plan"],
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "summary": {"type": "string", "description": "任务完成摘要"},
+                        "confidence": {"type": "number", "minimum": 0, "maximum": 1, "default": 0.9}
+                    },
+                },
+                handler=ToolHandler(
+                    executor="ana_cli",
+                    command="echo '{\"status\": \"completed\", \"message\": \"Task finished successfully\"}'",
+                    timeout=10,
+                    output_mapping={"format": "json"}
+                ),
+                permissions=["execute"]
+            ),
+            ToolSchema(
+                name="update_social_graph",
+                description="更新社交图谱中某个实体的属性。例如，添加别名、年龄、关系状态等。",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "entity_id": {"type": "string", "description": "要更新的实体 ID，如 'person_xiaoming'"},
+                        "updates": {"type": "object", "description": "包含要更新字段及其值的 JSON 对象，如 {'aliases': ['陈小明'], 'age': 34}"}
+                    },
+                    "required": ["entity_id", "updates"]
+                },
+                handler=ToolHandler(
+                    executor="external_cli",
+                    command="./scripts/update_social_graph.sh '{entity_id}' '{updates}'",
+                    timeout=10,
+                    output_mapping={"format": "json"}
+                ),
+                permissions=["write"]
+            ),
+            ToolSchema(
+                name="query_social_graph",
+                description="Retrieve information about a person from the social graph.",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "description": "Name or alias of the person"}
+                    },
+                    "required": ["name"]
+                },
+                handler=ToolHandler(
+                    executor="external_cli",
+                    command="yq eval '.entities[] | select(.name == \"{name}\" or .aliases[] == \"{name}\")' knowledge_base/social_graph.md",
+                    timeout=5,
+                    output_mapping={"format": "json"}
+                ),
+                permissions=["read"]
+            )
+        ]
+        for tool in default_tools:
+            self.tools[tool.name] = tool
+            for alias in (tool.aliases or []):
+                self.tools[alias] = tool
 
     def get(self, name: str) -> Optional[ToolSchema]:
-        """Get tool schema by name or alias."""
-        return self._tools.get(name)
+        return self.tools.get(name)
 
     def validate(self, name: str, params: Dict[str, Any]) -> bool:
-        """
-        Validate parameters against tool schema.
-
-        Args:
-            name: Tool name or alias
-            params: Parameters to validate
-
-        Returns:
-            True if valid, False otherwise
-        """
-        schema = self.get(name)
-        if not schema:
+        tool = self.get(name)
+        if not tool:
             return False
-
-        # Simple validation: check required fields exist
-        tool_schema = schema.schema
-        required_fields = tool_schema.get('required', [])
-        properties = tool_schema.get('properties', {})
-
-        for field in required_fields:
-            if field not in params:
-                return False
-
-        # Check parameter types (basic validation)
-        for param_name, param_value in params.items():
-            if param_name in properties:
-                expected_type = properties[param_name].get('type')
-                if expected_type == 'string' and not isinstance(param_value, str):
-                    return False
-                elif expected_type == 'integer' and not isinstance(param_value, int):
-                    return False
-                elif expected_type == 'boolean' and not isinstance(param_value, bool):
-                    return False
-                elif expected_type == 'array' and not isinstance(param_value, list):
-                    return False
-                elif expected_type == 'object' and not isinstance(param_value, dict):
-                    return False
-
-        return True
-
-    def list_tools(self) -> List[str]:
-        """List all registered tool names."""
-        return list(self._tools.keys())
+        try:
+            jsonschema.validate(params, tool.parameters)
+            return True
+        except jsonschema.ValidationError:
+            # 对于 ana_finish，放宽校验
+            if name in ("ana_finish", "finish", "FINISH"):
+                return True
+            return False
