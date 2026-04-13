@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ana"
+version = "0.1.0"
+dependencies = [
+  "click>=8.0",
+  "pydantic-settings>=2.0",
+  "pyyaml>=6.0",
+  "requests>=2.31.0",
+  "jsonschema>=4.23.0",
+  "httpx>=0.27.0",
+  "python-frontmatter>=1.0.0"
+]

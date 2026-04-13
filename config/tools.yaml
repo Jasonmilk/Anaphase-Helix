@@ -1,0 +1,118 @@
+tools:
+  - name: "ana_kb_fetch"
+    description: "从知识库 DAG 调取节点详情"
+    aliases: ["fetch"]
+    parameters:
+      type: object
+      properties:
+        node_id:
+          type: string
+          description: "The unique identifier of the knowledge node"
+        mode:
+          type: string
+          enum: [summary, full]
+          default: summary
+          description: "Retrieval mode: summary or full content"
+      required: [node_id]
+    handler:
+      executor: "ana_cli"
+      command: "ana kb fetch {node_id} --mode {mode}"
+      timeout: 30
+      output_mapping:
+        format: "json"
+    permissions: [read]
+
+  - name: "ana_tentacle"
+    description: "召唤外部搜索并脱水"
+    aliases: ["tentacle", "search"]
+    parameters:
+      type: object
+      properties:
+        keyword:
+          type: string
+          description: "Search keyword"
+        max_results:
+          type: integer
+          minimum: 1
+          maximum: 10
+          default: 3
+          description: "Maximum number of results to return"
+      required: [keyword]
+    handler:
+      executor: "ana_cli"
+      command: "ana tentacle '{keyword}' --max {max_results}"
+      timeout: 60
+      output_mapping:
+        format: "json"
+    permissions: [read, external_network]
+
+  - name: "ana_finish"
+    description: "拆解最终任务，输出可执行计划"
+    aliases: ["finish", "plan"]
+    parameters:
+      type: object
+      properties:
+        actions:
+          type: array
+          items:
+            type: string
+          description: "List of actionable steps"
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: "Confidence score of the plan"
+      required: [actions]
+    handler:
+      executor: "ana_cli"
+      command: "ana finish --actions '{actions}' --confidence {confidence}"
+      timeout: 10
+      output_mapping:
+        format: "json"
+    permissions: [execute]
+
+  - name: "ana_kb_query"
+    description: "语义检索知识库"
+    aliases: ["kb_query"]
+    parameters:
+      type: object
+      properties:
+        query:
+          type: string
+          description: "Search query"
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 20
+          default: 5
+          description: "Maximum number of results"
+      required: [query]
+    handler:
+      executor: "ana_cli"
+      command: "ana kb query '{query}' --limit {limit}"
+      timeout: 30
+      output_mapping:
+        format: "json"
+    permissions: [read]
+
+  - name: "ana_trace"
+    description: "回放推理链路"
+    aliases: ["trace"]
+    parameters:
+      type: object
+      properties:
+        session_id:
+          type: string
+          description: "Session ID to trace"
+        step:
+          type: integer
+          minimum: 1
+          description: "Specific step to locate (optional)"
+      required: [session_id]
+    handler:
+      executor: "ana_cli"
+      command: "ana trace {session_id}"
+      timeout: 30
+      output_mapping:
+        format: "json"
+    permissions: [read]
