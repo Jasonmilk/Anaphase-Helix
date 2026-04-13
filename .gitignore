@@ -1,13 +1,20 @@
+# 配置
 .env
+.env*
+!.env.example
+
+# 环境
 venv/
-workspaces/
-core/__pycache__/
 __pycache__/
-*.log
-graveyard_logs.txt
-.DS_Store
-# 屏蔽所有带 backup 字样的目录
-*_backup_*/
-# 屏蔽所有历史遗留的 workspaces
+*.pyc
+
+# 敏感数据
 workspaces/
-workspace_v1*/
+logs/
+global_mind/*.json
+global_mind/*.md
+*.bak
+
+# 临时文件
+*.log
+*.tmp
