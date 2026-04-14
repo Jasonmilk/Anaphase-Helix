@@ -1,97 +1,81 @@
-"""Configuration management using pydantic-settings. No hardcoded defaults for model names."""
+"""Configuration management for Helix-Ana"""
 
+from pydantic import Field
 from pydantic_settings import BaseSettings
-from pydantic import Field, ValidationError
-from typing import Optional
 
 
 class Settings(BaseSettings):
-    """Helix Anaphase configuration, loaded from .env and environment."""
+    """Helix-Ana configuration settings."""
 
     # Tuck gateway
     tuck_endpoint: str = Field(
-        ...,
-        description="Tuck gateway base URL (e.g., http://localhost:8686)"
+        default="http://localhost:8686/v1/chat/completions",
+        description="Tuck model gateway endpoint",
     )
-    tuck_api_key: str = Field(
-        ...,
-        description="API key for Tuck gateway"
+    tuck_api_key: str = Field(default="local", description="Tuck API key")
+
+    # Helix-Mind
+    helix_mind_endpoint: str = Field(
+        default="http://localhost:8020",
+        description="Helix-Mind memory service endpoint",
     )
 
-    # Helix-Mind service
-    helix_mind_base_url: str = Field(
-        "http://localhost:8020",
-        description="Helix-Mind microservice base URL"
+    # Model routing - four independent brain regions
+    amygdala_model: str = Field(
+        default="qwen2.5:2b",
+        description="Amygdala: Emotion & risk detection, lightweight fast response",
+    )
+    cerebellum_model: str = Field(
+        default="qwen2.5:2b",
+        description="Cerebellum: Action timing & scheduling, low-latency stable execution",
+    )
+    left_brain_model: str = Field(
+        default="qwen2.5-coder:7b",
+        description="Left Brain: Logical & code execution, structured rational output",
+    )
+    right_brain_model: str = Field(
+        default="deepseek-r1:8b",
+        description="Right Brain: Intuition & semantic understanding, deep thinking",
     )
 
-    # Model routing - explicit env mapping for ANA_ prefix
-    left_brain_model: Optional[str] = Field(
-        None,
-        env="ANA_LEFT_BRAIN_MODEL",
-        description="Model for medium priority tasks (e.g., 7B)"
-    )
-    right_brain_model: Optional[str] = Field(
-        None,
-        env="ANA_RIGHT_BRAIN_MODEL",
-        description="Model for high priority tasks (e.g., 8B)"
-    )
-    cerebellum_model: Optional[str] = Field(
-        None,
-        env="ANA_CEREBELLUM_MODEL",
-        description="Model for low priority tasks (e.g., 2B)"
-    )
-
-    # Embedding
+    # Embedding model
     embedding_model: str = Field(
-        "BAAI/bge-small-en",
-        env="ANA_EMBEDDING_MODEL",
-        description="Local embedding model name"
+        default="BAAI/bge-small-en",
+        description="Embedding model: pure text-to-vector, NO thinking allowed",
+    )
+
+    # Mock mode
+    mock_mode: bool = Field(
+        default=False,
+        description="Enable mock backend for testing (bypasses real LLM calls)",
     )
 
     # Paths
     hxr_dir: str = Field(
-        "./memory_dag/sessions",
-        env="ANA_HXR_DIR",
-        description="Directory for HXR audit logs"
+        default="./memory_dag/sessions",
+        description="Directory for HXR session logs",
     )
     gene_lock_path: str = Field(
-        "./knowledge_base/l0_gene_lock.md",
-        env="ANA_GENE_LOCK_PATH",
-        description="Path to L0 gene lock rules"
+        default="./knowledge_base/l0_gene_lock.md",
+        description="Path to L0 gene lock rules",
     )
 
     # Scheduling weights
-    alpha: float = 0.35
-    beta: float = 0.35
-    gamma: float = 0.20
-    delta: float = -0.10
+    alpha: float = Field(default=0.35, description="Recency weight")
+    beta: float = Field(default=0.35, description="Relevance weight")
+    gamma: float = Field(default=0.20, description="Frequency weight")
+    delta: float = Field(default=-0.10, description="Decay factor")
 
-    # Agent Loop
-    max_loops: int = Field(
-        20,
-        description="Maximum iterations per Agent Loop"
-    )
+    # Logging
+    log_level: str = Field(default="INFO", description="Logging level")
 
     class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
         extra = "ignore"
-
-    def validate_model_config(self) -> None:
-        """Ensure at least one model is configured."""
-        if not any([self.left_brain_model, self.right_brain_model, self.cerebellum_model]):
-            raise ValueError(
-                "At least one of ANA_LEFT_BRAIN_MODEL, ANA_RIGHT_BRAIN_MODEL, "
-                "or ANA_CEREBELLUM_MODEL must be set in .env"
-            )
 
 
 def load_config() -> Settings:
-    """Load and validate configuration."""
-    try:
-        settings = Settings()
-        settings.validate_model_config()
-        return settings
-    except ValidationError as e:
-        print(f"Configuration error: {e}")
-        raise
+    """
+    Load configuration. This function is kept for compatibility but is no longer
+    responsible for loading .env; that is done in cli.py.
+    """
+    return Settings()
