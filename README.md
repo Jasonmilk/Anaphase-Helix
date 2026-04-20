@@ -1,4 +1,4 @@
-# Anaphase-Helix v0.2.1
+# Anaphase-Helix v0.3.0
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
@@ -6,7 +6,7 @@
 
 **Anaphase-Helix** is the execution orchestration core of the Helix ecosystem—a self-evolving digital lifeform. It orchestrates perception (Tentacle), memory (Mind), and reasoning to accomplish complex tasks through a state‑graph driven agent loop.
 
-> **Current Status**: v0.2.1 – Full module skeleton with Mock mode integration. All brain regions (Amygdala, Prefrontal, Synapse, Corpus Callosum) are connected and the agent loop executes end‑to‑end in mock mode. **Ana Loom** cognitive visualization is now available. Ready for Tuck gateway integration.
+> **Current Status**: v0.3.0 – Tuck gateway integration complete. All brain modules (Amygdala, Prefrontal, Synapse, Corpus Callosum) now support real LLM calls via Tuck. Ana Loom cognitive visualization available. End‑to‑end real inference validated.
 
 ## 🧠 Core Philosophy
 
@@ -52,6 +52,18 @@ For **real LLM calls** via Tuck, set:
 ANA_MOCK_MODE=false
 TUCK_ENDPOINT=http://localhost:8686
 TUCK_API_KEY=your_api_key_here
+TUCK_CHAT_PATH=/v1/chat/completions   # Default OpenAI-compatible path
+TUCK_TIMEOUT=30                        # Request timeout in seconds
+```
+
+### Model Configuration
+
+Ensure the model names in `.env` match those available on your Tuck instance:
+
+```ini
+ANA_AMYGDALA_MODEL=Qwen3.5-2B-IQ4_NL.gguf
+ANA_LEFT_BRAIN_MODEL=Qwen2.5.1-Coder-7B-Instruct-Q4_K_M.gguf
+ANA_RIGHT_BRAIN_MODEL=DeepSeek-R1-0528-Qwen3-8B-IQ4_NL.gguf
 ```
 
 ### Run Your First Task
@@ -60,7 +72,7 @@ TUCK_API_KEY=your_api_key_here
 ana run "What is the meaning of life?"
 ```
 
-In mock mode, you will see a full cognitive loop trace in JSON logs, ending with a mock reasoning draft. The agent transitions through all seven states: `perceive → assess_priority → plan → execute → reflect → consolidate → sleep`.
+In mock mode, you will see a full cognitive loop trace in JSON logs, ending with a mock reasoning draft. In real mode, the agent will call Tuck to generate actual LLM responses. The agent transitions through all seven states: `perceive → assess_priority → plan → execute → reflect → consolidate → sleep`.
 
 ### Visualize Cognitive Process with Ana Loom
 
@@ -82,8 +94,8 @@ Anaphase-Helix/
 │   ├── cli/                 # CLI entry points (ana run/trace/stats/loom)
 │   ├── core/                # Brain region modules
 │   │   ├── agent_loop.py    # State‑graph driven main loop
-│   │   ├── amygdala.py      # Priority & affect assessment
-│   │   ├── prefrontal.py    # Reasoning & planning (LLM calls)
+│   │   ├── amygdala.py      # Priority & affect assessment (real Tuck calls)
+│   │   ├── prefrontal.py    # Reasoning & planning (real Tuck calls)
 │   │   ├── synapse.py       # Tool execution (CLI sandbox)
 │   │   ├── corpus_callosum.py # Intent‑execution alignment validator
 │   │   └── model_router.py  # Model selection based on priority
@@ -110,7 +122,7 @@ Run the full test suite:
 pytest -v
 ```
 
-All 13 tests pass in mock mode, covering every brain module and the agent loop integration.
+All 13 tests pass, covering every brain module and the agent loop integration. Mock mode tests validate DTO contracts and state transitions; real mode tests (with Tuck mocked) verify the HTTP calling layer.
 
 ## 📖 Documentation
 
@@ -128,8 +140,8 @@ This project follows a strict **AI Coder Iron Law** checklist (see Engineering M
 | **v0.1.0** – Physical skeleton (directories, DTOs, CLI) | ✅ Complete |
 | **v0.2.0** – Full module mock integration & end‑to‑end validation | ✅ Complete |
 | **v0.2.1** – Ana Loom cognitive visualization & Ana Theme system | ✅ Complete |
-| **v0.3.0** – Tuck gateway integration (real LLM calls) | 🚧 Next |
-| **v0.4.0** – Helix‑Mind integration (memory DAG) | 📅 Planned |
+| **v0.3.0** – Tuck gateway integration (real LLM calls) | ✅ Complete |
+| **v0.4.0** – Helix‑Mind integration (memory DAG) | 🚧 Next |
 | **v0.5.0** – Tool ecosystem & biosphere expansion | 📅 Planned |
 | **v1.0.0** – Production‑ready digital lifeform | 📅 Planned |
 
