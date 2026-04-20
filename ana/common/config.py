@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     # Core infrastructure — NO DEFAULTS. Must be explicitly configured.
     tuck_endpoint: str
     tuck_api_key: str
+    tuck_timeout: int = Field(30, alias="TUCK_TIMEOUT")
+    # Tuck API path configuration (override if Tuck uses non‑standard routes)
+    tuck_chat_path: str = Field("/v1/chat/completions", alias="TUCK_CHAT_PATH")
     helix_mind_endpoint: str
 
     # Model routing — aliased for ANA_ prefix

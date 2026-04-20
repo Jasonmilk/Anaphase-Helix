@@ -2,7 +2,6 @@
 
 from pathlib import Path
 from typing import Dict, Callable, Literal
-from datetime import datetime
 
 from ana.common import logger, get_settings, add_file_logger
 from ana.schemas.state import HelixState
@@ -69,11 +68,9 @@ class AgentLoop:
         """
         Run the agent loop until completion.
 
-        Args:
-            state: Initial HelixState.
-
-        Returns:
-            Final HelixState after loop completion.
+        The underlying brain modules (Amygdala, Prefrontal) will automatically
+        switch between mock and real implementations based on settings.mock_mode.
+        This keeps the orchestration layer clean and testable.
         """
         # Persist logs to file for Ana Loom and HXR audit compliance
         log_file = Path(self.settings.hxr_dir) / f"{state.epoch_id}.jsonl"
@@ -81,16 +78,11 @@ class AgentLoop:
 
         logger.info("agent_loop.start", epoch_id=state.epoch_id, trace_id=state.trace_id)
 
-        if self.settings.mock_mode:
-            return await self._run_mock_loop(state)
+        # Execute the cognitive loop (same for mock and real modes)
+        return await self._run_loop(state)
 
-        raise NotImplementedError(
-            "AgentLoop.run real implementation is not available. "
-            "Set ANA_MOCK_MODE=true in .env to use mock responses."
-        )
-
-    async def _run_mock_loop(self, state: HelixState) -> HelixState:
-        """Execute a simplified cognitive loop in mock mode."""
+    async def _run_loop(self, state: HelixState) -> HelixState:
+        """Execute the full cognitive loop (used by both mock and real modes)."""
         # Step 1: Perceive (already done - state has task)
         state.current_step = "perceive"
         logger.info("agent_loop.perceive", task=state.task)
@@ -133,7 +125,7 @@ class AgentLoop:
         state.current_step = "reflect"
         affect = self.amygdala.evaluate_affect(
             state.task,
-            draft.reasoning or "",
+            draft.reasoning or draft.final_reply or "",
             state.trace_id,
         )
         state.affect = affect
@@ -147,15 +139,17 @@ class AgentLoop:
         # Validate intent-execution alignment
         validation = self.validator.validate(
             intent=state.task,
-            action=draft.reasoning or "",
+            action=draft.reasoning or draft.final_reply or "",
             trace_id=state.trace_id,
         )
         state.validation_result = validation
         logger.info("agent_loop.validate", passed=validation.passed)
 
-        # Step 6: Consolidate (simulate token usage)
+        # Step 6: Consolidate (update metabolism)
         state.current_step = "consolidate"
-        state.metabolism.used_tokens += 100  # Mock token consumption
+        # Token consumption is simulated for mock; in real mode, it would be
+        # accumulated from actual Tuck API responses. This is a placeholder.
+        state.metabolism.used_tokens += 100
         logger.info(
             "agent_loop.consolidate",
             used_tokens=state.metabolism.used_tokens,
