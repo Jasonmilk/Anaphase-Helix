@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>小红书卡片生成器</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;700;900&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        * { font-family: 'Noto Sans SC', sans-serif; }
+        body { background: #e2e8f0; -webkit-font-smoothing: antialiased; }
+        img, svg { display: inline-block !important; }
+        /* 1. 移除圆角和阴影 */
+        .card-container { width: 360px; height: 480px; background: #f8fafc; position: relative; overflow: hidden; padding: 1.2rem; display: flex; flex-direction: column; border: none !important; box-shadow: none !important; border-radius: 0 !important; outline: none !important; }
+        .card-content { position: relative; z-index: 10; height: 100%; display: flex; flex-direction: column; justify-content: space-between; padding-bottom: 0.5rem; }
+        .bg-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 0; opacity: 1; }
+        /* 1. 预览包装器：移除阴影和圆角 */
+        .preview-wrapper { border-radius: 0; box-shadow: none; transition: none; }
+        .preview-wrapper:hover { transform: none; box-shadow: none; }
+        
+        .tag { display: inline-block; padding: 0.2rem 0.6rem; background: rgba(255,255,255,0.4); border: 1px solid rgba(255,255,255,0.5); font-size: 0.75rem; font-weight: 400; color: #334155; margin: 0 0.25rem 0.25rem 0; border-radius: 0.5rem; letter-spacing: 0.02em; backdrop-filter: blur(4px); }
+        /* 移动端边距调整 */
+        @media (max-width: 768px) {
+            body { padding: 0.5rem !important; }
+            .fixed { padding-left: 0.5rem !important; padding-right: 0.5rem !important; }
+            #cards-wrapper { padding-left: 0 !important; padding-right: 0 !important; }
+        }
+        /* 3. 移除 glass-card 样式，使用更简单的背景 */
+        .simple-bg { background: rgba(255, 255, 255, 0.8); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border: 1px solid rgba(255, 255, 255, 0.7); box-shadow: 0 2px 10px rgba(0, 0, 0, 0.02); }
+    </style>
+</head>
+<body class="p-8 flex flex-col items-center min-h-screen">
+    <!-- 2. 移除 Header 的半透明和边框 -->
+    <div class="fixed top-0 left-0 w-full bg-white z-50 p-4 flex justify-between items-center px-8 border-0">
+        <div>
+            <h1 class="text-lg font-bold text-slate-800">小红书卡片生成器</h1>
+            <p class="text-xs text-slate-500">AI 报告精选模板</p>
+        </div>
+        <!-- 2. 移除下载按钮的阴影 -->
+        <button id="downloadBtn" onclick="downloadAll()" class="bg-slate-800 hover:bg-slate-900 text-white px-5 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            <span id="btnText">生成并下载 ZIP</span>
+        </button>
+    </div>
+    <div id="cards-wrapper" class="mt-24 px-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 max-w-7xl mx-auto"></div>
+    <div class="h-20"></div>
+
+    <script>
+        // ==================== 主题配色方案 ====================
+        const colors = ['#A7F3D0','#5EEAD4','#67E8F9','#7DD3FC','#93C5FD','#FDE68A'];
+
+        // ==================== 卡片数据定义 ====================
+        const cards = [
+            { type: 'cover', title: "AI 正在<br>超额交付结果", subtitle: "2025 科技圈生产力深度调查报告", author: "作者: Lenny Rachitsky 团队", tags: ["#AI进化", "#生产力", "#未来趋势"], bgSeed: 1 },
+            { type: 'list', title: "调查背景", subtitle: "深度洞察 AI 进化的临界点", iconName: "users", items: [
+                { label: "调研对象", value: "", desc: "1,750+ 真实样本:产品经理、工程师、设计师、创始人" }, 
+                { label: "核心发现", value: "", desc: "AI 已从单纯的效率插件进化为全流程不可或缺的核心生产力母体" }
+            ], summary: "大规模调研揭示AI已成为各行业核心生产力工具", bgSeed: 2 },
+            { type: 'chart-pie', title: "核心满意度", subtitle: "用户对 AI 现状的真实反馈", iconName: "star", data: [{ label: "超出预期", value: 55, color: "#5EEAD4" }, { label: "质量提升", value: 70, color: "#A7F3D0" }, { label: "节省时间 >4h/周", value: 51, color: "#67E8F9" }], summary: "用户满意度全面超预期，AI价值得到广泛认可", bgSeed: 3 },
+            { type: 'chart-comp', title: "工具竞赛:Cursor 崛起", subtitle: "原生 IDE vs 通用聊天机器人", iconName: "code", data: [{ label: "Cursor", value: 33, highlight: true }, { label: "ChatGPT", value: 31 }, { label: "Claude", value: 29 }], summary: "原生集成AI工具正在快速取代传统插件式解决方案", bgSeed: 4 },
+            { type: 'highlight', title: "创始人:深度受益者", subtitle: "AI 极大地释放了决策带宽", iconName: "clock", mainStat: "83%", mainStatDesc: "创始人每周节省 4 小时以上", subStats: [{ label: "工作产出质量大幅提升者", value: "45%" }], summary: "创始人群体从AI中获得最显著的效率提升", bgSeed: 5 },
+            { type: 'vs', title: "工程师:效率与质量", subtitle: "在速度提升与维护成本间博弈", iconName: "zap", left: { label: "编码效率显著提升", value: "51%", color: "text-orange-500" }, right: { label: "代码维护长期隐忧", value: "21%", color: "text-pink-400" }, summary: "工程师面临效率提升与代码质量的权衡挑战", bgSeed: 6 },
+            // PM:工作流重塑
+            { type: 'list', title: "PM:工作流重塑", subtitle: "AI 全面介入文档与构思阶段", iconName: "pen-tool", items: [
+                { label: "PRD 撰写", value: "22%", desc: "AI 接管繁琐文档工作" }, 
+                { label: "低保真原型", value: "20%", desc: "构思快速可视化" }
+            ], summary: "产品经理工作流程正在被AI深度重塑", bgSeed: 7 },
+            { type: 'stat-card', title: "设计师:审美鸿沟", subtitle: "创意深度仍是核心挑战", iconName: "palette", stat: "45%", statLabel: "设计师感受到正向 ROI", summary: "设计师在AI辅助下效率提升，但创意深度仍待突破", bgSeed: 8 },
+            { type: 'list-rank', title: "未来的期望缺口", subtitle: "用户最希望 AI 进化的领域", iconName: "target", items: [{ rank: 1, label: "产品构思与核心创意", value: "29%" }, { rank: 2, label: "用户研究与洞察分析", value: "27%" }, { rank: 3, label: "高质量文档自动化", value: "26%" }], summary: "用户期待AI在创意和洞察分析领域实现更大突破", bgSeed: 9 },
+            { type: 'summary', title: "结语", subtitle: "生产力的新纪元", text: "AI 不再是锦上添花的玩具，而是实实在在的引擎。我们正处于工作方式重塑的临界点。拥抱母体工作流是未来三年的核心竞争力。", footer: "Lenny Rachitsky · 2025", bgSeed: 10 }
+        ];
+
+        // 绘制背景图案（含极光效果）
+        function drawPattern(id) {
+            const canvas = document.getElementById(id);
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d'), dpr = window.devicePixelRatio || 1, rect = canvas.getBoundingClientRect();
+            canvas.width = rect.width * dpr; canvas.height = rect.height * dpr; ctx.scale(dpr, dpr);
+            
+            // 基础背景色
+            ctx.fillStyle = '#f8fafc'; ctx.fillRect(0, 0, rect.width, rect.height);
+            
+            // 极光效果 - 多层径向渐变
+            const auroraColors = ['#A7F3D0','#5EEAD4','#67E8F9','#7DD3FC','#93C5FD'];
+            
+            // 第一层：大范围柔和光晕
+            for (let i = 0; i < 3; i++) {
+                const x = rect.width * (0.2 + Math.random() * 0.6), y = rect.height * (0.2 + Math.random() * 0.6);
+                const r = rect.width * (0.8 + Math.random() * 0.4);
+                const c = auroraColors[Math.floor(Math.random() * auroraColors.length)];
+                const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+                g.addColorStop(0, c + '40');  // 25% 透明度
+                g.addColorStop(0.3, c + '20');  // 12.5% 透明度
+                g.addColorStop(0.7, c + '0A');  // 4% 透明度
+                g.addColorStop(1, '#f8fafc00');  // 完全透明
+                ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, 2 * Math.PI); ctx.fill();
+            }
+            
+            // 第二层：中等光斑
+            for (let i = 0; i < 5; i++) {
+                const x = Math.random() * rect.width * 1.2 - rect.width * 0.1, y = Math.random() * rect.height * 1.2 - rect.height * 0.1;
+                const r = rect.width * (0.5 + Math.random() * 0.4);
+                const c = colors[Math.floor(Math.random() * colors.length)];
+                const g = ctx.createRadialGradient(x, y, r * 0.1, x, y, r);
+                g.addColorStop(0, c + '60');  // 37.5% 透明度
+                g.addColorStop(0.5, c + '30');  // 18.75% 透明度
+                g.addColorStop(1, '#f8fafc00');  // 完全透明
+                ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, 2 * Math.PI); ctx.fill();
+            }
+            
+            // 装饰性曲线
+            ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2; ctx.globalAlpha = 0.4; ctx.lineCap = 'round';
+            for (let i = 0; i < 3; i++) {
+                ctx.beginPath(); ctx.moveTo(Math.random() * rect.width, Math.random() < 0.5 ? 0 : rect.height);
+                ctx.bezierCurveTo(Math.random() * rect.width * 1.5 - rect.width * 0.25, Math.random() * rect.height, Math.random() * rect.width * 1.5 - rect.width * 0.25, Math.random() * rect.height, Math.random() * rect.width, Math.random() < 0.5 ? 0 : rect.height);
+                ctx.stroke();
+            }
+        }
+
+        // 绘制饼图
+        function drawPie(id, data) {
+            const canvas = document.getElementById(id);
+            if (!canvas) return;
+            // 确保 canvas 有正确的尺寸
+            if (!canvas.width) canvas.width = 140;
+            if (!canvas.height) canvas.height = 140;
+            const ctx = canvas.getContext('2d'), cx = canvas.width / 2, cy = canvas.height / 2, r = Math.min(canvas.width, canvas.height) / 2 - 10, total = data.reduce((s, i) => s + i.value, 0);
+            let angle = -Math.PI / 2;
+            data.forEach(item => {
+                const slice = (item.value / total) * 2 * Math.PI;
+                ctx.beginPath(); ctx.moveTo(cx, cy); ctx.arc(cx, cy, r, angle, angle + slice); ctx.closePath();
+                ctx.fillStyle = item.color; ctx.fill(); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3; ctx.stroke();
+                angle += slice;
+            });
+        }
+
+        // ==================== 卡片模板 (只定义一次) ====================
+        const tpl = {
+            cover: d => `<div class="flex items-center justify-start h-full"><div class="text-left"><h1 class="text-4xl leading-tight mb-4 font-black text-slate-900 drop-shadow-sm">${d.title}</h1><p class="text-sm font-medium text-slate-700 mb-3">${d.author}</p><div class="flex flex-wrap gap-2 mb-3">${d.tags.map(t => `<span class="tag">${t}</span>`).join('')}</div><div class="text-xs font-medium text-slate-500 tracking-widest border-t border-slate-400/30 pt-3 mt-2">${d.subtitle}</div></div></div>`,
+            summary: d => `<div class="flex-grow mt-4"><h2 class="text-2xl font-black text-slate-900 mb-4 pb-2 border-b border-slate-400/30">${d.title}</h2><p class="text-base text-slate-800 leading-relaxed font-normal">${d.text}</p><p class="text-xs text-slate-500 mt-4">${d.footer||''}</p></div>`,
+            
+            // 列表模板：Label/Value 在一行，Desc 在下一行
+            list: d => `<ul class="space-y-4">${d.items.map(i => {
+                // 第一行：Label (左) 和 Value (右)
+                const valueContent = i.value ? `<span class="text-base font-bold text-pink-500">${i.value}</span>` : '';
+                // 第二行：Desc
+                const descContent = i.desc ? `<div class="text-sm text-slate-700 leading-snug mt-1">${i.desc}</div>` : '';
+
+                // 3. 替换 glass-card 为 simple-bg
+                return `<li class="p-4 simple-bg rounded-lg border-l-4 border-l-orange-400">
+                    <div class="flex justify-between items-center mb-1">
+                        <div class="text-xs text-slate-500 font-medium uppercase tracking-widest">${i.label}</div>
+                        ${valueContent}
+                    </div>
+                    ${descContent}
+                </li>`;
+            }).join('')}</ul>`,
+            
+            'chart-pie': d => `<div class="flex items-center justify-center" style="height: 70%;"><div class="grid grid-cols-3 gap-2 items-center w-full"><div class="flex flex-col items-start space-y-2">${d.data.slice(0, Math.ceil(d.data.length/2)).map(i => `<div class="inline-flex items-center gap-1.5 px-2.5 py-1.5 simple-bg rounded-full whitespace-nowrap text-xs"><span class="font-bold text-slate-900 text-orange-500">${i.value}%</span><span class="font-normal text-slate-700">${i.label}</span></div>`).join('')}</div><div class="flex items-center justify-center"><canvas id="pie-${d.bgSeed}" width="140" height="140"></canvas></div><div class="flex flex-col items-end space-y-2">${d.data.slice(Math.ceil(d.data.length/2)).map(i => `<div class="inline-flex items-center gap-1.5 px-2.5 py-1.5 simple-bg rounded-full whitespace-nowrap text-xs"><span class="font-bold text-slate-900 text-pink-500">${i.value}%</span><span class="font-normal text-slate-700">${i.label}</span></div>`).join('')}</div></div></div>`,
+            
+            'chart-comp': d => `<div class="flex items-end justify-center gap-6 h-48 mb-6 px-1">${d.data.map(i => `<div class="flex flex-col items-center gap-2"><div class="text-sm font-bold ${i.highlight?'text-orange-600':'text-slate-500'}">${i.value}%</div><div class="w-16 ${i.highlight?'bg-orange-200/90 border border-white/50 shadow-sm':'bg-slate-400/80 border border-white/30'} rounded-t-xl transition-all backdrop-blur-sm" style="height:${i.value*3}px"></div><div class="text-xs font-normal text-slate-700 text-center w-20">${i.label}</div></div>`).join('')}</div>`,
+            
+            highlight: d => `<div class="simple-bg p-4 border-l-4 border-l-pink-400 rounded-lg mb-4"><div class="text-5xl font-black text-orange-500 leading-none drop-shadow-sm">${d.mainStat}</div><div class="text-xs font-medium text-slate-600 uppercase tracking-[0.2em] mt-2">${d.mainStatDesc}</div></div><div class="simple-bg p-3 flex justify-between items-center rounded-lg"><span class="text-xs font-normal text-slate-600">${d.subStats[0].label}</span><span class="text-lg font-bold text-slate-900">${d.subStats[0].value}</span></div>`,
+            
+            vs: d => `<div class="space-y-3 relative z-20"><div class="simple-bg p-4 flex justify-between items-center rounded-lg"><span class="text-sm font-medium text-slate-800 uppercase tracking-widest">${d.left.label}</span><span class="text-2xl font-bold ${d.left.color}">${d.left.value}</span></div><div class="simple-bg p-4 flex justify-between items-center rounded-lg"><span class="text-sm font-medium text-slate-800 uppercase tracking-widest">${d.right.label}</span><span class="text-2xl font-bold ${d.right.color}">${d.right.value}</span></div></div>`,
+            
+            'stat-card': d => `<div class="simple-bg p-4 text-center mb-4 rounded-lg"><div class="text-5xl font-black text-slate-900 drop-shadow-sm">${d.stat}</div><div class="text-xs font-medium text-orange-500 uppercase tracking-[0.3em] mt-2">${d.statLabel}</div></div>`,
+            
+            'list-rank': d => `<ul class="space-y-4">${d.items.map(i => {
+                const rankStyle = `text-base font-bold w-6 drop-shadow-sm ${i.rank === 1 ? 'text-orange-500' : 'text-slate-500'}`;
+                const labelStyle = "flex-1 text-sm font-normal text-slate-700 leading-tight";
+                const valueStyle = "text-base font-bold text-pink-500";
+
+                // 3. 替换 glass-card 为 simple-bg
+                return `<li class="p-3 simple-bg rounded-lg border-l-4 border-l-blue-400">
+                    <div class="flex justify-between items-start gap-2">
+                        <div class="${rankStyle}">${i.rank}</div>
+                        <div class="${labelStyle}">${i.label}</div>
+                        <div class="${valueStyle}">${i.value}</div>
+                    </div>
+                </li>`;
+            }).join('')}</ul>`
+        };
+
+        // 渲染所有卡片到页面
+        function render() {
+            document.getElementById('cards-wrapper').innerHTML = cards.map((d, i) => {
+                const isCover = d.type === 'cover', isSummary = d.type === 'summary';
+                
+                let contentHtml;
+                if (isCover || isSummary) {
+                    contentHtml = tpl[d.type](d);
+                } else {
+                    // 对于所有非封面/总结卡片，添加标题和图标
+                    const cardBody = tpl[d.type](d);
+                    // 3. 移除分隔线 (mb-6 后面的 border-b)
+                    contentHtml = `<div class="flex-grow mt-4"><h2 class="text-lg font-black text-slate-900 pb-2 border-b border-slate-400/30 mb-4 uppercase tracking-tighter flex items-center gap-2"><i data-lucide="${d.iconName||'file-text'}" class="w-4 h-4 text-slate-700"></i>${d.title}</h2>${cardBody}</div>`;
+                }
+
+                // 为所有卡片生成统一样式的页脚
+                let footerHtml = '';
+                
+                if (!isCover && !isSummary && d.summary) {
+                    // 中间卡片：有总结
+                    footerHtml = `
+                        <div class="mt-auto pt-4 space-y-2">
+                            <div class="text-xs text-slate-600 leading-relaxed">${d.summary}</div>
+                            <div class="flex justify-between items-end">
+                                <h3 class="text-xs tracking-[0.1em] uppercase text-slate-500 font-black truncate max-w-[60%]">AI 正在超额交付结果</h3>
+                                <span class="text-xs font-mono text-slate-400">P${String(i+1).padStart(2,'0')}</span>
+                            </div>
+                        </div>`;
+                } else if (isCover || isSummary) {
+                    // 封面和尾页：无总结，只有标题和页码
+                    footerHtml = `
+                        <div class="mt-auto pt-4">
+                            <div class="flex justify-between items-end">
+                                <h3 class="text-xs tracking-[0.1em] uppercase text-slate-500 font-black truncate max-w-[60%]">AI 正在超额交付结果</h3>
+                                <span class="text-xs font-mono text-slate-400">P${String(i+1).padStart(2,'0')}</span>
+                            </div>
+                        </div>`;
+                }
+
+                // 移除 preview-wrapper 的圆角和阴影，card-container 保持无圆角
+                return `<div class="preview-wrapper"><div class="card-container" id="card-${i}"><canvas id="canvas-${i}" class="bg-canvas"></canvas><div class="card-content">${!isCover ? '<div class="mb-4"></div>' : ''}${contentHtml}${footerHtml}</div></div></div>`;
+            }).join('');
+        }
+
+        // 一键下载所有卡片为ZIP
+        async function downloadAll() {
+            const btn = document.getElementById('downloadBtn'), txt = document.getElementById('btnText');
+            btn.disabled = true; txt.innerText = "生成中...";
+            try {
+                const zip = new JSZip(), els = document.querySelectorAll('.card-container');
+                const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+
+                for (let i = 0; i < els.length; i++) {
+                    txt.innerText = `渲染 ${i+1}/${els.length}`;
+                    await new Promise(r => setTimeout(r, 100));
+                    const canvas = await html2canvas(els[i], {
+                        scale: 2,
+                        useCORS: true,
+                        backgroundColor: '#f8fafc',
+                        logging: false,
+                        onclone: doc => {
+                            doc.querySelectorAll('img,svg').forEach(e => e.style.display = 'inline-block');
+                            // 确保 html2canvas 导出的图片中，卡片容器没有边框/圆角/阴影
+                            doc.querySelectorAll('.card-container').forEach(c => {
+                                c.style.borderRadius = '0';
+                                c.style.boxShadow = 'none';
+                                c.style.border = 'none';
+                                c.style.outline = 'none';
+                            });
+                        }
+                    });
+                    const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.95));
+                    zip.file(`${String(i+1).padStart(2,'0')}_XHS_Card.jpg`, blob);
+                }
+
+                // 恢复滚动位置
+                window.scrollTo(0, scrollTop);
+                saveAs(await zip.generateAsync({ type: "blob" }), "Xiaohongshu_Cards.zip");
+                txt.innerText = "完成";
+                setTimeout(() => { btn.disabled = false; txt.innerText = "生成并下载 ZIP"; }, 2000);
+            } catch (err) {
+                console.error('下载失败:', err);
+                btn.disabled = false;
+                txt.innerText = "失败，重试";
+            }
+        }
+
+        // 页面加载完成后初始化
+        window.onload = () => {
+            render();
+            // 使用 requestAnimationFrame 确保 DOM 完全渲染
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    cards.forEach((d, i) => {
+                        drawPattern(`canvas-${i}`);
+                        if (d.type === 'chart-pie') drawPie(`pie-${d.bgSeed}`, d.data);
+                    });
+                    // 初始化 Lucide 图标
+                    if (typeof lucide !== 'undefined') {
+                        lucide.createIcons();
+                    }
+                });
+            });
+        };
+    </script>
+</body>
+</html>

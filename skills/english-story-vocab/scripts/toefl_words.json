@@ -1,0 +1,86 @@
+[
+  {
+    "word": "aerial",
+    "pos": "a.,n.",
+    "definition": "空中的，天线",
+    "example": "An aerial photograph.",
+    "id": 1
+  },
+  {
+    "word": "cheese",
+    "pos": "n.",
+    "definition": "奶酪",
+    "example": "I like cheese.",
+    "id": 2
+  },
+  {
+    "word": "baseball",
+    "pos": "n.",
+    "definition": "棒球",
+    "example": "Play baseball.",
+    "id": 3
+  },
+  {
+    "word": "coast",
+    "pos": "n.",
+    "definition": "海岸",
+    "example": "Live on the coast.",
+    "id": 4
+  },
+  {
+    "word": "bean",
+    "pos": "n.",
+    "definition": "豆",
+    "example": "I like green beans.",
+    "id": 5
+  },
+  {
+    "word": "classmate",
+    "pos": "n.",
+    "definition": "同班同学",
+    "example": "My classmate.",
+    "id": 6
+  },
+  {
+    "word": "could",
+    "pos": "aux.",
+    "definition": "能，可以",
+    "example": "I could help.",
+    "id": 7
+  },
+  {
+    "word": "agree",
+    "pos": "v.",
+    "definition": "同意，赞成",
+    "example": "I agree with you.",
+    "id": 8
+  },
+  {
+    "word": "client",
+    "pos": "n.",
+    "definition": "客户",
+    "example": "Satisfy the client.",
+    "id": 9
+  },
+  {
+    "word": "ambassador",
+    "pos": "n.",
+    "definition": "大使",
+    "example": "The French ambassador hosted a reception.",
+    "id": 10
+  },
+  {
+    "word": "cop",
+    "pos": "n.",
+    "definition": "警察",
+    "example": "Call the cops.",
+    "id": 11
+  },
+  {
+    "word": "controversy",
+    "pos": "n.",
+    "definition": "争议",
+    "example": "The controversy continues.",
+    "id": 12
+  }
+]

@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="format-detection" content="telephone=no">
+    <title>{{headline_title}}</title>
+    <!-- 封面图prompt: {{header_prompt}} -->
+</head>
+<body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Helvetica Neue',Arial,sans-serif;background-color:#f5f7fa;">
+  <div style="max-width:677px;margin:0 auto;background-color:#ffffff;padding:20px;">
+
+    <!-- 1 顶部海报/封面图 HEADER COVER -->
+    <div style="margin:0 0 32px 0;">
+      <img src="{{header_cover_path}}" alt="{{header_cover_alt}}" style="width:100%;display:block;border-radius:8px;" />
+      <div style="text-align:center;color:#8b949e;font-size:12px;margin:8px 0 0 0;">{{header_caption}}</div>
+    </div>
+
+    <!-- 2 刊头信息 ISSUE INFO -->
+    <div style="text-align:center;padding:24px 20px;background:linear-gradient(135deg,#ff6b35 0%,#ff8c61 100%);border-radius:12px;margin:0 0 32px 0;color:#ffffff;">
+      <div style="font-size:24px;font-weight:700;margin:0 0 8px 0;">第 {{issue_number}} 期</div>
+      <div style="font-size:14px;opacity:0.9;">{{publish_date}}</div>
+      <div style="font-size:12px;opacity:0.8;margin-top:8px;">{{slogan}}</div>
+    </div>
+
+    <!-- 3 今日头条 HEADLINE -->
+    <div style="margin:0 0 48px 0;">
+      <div style="font-size:24px;font-weight:700;color:#333333;margin:0 0 20px 0;">今日头条</div>
+      <div style="font-size:20px;font-weight:700;color:#333333;margin:0 0 16px 0;line-height:1.4;">{{headline_title}}</div>
+      {{headline_content}}
+    </div>
+
+    <!-- 4 行业要闻 SUB NEWS (固定4条) -->
+    <div style="margin:0 0 48px 0;">
+      <div style="font-size:20px;font-weight:700;color:#ff6b35;margin:0 0 20px 0;padding-left:12px;border-left:4px solid #ff6b35;">行业要闻</div>
+      {{sub_news}}
+    </div>
+
+    <!-- 5 数据与榜单 DATA CHARTS -->
+    <div style="margin:0 0 48px 0;">
+      <div style="font-size:20px;font-weight:700;color:#ff6b35;margin:0 0 20px 0;padding-left:12px;border-left:4px solid #ff6b35;">数据与榜单</div>
+      {{data_charts}}
+    </div>
+
+    <!-- 6 宝藏工具 TOOLS (≥2个) -->
+    <div style="margin:0 0 48px 0;">
+      <div style="font-size:20px;font-weight:700;color:#ff6b35;margin:0 0 20px 0;padding-left:12px;border-left:4px solid #ff6b35;">宝藏工具</div>
+      {{tools}}
+    </div>
+
+    <!-- 7 每日一言 QUOTE -->
+    <div style="margin:0 0 48px 0;">
+      <div style="font-size:20px;font-weight:700;color:#ff6b35;margin:0 0 20px 0;padding-left:12px;border-left:4px solid #ff6b35;">每日一言</div>
+      {{daily_quote}}
+    </div>
+
+    <!-- 8 参考来源 REFERENCES (正文可见层禁止裸URL) -->
+    <div style="margin:0 0 32px 0;">
+      <div style="font-size:18px;font-weight:700;color:#333333;margin:0 0 12px 0;">参考来源</div>
+      {{references}}
+      <!-- 真实URL用HTML注释保留 -->
+      <!-- {{real_urls}} -->
+    </div>
+
+    <!-- 9 Gate自检摘要 GATE SUMMARY -->
+    <div style="margin:0 0 48px 0;padding:16px;background-color:#f9f9f9;border-radius:8px;">
+      <div style="font-size:16px;font-weight:700;color:#333333;margin:0 0 8px 0;">质量检查</div>
+      <div style="font-size:14px;color:#666666;">{{gate_summary}}</div>
+    </div>
+
+    <!-- 底部信息 FOOTER -->
+    <div style="text-align:center;padding:32px 20px;color:#999999;font-size:14px;border-top:1px solid #f0f0f0;">
+      <p style="margin:0 0 10px 0;">本文由智能体生成，内容仅供参考</p>
+      <p style="margin:0;">转载请注明出处</p>
+    </div>
+
+  </div>
+</body>
+</html>

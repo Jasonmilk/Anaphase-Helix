@@ -1,0 +1,27 @@
+templates:
+  local-llama:
+    description: "Pure local Llama deployment"
+    models:
+      amygdala: "llama3.2:3b"
+      left_brain: "llama3.1:8b"
+      right_brain: "llama3.1:70b"
+    endpoint: "http://localhost:11434"
+    features: ["mock_mode_available"]
+
+  hybrid-qwen:
+    description: "Local Qwen + commercial API hybrid"
+    models:
+      amygdala: "qwen2.5:2b"
+      left_brain: "qwen2.5-coder:7b"
+      right_brain: "deepseek-v3"
+    endpoint: "http://localhost:8686"
+    features: ["affect_enabled", "trace_id_enabled"]
+
+  pure-commercial:
+    description: "Pure commercial API via Tuck"
+    models:
+      amygdala: "gpt-4o-mini"
+      left_brain: "gpt-4o"
+      right_brain: "claude-opus-4"
+    endpoint: "https://api.tuck.gateway"
+    features: ["affect_enabled", "trace_id_enabled", "rate_limiting"]
