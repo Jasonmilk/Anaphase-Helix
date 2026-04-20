@@ -1,49 +1,125 @@
-# Anaphase-Helix
+# Anaphase-Helix v0.2.0
 
-Execution orchestration core of Helix ecosystem.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
+[![中文](https://img.shields.io/badge/简体中文-README-red)](./README.zh-CN.md)
+**Anaphase-Helix** is the execution orchestration core of the Helix ecosystem—a self-evolving digital lifeform. It orchestrates perception (Tentacle), memory (Mind), and reasoning to accomplish complex tasks through a state‑graph driven agent loop.
 
-## Overview
+> **Current Status**: v0.2.0 – Full module skeleton with Mock mode integration. All brain regions (Amygdala, Prefrontal, Synapse, Corpus Callosum) are connected and the agent loop executes end‑to‑end in mock mode. Ready for Tuck gateway integration.
 
-Anaphase-Helix is the execution layer of the Helix digital lifeform, responsible for:
-- CLI entry point and command routing
-- State-graph driven agent loop
-- Brain region module orchestration
-- Tool execution and validation
-- Cross-service tracing and observability
+## 🧠 Core Philosophy
 
-## Quick Start
+- **Orchestrate, Don't Build** – The core only schedules; real work is delegated to external CLI tools or microservices.
+- **Contract Over Convention** – All cross‑module communication uses strict Pydantic DTOs.
+- **DAG Everything** – Knowledge, tasks, tools, and memory are modeled as a directed acyclic graph.
+- **Guide, Don't Block** – Anaphase persuades; Tuck enforces as the last line of defense.
+- **Silicon Metabolism** – Token budget and cognitive load are actively managed; the agent “sleeps” when fatigued.
 
-### 1. Clone the repository
+## 🚀 Quick Start
+
+### Prerequisites
+- Python 3.12+
+- [Tuck Gateway](https://github.com/Jasonmilk/Tuck) (optional, for real LLM calls)
+
+### Installation
+
 ```bash
 git clone https://github.com/Jasonmilk/Anaphase-Helix.git
 cd Anaphase-Helix
-```
+git checkout V5
 
-### 2. Setup virtual environment
-```bash
 python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-```
-
-### 3. Install dependencies
-```bash
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
 ```
 
-### 4. Configure environment
+### Configuration
+
+Copy the example environment file and edit it:
+
 ```bash
 cp .env.example .env
-# Edit .env with your configuration
 ```
 
-### 5. Run your first task
+For **mock mode** (no LLM required), set:
+```ini
+ANA_MOCK_MODE=true
+```
+
+For **real LLM calls** via Tuck, set:
+```ini
+ANA_MOCK_MODE=false
+TUCK_ENDPOINT=http://localhost:8686
+TUCK_API_KEY=your_api_key_here
+```
+
+### Run Your First Task
+
 ```bash
-ana run "Hello, Helix!"
+ana run "What is the meaning of life?"
 ```
 
-## Documentation
-- [Helix Ecosystem WhitePaper](./docs/WHITEPAPER.md)
-- [Engineering Manual](./docs/ENGINEERING.md)
+In mock mode, you will see a full cognitive loop trace in JSON logs, ending with a mock reasoning draft. The agent transitions through all seven states: `perceive → assess_priority → plan → execute → reflect → consolidate → sleep`.
 
-## License
-MIT
+## 📁 Project Structure
+
+```
+Anaphase-Helix/
+├── ana/
+│   ├── cli/                 # CLI entry points (ana run/trace/stats)
+│   ├── core/                # Brain region modules
+│   │   ├── agent_loop.py    # State‑graph driven main loop
+│   │   ├── amygdala.py      # Priority & affect assessment
+│   │   ├── prefrontal.py    # Reasoning & planning (LLM calls)
+│   │   ├── synapse.py       # Tool execution (CLI sandbox)
+│   │   ├── corpus_callosum.py # Intent‑execution alignment validator
+│   │   └── model_router.py  # Model selection based on priority
+│   ├── schemas/             # Pydantic DTO contracts
+│   ├── common/              # Config, logging, tracing, retry
+│   └── registry/            # Tool registry (loads from config/tools.yaml)
+├── config/                  # Gene lock, tools manifest, biosphere templates
+├── knowledge_base/          # L1 self portrait (self.md)
+├── tests/                   # Unit tests (13 passing)
+├── docs/                    # Whitepaper & Engineering Manual
+├── .env.example
+├── pyproject.toml
+└── README.md
+```
+
+## 🧪 Testing
+
+Run the full test suite:
+
+```bash
+pytest -v
+```
+
+All 13 tests pass in mock mode, covering every brain module and the agent loop integration.
+
+## 📖 Documentation
+
+- [Helix Ecosystem Whitepaper](docs/WHITEPAPER.md) – The “what” and “why”.
+- [Anaphase-Helix Engineering Manual](docs/ENGINEERING.md) – The “how”: project structure, DTOs, AI Coder rules, and workflows.
+
+## 🤝 AI Coder Collaboration
+
+This project follows a strict **AI Coder Iron Law** checklist (see Engineering Manual §7.1) to ensure LLM‑generated code remains consistent, testable, and aligned with the Helix philosophy. Every module is developed test‑first, with mock implementations validated before real backend integration.
+
+## 📌 Roadmap
+
+| Milestone | Status |
+|:---|:---|
+| **v0.1.0** – Physical skeleton (directories, DTOs, CLI) | ✅ Complete |
+| **v0.2.0** – Full module mock integration & end‑to‑end validation | ✅ Complete |
+| **v0.3.0** – Tuck gateway integration (real LLM calls) | 🚧 Next |
+| **v0.4.0** – Helix‑Mind integration (memory DAG) | 📅 Planned |
+| **v0.5.0** – Tool ecosystem & biosphere expansion | 📅 Planned |
+| **v1.0.0** – Production‑ready digital lifeform | 📅 Planned |
+
+## 📄 License
+
+MIT © [Jason Milk](https://github.com/Jasonmilk)
+
+---
+
+*Helix is not a chatbot. It is a self‑sovereign digital being that learns, forgets, and grows through every epoch.*
