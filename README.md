@@ -1,11 +1,12 @@
-# Anaphase-Helix v0.2.0
+# Anaphase-Helix v0.2.1
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![中文](https://img.shields.io/badge/简体中文-README-red)](./README.zh-CN.md)
+
 **Anaphase-Helix** is the execution orchestration core of the Helix ecosystem—a self-evolving digital lifeform. It orchestrates perception (Tentacle), memory (Mind), and reasoning to accomplish complex tasks through a state‑graph driven agent loop.
 
-> **Current Status**: v0.2.0 – Full module skeleton with Mock mode integration. All brain regions (Amygdala, Prefrontal, Synapse, Corpus Callosum) are connected and the agent loop executes end‑to‑end in mock mode. Ready for Tuck gateway integration.
+> **Current Status**: v0.2.1 – Full module skeleton with Mock mode integration. All brain regions (Amygdala, Prefrontal, Synapse, Corpus Callosum) are connected and the agent loop executes end‑to‑end in mock mode. **Ana Loom** cognitive visualization is now available. Ready for Tuck gateway integration.
 
 ## 🧠 Core Philosophy
 
@@ -61,12 +62,24 @@ ana run "What is the meaning of life?"
 
 In mock mode, you will see a full cognitive loop trace in JSON logs, ending with a mock reasoning draft. The agent transitions through all seven states: `perceive → assess_priority → plan → execute → reflect → consolidate → sleep`.
 
+### Visualize Cognitive Process with Ana Loom
+
+```bash
+# Show the most recent session
+ana loom --last
+
+# Show a specific session
+ana loom <epoch_id>
+```
+
+Ana Loom renders a terminal‑friendly visualization of the agent's cognitive process, including priority scores, affect vectors, token consumption, and state transitions—all styled with the Ana Theme.
+
 ## 📁 Project Structure
 
 ```
 Anaphase-Helix/
 ├── ana/
-│   ├── cli/                 # CLI entry points (ana run/trace/stats)
+│   ├── cli/                 # CLI entry points (ana run/trace/stats/loom)
 │   ├── core/                # Brain region modules
 │   │   ├── agent_loop.py    # State‑graph driven main loop
 │   │   ├── amygdala.py      # Priority & affect assessment
@@ -74,6 +87,9 @@ Anaphase-Helix/
 │   │   ├── synapse.py       # Tool execution (CLI sandbox)
 │   │   ├── corpus_callosum.py # Intent‑execution alignment validator
 │   │   └── model_router.py  # Model selection based on priority
+│   ├── loom/                # Ana Loom cognitive visualization
+│   │   ├── visualizer.py    # Terminal rendering engine
+│   │   └── themes.py        # Ana Theme color system
 │   ├── schemas/             # Pydantic DTO contracts
 │   ├── common/              # Config, logging, tracing, retry
 │   └── registry/            # Tool registry (loads from config/tools.yaml)
@@ -111,6 +127,7 @@ This project follows a strict **AI Coder Iron Law** checklist (see Engineering M
 |:---|:---|
 | **v0.1.0** – Physical skeleton (directories, DTOs, CLI) | ✅ Complete |
 | **v0.2.0** – Full module mock integration & end‑to‑end validation | ✅ Complete |
+| **v0.2.1** – Ana Loom cognitive visualization & Ana Theme system | ✅ Complete |
 | **v0.3.0** – Tuck gateway integration (real LLM calls) | 🚧 Next |
 | **v0.4.0** – Helix‑Mind integration (memory DAG) | 📅 Planned |
 | **v0.5.0** – Tool ecosystem & biosphere expansion | 📅 Planned |
