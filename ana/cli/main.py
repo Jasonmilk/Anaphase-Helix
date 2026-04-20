@@ -4,6 +4,7 @@ from importlib.metadata import version, PackageNotFoundError
 from .run import run
 from .trace import trace
 from .stats import stats
+from .loom import loom    # 新增导入
 
 
 try:
@@ -22,3 +23,4 @@ def cli():
 cli.add_command(run)
 cli.add_command(trace)
 cli.add_command(stats)
+cli.add_command(loom)    # 新增注册

@@ -1,15 +1,13 @@
 """State-graph driven Agent Loop core."""
 
+from pathlib import Path
 from typing import Dict, Callable, Literal
 from datetime import datetime
 
-from ana.common import logger, get_settings
+from ana.common import logger, get_settings, add_file_logger
 from ana.schemas.state import HelixState
-from ana.schemas.priority import PriorityAssessment
-from ana.schemas.affect import AffectVector
-from ana.schemas.reasoning import ReasoningRequest, ReasoningDraft
-from ana.schemas.tool import ExecutionRequest, ExecutionResult
-from ana.schemas.validation import ValidationResult
+from ana.schemas.reasoning import ReasoningRequest
+from ana.schemas.tool import ExecutionRequest
 
 from .amygdala import Amygdala
 from .prefrontal import Prefrontal
@@ -77,6 +75,10 @@ class AgentLoop:
         Returns:
             Final HelixState after loop completion.
         """
+        # Persist logs to file for Ana Loom and HXR audit compliance
+        log_file = Path(self.settings.hxr_dir) / f"{state.epoch_id}.jsonl"
+        add_file_logger(log_file)
+
         logger.info("agent_loop.start", epoch_id=state.epoch_id, trace_id=state.trace_id)
 
         if self.settings.mock_mode:
