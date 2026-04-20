@@ -56,6 +56,7 @@ def run(task, direct):
         task=task,
         created_at=datetime.now(),
         metabolism=metabolism,
+        current_step="perceive",
     )
     
     # Run agent loop
@@ -64,7 +65,18 @@ def run(task, direct):
         raise NotImplementedError("Direct chat mode is not implemented yet")
     else:
         # Full agent loop
-        loop = AgentLoop(settings)
-        asyncio.run(loop.run(state))
+        loop = AgentLoop()
+        final_state = asyncio.run(loop.run(state))
+        
+        # Display result to user
+        if final_state.reasoning_draft:
+            if final_state.reasoning_draft.final_reply:
+                click.echo(final_state.reasoning_draft.final_reply)
+            elif final_state.reasoning_draft.reasoning:
+                click.echo(f"[Reasoning] {final_state.reasoning_draft.reasoning[:500]}...")
+            else:
+                click.echo(f"Task completed. Final step: {final_state.current_step}")
+        else:
+            click.echo(f"Task completed. Final step: {final_state.current_step}")
     
     logger.info("command.complete", command="run", epoch_id=epoch_id)

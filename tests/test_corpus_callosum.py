@@ -1,13 +1,28 @@
 import pytest
 from ana.core.corpus_callosum import CorpusCallosumValidator
+from ana.schemas.validation import ValidationResult
 
 
-def test_corpus_callosum_init(mock_settings):
-    validator = CorpusCallosumValidator(mock_settings)
-    assert validator.settings == mock_settings
+def test_corpus_callosum_init():
+    validator = CorpusCallosumValidator()
+    assert validator.settings is not None
 
 
-def test_corpus_callosum_validate_not_implemented(mock_settings, trace_id):
-    validator = CorpusCallosumValidator(mock_settings)
-    with pytest.raises(NotImplementedError):
-        validator.validate("test intent", "test action", trace_id)
+def test_validate_mock_mode(monkeypatch, trace_id):
+    from ana.common import get_settings
+    settings = get_settings()
+    monkeypatch.setattr(settings, "mock_mode", True)
+
+    validator = CorpusCallosumValidator()
+    result = validator.validate(
+        intent="Fetch user data from API",
+        action="Execute tool 'api_fetch' with params",
+        trace_id=trace_id,
+    )
+
+    assert isinstance(result, ValidationResult)
+    assert result.passed is True
+    assert result.reason is None
+    assert result.action == "proceed"
+    assert result.flags == {}
+    assert result.mismatch_report is None
