@@ -50,3 +50,6 @@ Thumbs.db
 .git/
 docs/ENGINEERING.md
 docs/WHITEPAPER.md
+
+# Skills and external tools (should be managed separately)
+/skills/
