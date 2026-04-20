@@ -51,5 +51,5 @@ Thumbs.db
 docs/ENGINEERING.md
 docs/WHITEPAPER.md
 
-# Skills and external tools (should be managed separately)
-# /skills/
+# 保留 skills 目录，忽略内部所有内容
+skills/**/*
