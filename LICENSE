@@ -1,7 +1,6 @@
 MIT License
 
-Copyright (c) 2024-2026 Jason Milk
-<https://github.com/Jasonmilk/Anaphase-Helix>
+Copyright (c) 2026 Jasonmilk
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -20,9 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
----
-# 附加声明
-本模块为Anaphase-Helix生态的配套组件，由Jason Milk原创开发，完整著作权归原作者所有。
-本项目名称、Anaphase-Helix生态品牌均为原作者专属所有，未经书面授权，不得使用上述品牌名称进行商业宣传。
-所有衍生使用均需保留原作者署名与原项目仓库链接。
