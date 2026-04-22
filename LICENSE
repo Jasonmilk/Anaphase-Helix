@@ -13,13 +13,6 @@ furnished to do so, subject to the following conditions:
 The above copyright notice and this permission notice shall be included in all
 copies or substantial portions of the Software.
 
----
-ADDITIONAL ATTRIBUTION & BRAND DECLARATION (Non-restrictive, legally compliant with MIT License)
-1.  Original Authorship Statement: Anaphase, the core execution orchestration engine of the Helix Ecosystem, is originally created by Jason Milk. All modules in the Helix Ecosystem (including but not limited to Helix-Mind, Helix-Tentacle, Tuck) are supporting components of the Anaphase-Helix ecosystem, with the original copyright owned by Jason Milk.
-2.  Mandatory Attribution Requirement: When distributing, modifying or commercially using this Software, you must retain the complete original copyright notice, the link to the original GitHub repository of this project, and the original author's attribution (Jason Milk) in the root directory of the source code, distribution package, product documentation and API documentation, and shall not delete, tamper with or hide them.
-3.  Brand & Trademark Exclusive Right: The project names "Anaphase", "Anaphase-Helix", "Helix", "Helix-Mind", "Helix-Tentacle", "Tuck", as well as the project logos and brand identifiers, are the exclusive property of the original author. MIT License only grants the right to use the source code, and does not grant any right to use the above project names, brands and logos for commercial promotion, derivative product publicity or any act that may cause confusion about the original authorship without the written authorization of the original author.
-4.  No Implied Endorsement: No one may use the name of the original author or the project brand to promote derivative works without written authorization, nor may they imply any endorsement or cooperation with the original project.
-
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -27,3 +20,9 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+---
+# 附加声明
+本模块为Anaphase-Helix生态的配套组件，由Jason Milk原创开发，完整著作权归原作者所有。
+本项目名称、Anaphase-Helix生态品牌均为原作者专属所有，未经书面授权，不得使用上述品牌名称进行商业宣传。
+所有衍生使用均需保留原作者署名与原项目仓库链接。
