@@ -1,26 +1,29 @@
-# Anaphase-Helix v0.3.0
+# Anaphase-Helix v0.3.1
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
+[![Python](https://img.shields.io/badge/Python-3.11+-blue?logo=python)](https://python.org)
+[![Ruff](https://img.shields.io/badge/linter-Ruff-brightgreen)](https://github.com/astral-sh/ruff)
 [![中文](https://img.shields.io/badge/简体中文-README-red)](./README.zh-CN.md)
 
-**Anaphase-Helix** is the execution orchestration core of the Helix ecosystem—a self-evolving digital lifeform. It orchestrates perception (Tentacle), memory (Mind), and reasoning to accomplish complex tasks through a state‑graph driven agent loop.
+**Anaphase-Helix** is the execution orchestration core of the Helix ecosystem — a self-evolving digital lifeform. It orchestrates perception (Tentacle), memory (Mind), and reasoning to accomplish complex tasks through a state‑graph driven agent loop.
 
-> **Current Status**: v0.3.0 – Tuck gateway integration complete. All brain modules (Amygdala, Prefrontal, Synapse, Corpus Callosum) now support real LLM calls via Tuck. Ana Loom cognitive visualization available. End‑to‑end real inference validated.
+> **Current Status**: v0.3.1 — Cellrix integration complete. `ana loom --cellrix` produces a three‑panel interactive cognitive dashboard. Zero‑config onboarding via layered degradation: Mock mode is enabled by default, production mode fails fast on missing deps. All brain modules support real LLM calls via Tuck.
 
 ## 🧠 Core Philosophy
 
-- **Orchestrate, Don't Build** – The core only schedules; real work is delegated to external CLI tools or microservices.
-- **Contract Over Convention** – All cross‑module communication uses strict Pydantic DTOs.
-- **DAG Everything** – Knowledge, tasks, tools, and memory are modeled as a directed acyclic graph.
-- **Guide, Don't Block** – Anaphase persuades; Tuck enforces as the last line of defense.
-- **Silicon Metabolism** – Token budget and cognitive load are actively managed; the agent “sleeps” when fatigued.
+- **Orchestrate, Don't Build** — The core only schedules; real work is delegated to external CLI tools or microservices.
+- **Contract Over Convention** — All cross‑module communication uses strict Pydantic DTOs.
+- **DAG Everything** — Knowledge, tasks, tools, and memory are modeled as a directed acyclic graph.
+- **Guide, Don't Block** — Anaphase persuades; Tuck enforces as the last line of defense.
+- **Silicon Metabolism** — Token budget and cognitive load are actively managed; the agent "sleeps" when fatigued.
+- **Pure I/O** — `stdout` is reserved for data contracts (Manifest JSON, LLM replies); `stderr` carries diagnostics only.
 
 ## 🚀 Quick Start
 
 ### Prerequisites
-- Python 3.12+
+- Python 3.11+
 - [Tuck Gateway](https://github.com/Jasonmilk/Tuck) (optional, for real LLM calls)
+- [Cellrix](https://github.com/Jasonmilk/Cellrix) (optional, for interactive cognitive dashboards)
 
 ### Installation
 
@@ -34,31 +37,33 @@ source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
 ```
 
-### Configuration
+### Zero‑Config Start
 
-Copy the example environment file and edit it:
+Anaphase ships with Mock mode enabled by default. No `.env` file, no external services required:
 
 ```bash
-cp .env.example .env
+ana run "What is the meaning of life?"
 ```
 
-For **mock mode** (no LLM required), set:
-```ini
-ANA_MOCK_MODE=true
-```
+The agent will execute a full seven‑state cognitive loop using mock responses. All cognitive logs go to `stderr` — your terminal stays clean.
 
-For **real LLM calls** via Tuck, set:
+### Production Mode
+
+When you're ready to connect real LLM and memory nodes, create a `.env` file:
+
 ```ini
 ANA_MOCK_MODE=false
-TUCK_ENDPOINT=http://localhost:8686
-TUCK_API_KEY=your_api_key_here
-TUCK_CHAT_PATH=/v1/chat/completions   # Default OpenAI-compatible path
-TUCK_TIMEOUT=30                        # Request timeout in seconds
+TUCK_ENDPOINT=http://your-tuck-host:8686
+TUCK_API_KEY=your_api_key
+TUCK_CHAT_PATH=/v1/chat/completions
+HELIX_MIND_ENDPOINT=http://your-mind-host:8020
 ```
+
+Missing any required variable in production mode triggers an immediate, descriptive error — no silent failures.
 
 ### Model Configuration
 
-Ensure the model names in `.env` match those available on your Tuck instance:
+Ensure the model names match those available on your Tuck instance:
 
 ```ini
 ANA_AMYGDALA_MODEL=Qwen3.5-2B-IQ4_NL.gguf
@@ -66,25 +71,57 @@ ANA_LEFT_BRAIN_MODEL=Qwen2.5.1-Coder-7B-Instruct-Q4_K_M.gguf
 ANA_RIGHT_BRAIN_MODEL=DeepSeek-R1-0528-Qwen3-8B-IQ4_NL.gguf
 ```
 
-### Run Your First Task
+## 📊 Visualize Cognitive Processes
+
+Anaphase speaks the [Cellrix Intents Specification (CIS)](https://github.com/Jasonmilk/Cellrix/blob/main/CIS.md). A `cellrix_manifest.json` in the project root declares Anaphase as an intent producer — no Cellrix dependency is installed into Anaphase. Communication is pure JSON over `stdout`.
+
+### Level 1: Terminal Dashboard (Zero‑Config)
 
 ```bash
-ana run "What is the meaning of life?"
+ana run "analyze quantum computing's impact on cryptography"
+# ... cognitive loop runs, logs go to stderr ...
+
+# Generate Cellrix Manifest and preview it
+ana loom --last --cellrix > session.json
+cellrix preview session.json
 ```
 
-In mock mode, you will see a full cognitive loop trace in JSON logs, ending with a mock reasoning draft. In real mode, the agent will call Tuck to generate actual LLM responses. The agent transitions through all seven states: `perceive → assess_priority → plan → execute → reflect → consolidate → sleep`.
+You'll see a three‑panel interactive dashboard:
 
-### Visualize Cognitive Process with Ana Loom
+```
+╭─  state_graph  ─────────────────────────╮╭─  detail_panel  ────────────────────────╮
+│ Agent Loop State Graph                  ││ Key Metrics                             │
+│   ├── 👁 perceive                        ││ Priority Score : 85                      │
+│   ├── ⚖ assess_priority                 ││ Intent        : knowledge_retrieval      │
+│   ├── 🧭 plan                           ││ Heliotropism  : -0.25                   │
+│   ├── ⚡ execute                        ││ Pulse         : 0.68                    │
+│   ├── 🪞 reflect                        ││ Vigilance     : 0.71                    │
+│   ├── 🛡 validate                        ││ Validation    : PASSED                  │
+│   ├── 📦 consolidate                    ││ Tokens Used   : 100 / 4096 (2.4%)        │
+│   └── 🌙 sleep                          │╰─────────────────────────────────────────╯
+╰─────────────────────────────────────────╯
+╭─  event_log  ───────────────────────────────────────────────────────────────────────╮
+│ • start  👁 perceive  ⚖ assess_priority  🧭 plan  ⚡ execute  🪞 reflect  🛡 validate  │
+╰─────────────────────────────────────────────────────────────────────────────────────╯
+```
+
+### Level 2: Interactive Controls
+
+| Key | Action |
+|:---|:---|
+| `Tab` / `Shift+Tab` | Cycle focus between panels (focused panel highlights green) |
+| `F1` | Full‑screen help showing all shortcuts |
+| `q` | Quit preview (terminal fully restored) |
+
+No configuration needed — these work out of the box.
+
+### Level 3: Legacy Terminal Rendering
+
+Prefer the original Rich‑based rendering? It's still available:
 
 ```bash
-# Show the most recent session
 ana loom --last
-
-# Show a specific session
-ana loom <epoch_id>
 ```
-
-Ana Loom renders a terminal‑friendly visualization of the agent's cognitive process, including priority scores, affect vectors, token consumption, and state transitions—all styled with the Ana Theme.
 
 ## 📁 Project Structure
 
@@ -100,7 +137,8 @@ Anaphase-Helix/
 │   │   ├── corpus_callosum.py # Intent‑execution alignment validator
 │   │   └── model_router.py  # Model selection based on priority
 │   ├── loom/                # Ana Loom cognitive visualization
-│   │   ├── visualizer.py    # Terminal rendering engine
+│   │   ├── cellrix_bridge.py # HXR → Cellrix Manifest compiler
+│   │   ├── visualizer.py    # Legacy Rich rendering engine
 │   │   └── themes.py        # Ana Theme color system
 │   ├── schemas/             # Pydantic DTO contracts
 │   ├── common/              # Config, logging, tracing, retry
@@ -109,14 +147,13 @@ Anaphase-Helix/
 ├── knowledge_base/          # L1 self portrait (self.md)
 ├── tests/                   # Unit tests (13 passing)
 ├── docs/                    # Whitepaper & Engineering Manual
+├── cellrix_manifest.json    # CIS intent producer declaration
 ├── .env.example
 ├── pyproject.toml
 └── README.md
 ```
 
 ## 🧪 Testing
-
-Run the full test suite:
 
 ```bash
 pytest -v
@@ -126,8 +163,8 @@ All 13 tests pass, covering every brain module and the agent loop integration. M
 
 ## 📖 Documentation
 
-- [Helix Ecosystem Whitepaper](docs/WHITEPAPER.md) – The “what” and “why”.
-- [Anaphase-Helix Engineering Manual](docs/ENGINEERING.md) – The “how”: project structure, DTOs, AI Coder rules, and workflows.
+- [Helix Ecosystem Whitepaper](docs/WHITEPAPER.md) — The "what" and "why".
+- [Anaphase-Helix Engineering Manual](docs/ENGINEERING.md) — The "how": project structure, DTOs, AI Coder rules, and workflows.
 
 ## 🤝 AI Coder Collaboration
 
@@ -137,13 +174,14 @@ This project follows a strict **AI Coder Iron Law** checklist (see Engineering M
 
 | Milestone | Status |
 |:---|:---|
-| **v0.1.0** – Physical skeleton (directories, DTOs, CLI) | ✅ Complete |
-| **v0.2.0** – Full module mock integration & end‑to‑end validation | ✅ Complete |
-| **v0.2.1** – Ana Loom cognitive visualization & Ana Theme system | ✅ Complete |
-| **v0.3.0** – Tuck gateway integration (real LLM calls) | ✅ Complete |
-| **v0.4.0** – Helix‑Mind integration (memory DAG) | 🚧 Next |
-| **v0.5.0** – Tool ecosystem & biosphere expansion | 📅 Planned |
-| **v1.0.0** – Production‑ready digital lifeform | 📅 Planned |
+| **v0.1.0** — Physical skeleton (directories, DTOs, CLI) | ✅ Complete |
+| **v0.2.0** — Full module mock integration & end‑to‑end validation | ✅ Complete |
+| **v0.2.1** — Ana Loom cognitive visualization & Ana Theme system | ✅ Complete |
+| **v0.3.0** — Tuck gateway integration (real LLM calls) | ✅ Complete |
+| **v0.3.1** — Cellrix CIS integration, zero‑config onboarding, Pure I/O | ✅ Complete |
+| **v0.4.0** — Helix‑Mind integration (memory DAG) | 🚧 Next |
+| **v0.5.0** — Tool ecosystem & biosphere expansion | 📅 Planned |
+| **v1.0.0** — Production‑ready digital lifeform | 📅 Planned |
 
 ## 📄 License
 
