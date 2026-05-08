@@ -134,7 +134,7 @@ Anaphase-Helix/
 │   │   ├── amygdala.py      # Priority & affect assessment (real Tuck calls)
 │   │   ├── prefrontal.py    # Reasoning & planning (real Tuck calls)
 │   │   ├── synapse.py       # Tool execution (CLI sandbox)
-│   │   ├── corpus_callosum.py # Intent‑execution alignment validator
+│   │   ├── commissure.py    # CommissuralGate — intent‑execution alignment validator
 │   │   └── model_router.py  # Model selection based on priority
 │   ├── loom/                # Ana Loom cognitive visualization
 │   │   ├── cellrix_bridge.py # HXR → Cellrix Manifest compiler
@@ -178,7 +178,7 @@ This project follows a strict **AI Coder Iron Law** checklist (see Engineering M
 | **v0.2.0** — Full module mock integration & end‑to‑end validation | ✅ Complete |
 | **v0.2.1** — Ana Loom cognitive visualization & Ana Theme system | ✅ Complete |
 | **v0.3.0** — Tuck gateway integration (real LLM calls) | ✅ Complete |
-| **v0.3.1** — Cellrix CIS integration, zero‑config onboarding, Pure I/O | ✅ Complete |
+| **v0.3.1** — Cellrix CIS integration, zero‑config onboarding, Pure I/O, CommissuralGate renaming | ✅ Complete |
 | **v0.4.0** — Helix‑Mind integration (memory DAG) | 🚧 Next |
 | **v0.5.0** — Tool ecosystem & biosphere expansion | 📅 Planned |
 | **v1.0.0** — Production‑ready digital lifeform | 📅 Planned |
