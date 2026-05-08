@@ -1,11 +1,11 @@
 import pytest
-from ana.core.corpus_callosum import CorpusCallosumValidator
+from ana.core.commissure import CommissuralGate
 from ana.schemas.validation import ValidationResult
 
 
-def test_corpus_callosum_init():
-    validator = CorpusCallosumValidator()
-    assert validator.settings is not None
+def test_commissural_gate_init():
+    gate = CommissuralGate()
+    assert gate.settings is not None
 
 
 def test_validate_mock_mode(monkeypatch, trace_id):
@@ -13,8 +13,8 @@ def test_validate_mock_mode(monkeypatch, trace_id):
     settings = get_settings()
     monkeypatch.setattr(settings, "mock_mode", True)
 
-    validator = CorpusCallosumValidator()
-    result = validator.validate(
+    gate = CommissuralGate()
+    result = gate.validate(
         intent="Fetch user data from API",
         action="Execute tool 'api_fetch' with params",
         trace_id=trace_id,

@@ -2,7 +2,7 @@ from .agent_loop import AgentLoop
 from .amygdala import Amygdala
 from .prefrontal import Prefrontal
 from .synapse import Synapse
-from .corpus_callosum import CorpusCallosumValidator
+from .commissure import CommissuralGate
 from .model_router import ModelRouter
 
 __all__ = [
@@ -10,6 +10,6 @@ __all__ = [
     "Amygdala",
     "Prefrontal",
     "Synapse",
-    "CorpusCallosumValidator",
+    "CommissuralGate",
     "ModelRouter",
 ]

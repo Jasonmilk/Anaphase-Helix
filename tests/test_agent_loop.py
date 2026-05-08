@@ -14,7 +14,7 @@ def test_agent_loop_init():
     assert loop.amygdala is not None
     assert loop.prefrontal is not None
     assert loop.synapse is not None
-    assert loop.validator is not None
+    assert loop.gate is not None    # 原为 loop.validator
 
 
 @pytest.mark.asyncio
@@ -35,7 +35,7 @@ async def test_run_mock_mode(monkeypatch, trace_id, epoch_id):
     state = HelixState(
         epoch_id=epoch_id,
         trace_id=trace_id,
-        task="What is the capital of France?",
+        task="test commissural gate via agent loop",
         created_at=datetime.now(),
         metabolism=metabolism,
         current_step="perceive",

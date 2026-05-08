@@ -1,0 +1,61 @@
+{
+  "version": "2.0",
+  "layout": {
+    "direction": "vertical",
+    "slots": [
+      {
+        "id": "top_row",
+        "weight": 1,
+        "layout": {
+          "direction": "horizontal",
+          "slots": [
+            {
+              "id": "state_pane",
+              "weight": 1
+            },
+            {
+              "id": "metrics_pane",
+              "weight": 1
+            }
+          ]
+        }
+      },
+      {
+        "id": "timeline_pane",
+        "weight": 2
+      }
+    ]
+  },
+  "cells": [
+    {
+      "id": "state_graph",
+      "type": "static",
+      "slot": "state_pane",
+      "content": "Agent Loop State Graph\n══════════════════════\n\n  ├── • start\n  ├── 👁 perceive\n  ├── ⚖ assess_priority\n  ├── 🧭 plan\n  ├── ⚡ execute\n  ├── 🪞 reflect\n  ├── 🛡 validate\n  ├── 📦 consolidate\n  └── 🌙 sleep\n\nEpoch : epoch_e76c3a07642b\nTrace : d2a7b5be534344ba…\nTask  : unknown",
+      "minConstraint": {
+        "width": 30,
+        "height": 8
+      }
+    },
+    {
+      "id": "detail_panel",
+      "type": "static",
+      "slot": "metrics_pane",
+      "content": "Key Metrics\n═══════════\n\nPriority Score : 85\nIntent        : knowledge_retrieval\nHeliotropism  : -0.25\nPulse         : 0.68\nVigilance     : 0.71\nValidation    : PASSED\nTokens Used   : 100 / 4096 (2.4%)\n               [░░░░░░░░░░░░░░░░░░░░]\n\nTotal Events  : 15",
+      "minConstraint": {
+        "width": 30,
+        "height": 8
+      }
+    },
+    {
+      "id": "event_log",
+      "type": "static",
+      "slot": "timeline_pane",
+      "content": "Event Timeline\n═════════════\n\n• start\n👁 perceive\n⚖ assess_priority\n🧭 plan\n⚡ execute\n🪞 reflect\n🛡 validate\n📦 consolidate\n🌙 sleep",
+      "collapseMode": "scroll",
+      "minConstraint": {
+        "height": 6
+      }
+    }
+  ]
+}

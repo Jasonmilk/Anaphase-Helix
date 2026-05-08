@@ -11,7 +11,7 @@ from ana.schemas.tool import ExecutionRequest
 from .amygdala import Amygdala
 from .prefrontal import Prefrontal
 from .synapse import Synapse
-from .corpus_callosum import CorpusCallosumValidator
+from .commissure import CommissuralGate
 from ana.registry import ToolRegistry
 
 
@@ -29,7 +29,7 @@ class AgentLoop:
         self.prefrontal = Prefrontal()
         self.tool_registry = ToolRegistry(self.settings.tools_path)
         self.synapse = Synapse(self.tool_registry)
-        self.validator = CorpusCallosumValidator()
+        self.gate = CommissuralGate()
 
         # Declarative transition matrix: current_step -> next_step -> condition
         self.transitions: Dict[
@@ -121,7 +121,7 @@ class AgentLoop:
         else:
             logger.info("agent_loop.execute", skipped=True)
 
-        # Step 5: Reflect (Amygdala affect + Corpus Callosum)
+        # Step 5: Reflect (Amygdala affect + Commissural Gate)
         state.current_step = "reflect"
         affect = self.amygdala.evaluate_affect(
             state.task,
@@ -137,7 +137,7 @@ class AgentLoop:
         )
 
         # Validate intent-execution alignment
-        validation = self.validator.validate(
+        validation = self.gate.validate(
             intent=state.task,
             action=draft.reasoning or draft.final_reply or "",
             trace_id=state.trace_id,
