@@ -1,5 +1,6 @@
 """Structured logging configuration — HXR JSONL format."""
 
+import sys
 import logging
 import structlog
 from pathlib import Path
@@ -9,17 +10,18 @@ def configure_logging() -> None:
     """
     Configure structlog to use standard logging module.
 
-    This allows both console output (via StreamHandler) and file persistence
-    (via FileHandler added by `add_file_logger`) to work seamlessly.
+    Console output goes to stderr so that stdout remains clean
+    for data contracts (Manifest JSON, LLM replies, etc.).
+    File persistence is provided by `add_file_logger`.
     """
-    # Configure standard logging with a console handler
+    # Standard logging: output raw messages to stderr
     logging.basicConfig(
         level=logging.INFO,
         format="%(message)s",               # Raw message, structlog already formats JSON
-        handlers=[logging.StreamHandler()]  # Console output
+        handlers=[logging.StreamHandler(stream=sys.stderr)]  # stderr to protect stdout
     )
 
-    # Configure structlog to use standard logging factory
+    # Structlog: use stdlib logging factory
     structlog.configure(
         processors=[
             structlog.contextvars.merge_contextvars,
