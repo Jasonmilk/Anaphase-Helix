@@ -1,8 +1,8 @@
 {
   "bridge": {
     "type": "cli_subprocess",
-    "command": ["ana", "loom", "--last", "--cellrix"],
-    "description": "Anaphase-Helix 认知过程可视化器。为最近一次纪元输出 Cellrix Manifest。"
+    "command": ["python", "-m", "ana.cli", "loom", "--last", "--cellrix"],
+    "description": "Anaphase-Helix cognitive process visualizer. Outputs the Cellrix Manifest for the most recent epoch."
   },
   "config": {
     "epoch_id": null,

@@ -40,6 +40,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "anyio", specifier = ">=4.0" },
+    { name = "cellrix-textual", marker = "extra == 'textual'", directory = "/opt/Cellrix/adapters/textual" },
     { name = "click", specifier = ">=8.0" },
     { name = "hypothesis", marker = "extra == 'dev'" },
     { name = "mypy", marker = "extra == 'dev'" },
@@ -52,7 +53,7 @@ requires-dist = [
     { name = "rich", specifier = ">=13.0" },
     { name = "ruff", marker = "extra == 'dev'" },
 ]
-provides-extras = ["dev"]
+provides-extras = ["dev", "textual"]
 
 [[package]]
 name = "cellrix-textual"
@@ -234,19 +235,19 @@ dependencies = [
 
 [package.optional-dependencies]
 dev = [
+    { name = "cellrix-core" },
+    { name = "cellrix-textual" },
     { name = "pytest" },
     { name = "pytest-archon" },
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
     { name = "ruff" },
 ]
-textual = [
-    { name = "cellrix-textual" },
-]
 
 [package.metadata]
 requires-dist = [
-    { name = "cellrix-textual", marker = "extra == 'textual'", directory = "/opt/Cellrix/adapters/textual" },
+    { name = "cellrix-core", marker = "extra == 'dev'", directory = "/opt/Cellrix" },
+    { name = "cellrix-textual", marker = "extra == 'dev'", directory = "/opt/Cellrix/adapters/textual" },
     { name = "click", specifier = ">=8.1" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "pydantic", specifier = ">=2.0" },
@@ -262,7 +263,7 @@ requires-dist = [
     { name = "structlog", specifier = ">=24.0" },
     { name = "tenacity", specifier = ">=9.0" },
 ]
-provides-extras = ["dev", "textual"]
+provides-extras = ["dev"]
 
 [[package]]
 name = "httpcore"
