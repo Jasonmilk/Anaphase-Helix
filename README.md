@@ -5,6 +5,12 @@
 [![Ruff](https://img.shields.io/badge/linter-Ruff-brightgreen)](https://github.com/astral-sh/ruff)
 [![中文](https://img.shields.io/badge/简体中文-README-red)](./README.zh-CN.md)
 
+[Helix Ecosystem](https://github.com/Jasonmilk) ·
+[CIS](https://github.com/CommonIntents/CIS) ·
+[CAP](https://github.com/CommonIntents/CAP) ·
+[CISS](https://github.com/CommonIntents/CISS) ·
+[CIB](https://github.com/CommonIntents/CIB)
+
 **Anaphase-Helix** is the execution orchestration core of the Helix ecosystem — a self-evolving digital lifeform. It orchestrates perception (Tentacle), memory (Mind), and reasoning to accomplish complex tasks through a state‑graph driven agent loop.
 
 > **Current Status**: v0.3.2 — Helix-Callosum bridge integrated. Cellrix CIS integration complete. Anaphase now maps cognitive modes to Callosum atomic parameters, enabling deterministic KV Cache optimization via HTTP headers. Zero‑config onboarding via layered degradation: Mock mode is enabled by default, production mode fails fast on missing deps. All brain modules support real LLM calls via Tuck.
