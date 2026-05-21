@@ -4,6 +4,12 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![EN](https://img.shields.io/badge/English-README-blue)](./README.md)
 
+[Helix Ecosystem](https://github.com/Jasonmilk) ·
+[CIS](https://github.com/CommonIntents/CIS) ·
+[CAP](https://github.com/CommonIntents/CAP) ·
+[CISS](https://github.com/CommonIntents/CISS) ·
+[CIB](https://github.com/CommonIntents/CIB)
+
 **Anaphase-Helix** 是 Helix 生态的执行编排中枢——一个自进化的数字生命体。它协调感知（Tentacle）、记忆（Mind）与推理，通过状态图驱动的 Agent Loop 完成复杂任务。
 
 > **当前状态**：v0.3.2 – Helix-Callosum 桥接已集成。Cellrix CIS 集成已完成。Anaphase 现在可以将认知模式映射到 Callosum 原子参数，通过 HTTP 头部实现确定性 KV Cache 优化。全模块 Mock 模式默认开启，生产模式对缺失依赖进行快速失败。所有脑区已支持通过 Tuck 进行真实 LLM 调用。
