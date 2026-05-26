@@ -4,6 +4,7 @@
 ![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)
 ![Build](https://img.shields.io/badge/Build-Passing-brightgreen.svg)
 ![Style](https://img.shields.io/badge/Code%20Style-Google-black.svg)
+![Tests](https://img.shields.io/badge/Tests-14%2F14-passing-green.svg)
 
 **The silicon-based operating system & physical brain for digital lifeforms.
 Perceive, reason, act, remember, and immunize — the body that houses the soul.**
@@ -27,6 +28,7 @@ via the CommonIntents protocol stack with zero hard coupling.
 - 🧬 **Amygdala Pre-Assessment** — Onboard emotional vector algorithm (no external dependencies)
 - 🛠️ **Safety-First Execution** — Audited tool calls & immune system interception
 - 🚀 **Zero-Dependency Boot** — Runs fully offline without any external services
+- ✅ **Full Test Coverage** — 14/14 passing integration tests
 
 ## Project Structure
 
@@ -35,7 +37,8 @@ anaphase-helix/
 ├── Cargo.toml              # Rust package & dependencies
 ├── config.toml             # Service endpoints & cognitive config
 ├── src/
-│   ├── main.rs             # CLI entry + engine initialization
+│   ├── lib.rs              # Core library (public API + modules)
+│   ├── main.rs             # CLI entry (lightweight starter)
 │   ├── agent_loop.rs       # 7-state cognitive engine (DAG-driven)
 │   ├── reflex.rs           # Somatic immune system (hard + soft reflex)
 │   ├── adapters/mod.rs     # Adapter traits + Noop fallback implementations
@@ -43,7 +46,7 @@ anaphase-helix/
 │   ├── amygdala.rs         # Emotional vector computation
 │   └── syscall.rs          # System call table (reserved)
 └── tests/
-    └── integration_test.rs # Full cognitive cycle tests
+    └── integration_test.rs # Full cognitive cycle tests (14 tests)
 ```
 
 ## Quick Start
@@ -56,6 +59,20 @@ cargo run
 
 You will see a full cycle:
 `Perception → PreAssessment → MemoryRetrieval → Reasoning → ReflexCheck → Execution → Reflection`
+
+## Testing
+
+Run the full integration test suite (**14/14 passing**):
+```bash
+cargo test
+```
+
+Tests cover:
+- All Noop adapter implementations
+- Hard & soft reflex validation
+- Dangerous action interception
+- End-to-end cognitive cycle
+- State machine transitions
 
 ## Architecture
 
