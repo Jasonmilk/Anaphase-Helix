@@ -1,12 +1,6 @@
-mod adapters;
-mod states;
-mod reflex;
-mod agent_loop;
-mod config;
-
-use adapters::*;
-use agent_loop::AgentLoop;
-use reflex::ReflexArc;
+use anaphase::adapters::*;
+use anaphase::agent_loop::AgentLoop;
+use anaphase::reflex::ReflexArc;
 use std::sync::Arc;
 
 #[tokio::main]
@@ -14,7 +8,7 @@ async fn main() {
     // Initialize logging
     tracing_subscriber::fmt::init();
 
-    // Initialize all Noop adapters (runs without external dependencies)
+    // Create all adapters with Noop implementations (zero external dependencies)
     let memory: Arc<dyn MemoryAdapter> = Arc::new(NoopMemoryAdapter);
     let reason: Arc<dyn ReasoningAdapter> = Arc::new(NoopReasoningAdapter);
     let tool: Arc<dyn ToolAdapter> = Arc::new(NoopToolAdapter);
@@ -22,7 +16,7 @@ async fn main() {
     let ui: Arc<dyn UiAdapter> = Arc::new(NoopUiAdapter);
     let fear: Arc<dyn FearAdapter> = Arc::new(NoopFearAdapter);
 
-    // Create somatic reflex arc (default safety rules)
+    // Create somatic reflex arc (initial safety rules)
     let reflex = ReflexArc {
         safety_rules: vec!["rm -rf /".to_string(), "shutdown".to_string()],
     };
@@ -40,10 +34,10 @@ async fn main() {
 
     println!("Anaphase-Helix v0.1.0 started successfully (Noop mode)\n");
 
-    // Simulate user input
+    // Simulate a user interaction
     let user_input = "Calculate 2 to the power of 10";
     println!("User: {}", user_input);
-    
+
     match agent.run_cycle(user_input).await {
         Ok(()) => println!("\nCognitive cycle completed. Reflection notes: {}", agent.context.reflection_notes),
         Err(e) => eprintln!("Cognitive cycle error: {}", e),
