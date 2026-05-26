@@ -1,0 +1,31 @@
+# ==============================================
+# Anaphase-Helix Core Configuration
+# Apache-2.0 | Cognitive Engine v0.1.0
+# ==============================================
+
+[anaphase]
+# Service endpoints for external components
+# Empty value = Auto-use Noop adapter (offline mode)
+mind_endpoint = ""
+flowmodus_endpoint = ""
+tentacle_endpoint = ""
+tuck_endpoint = ""
+callosum_endpoint = ""
+cellrix_endpoint = ""
+
+[cognitive]
+# AI Model configuration for cognitive modules
+amygdala_model = "qwen2.5:2b"
+left_brain_model = "qwen2.5-coder:7b"
+right_brain_model = "deepseek-r1:8b"
+cerebellum_model = "qwen2.5:2b"
+embedding_model = "BAAI/bge-small-en"
+
+[immune]
+# Immune system & reflex safety settings
+hard_reflex_enabled = true
+# Risk threshold for soft reflex (intercept = block, warn = alert)
+soft_reflex_threshold_intercept = 0.7
+soft_reflex_threshold_warn = 0.3
+# Inherit safety rules from legacy crystals (default: disabled)
+inherit_safety_rules = false
