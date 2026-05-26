@@ -7,9 +7,13 @@ edition = "2021"
 # Core Async Runtime
 tokio = { version = "1", features = ["full"] }
 
+# FlowModus
+reqwest = { version = "0.12", features = ["json"] }
+
 # gRPC (for Helix-Mind / FlowModus / Tuck adapters)
-tonic = "0.11"
+tonic = "0.10"           # <-- aligned with helix-mind-api (0.10)
 prost = "0.12"
+prost-types = "0.12"     # <-- MISSING: required by proto Timestamp
 
 # Async Traits & Serialization
 async-trait = "0.1"
@@ -28,4 +32,4 @@ petgraph = "0.6"
 
 [build-dependencies]
 # Protobuf Code Generation
-tonic-build = "0.11"
+tonic-build = "0.10"     # <-- aligned with helix-mind-api (0.10)

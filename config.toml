@@ -6,7 +6,7 @@
 [anaphase]
 # Service endpoints for external components
 # Empty value = Auto-use Noop adapter (offline mode)
-mind_endpoint = ""
+mind_endpoint = "http://localhost:50051"
 flowmodus_endpoint = ""
 tentacle_endpoint = ""
 tuck_endpoint = ""

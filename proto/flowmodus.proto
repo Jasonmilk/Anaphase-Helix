@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package flowmodus;
+
+// The FlowModus service — deterministic LLM scheduling engine.
+// Anaphase calls this service for all LLM reasoning tasks.
+service FlowModus {
+    // Send a reasoning request and receive a text response.
+    rpc Reason(ReasonRequest) returns (ReasonResponse);
+}
+
+message ReasonRequest {
+    // The prompt text to send to the LLM.
+    string prompt = 1;
+    // The cognitive mode requested by Anaphase:
+    // "auto" = let FlowModus decide (default)
+    // "left_brain" / "right_brain" / "cerebellum" = specific routing hints
+    string model = 2;
+    // Maximum tokens to generate (default: 2048)
+    uint32 max_tokens = 3;
+}
+
+message ReasonResponse {
+    // The generated text response.
+    string content = 1;
+    // Number of tokens consumed (for energy tracking).
+    uint32 tokens_consumed = 2;
+}

@@ -1,16 +1,11 @@
-//! Configuration loader for Anaphase-Helix.
-//!
-//! Currently a placeholder. In later versions this will parse
-//! config.toml and populate the adapter endpoints, cognitive model
-//! settings, and immune thresholds.
+use serde::Deserialize;
 
-/// Top-level configuration struct.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct Config {
     pub anaphase: AnaphaseConfig,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct AnaphaseConfig {
     pub mind_endpoint: Option<String>,
     pub flowmodus_endpoint: Option<String>,
@@ -37,6 +32,20 @@ impl Default for AnaphaseConfig {
             tuck_endpoint: None,
             callosum_endpoint: None,
             cellrix_endpoint: None,
+        }
+    }
+}
+
+/// Load configuration from config.toml or return defaults (Noop mode)
+pub fn load_config() -> Result<Config, Box<dyn std::error::Error>> {
+    match std::fs::read_to_string("config.toml") {
+        Ok(content) => {
+            let config: Config = toml::from_str(&content)?;
+            Ok(config)
+        }
+        Err(_) => {
+            // config.toml not found, use Noop mode
+            Ok(Config::default())
         }
     }
 }
