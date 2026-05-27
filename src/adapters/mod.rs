@@ -1,5 +1,6 @@
 pub mod mind;
 pub mod flowmodus;
+pub mod tentacle;
 
 use async_trait::async_trait;
 use serde::{Serialize, Deserialize};

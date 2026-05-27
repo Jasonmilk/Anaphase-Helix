@@ -1,6 +1,7 @@
 use anaphase::adapters::*;
 use anaphase::adapters::mind::GrpcMindAdapter;
 use anaphase::adapters::flowmodus::{FlowModusAdapter, GrpcFlowModusAdapter};
+use anaphase::adapters::tentacle::GrpcTentacleAdapter;
 use anaphase::agent_loop::AgentLoop;
 use anaphase::reflex::ReflexArc;
 use anaphase::config;
@@ -33,7 +34,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Arc::new(NoopReasoningAdapter)
     };
 
-    let tool: Arc<dyn ToolAdapter> = Arc::new(NoopToolAdapter);
+    // Dynamically inject Tentacle adapter based on configuration
+    // - gRPC adapter if endpoint is configured, Noop as fallback
+    let tool: Arc<dyn ToolAdapter> = if let Some(endpoint) = &config.anaphase.tentacle_endpoint {
+        Arc::new(GrpcTentacleAdapter::new(endpoint).await?)
+    } else {
+        Arc::new(NoopToolAdapter)
+    };
+
     let safety: Arc<dyn SafetyAdapter> = Arc::new(NoopSafetyAdapter);
     let ui: Arc<dyn UiAdapter> = Arc::new(NoopUiAdapter);
     let fear: Arc<dyn FearAdapter> = Arc::new(NoopFearAdapter);

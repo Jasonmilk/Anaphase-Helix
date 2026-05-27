@@ -29,8 +29,8 @@ impl ReasoningAdapter for FlowModusAdapter {
 }
 
 // gRPC adapter (corrected imports)
-use crate::flowmodus::flow_modus_client::FlowModusClient;
-use crate::flowmodus::ReasonRequest;
+use crate::flowmodus_api::flow_modus_client::FlowModusClient;
+use crate::flowmodus_api::ReasonRequest;
 
 pub struct GrpcFlowModusAdapter {
     client: FlowModusClient<Channel>,

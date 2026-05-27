@@ -1,0 +1,47 @@
+syntax = "proto3";
+package tentacle;
+
+// Tentacle is the execution layer for Helix. It provides tool execution,
+// environment perception, and progressive information foraging.
+service Tentacle {
+    // Execute a tool or command
+    rpc Execute(ExecuteRequest) returns (ExecuteResponse);
+    // Perceive the environment (system status, network, etc.)
+    rpc Perceive(PerceiveRequest) returns (PerceiveResponse);
+}
+
+message ExecuteRequest {
+    // The command/script to execute
+    string command = 1;
+    // Command arguments
+    repeated string args = 2;
+    // Execution channel hint: "native" or "quickjs"
+    string channel = 3;
+    // Maximum execution time in milliseconds
+    uint32 timeout_ms = 4;
+    // Maximum memory in megabytes (for QuickJS)
+    uint32 max_memory_mb = 5;
+}
+
+message ExecuteResponse {
+    // Standard output
+    string stdout = 1;
+    // Standard error (if any)
+    string stderr = 2;
+    // Exit code or status
+    int32 status = 3;
+    // Actual execution time in milliseconds
+    uint32 duration_ms = 4;
+    // Peak memory used in kilobytes
+    uint32 memory_kb = 5;
+}
+
+message PerceiveRequest {
+    // Perception query (e.g., "system_load", "network_status")
+    string query = 1;
+}
+
+message PerceiveResponse {
+    // Perceived data as JSON string
+    string data = 1;
+}
