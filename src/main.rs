@@ -163,27 +163,28 @@ async fn run_stdio_mode() -> Result<(), Box<dyn std::error::Error>> {
             }
             "action" => {
                 let action_id = cmd["action"].as_str().unwrap_or("");
-                let response = json!({
-                    "status": "ok",
-                    "action": action_id,
-                    "message": format!("Action '{}' acknowledged", action_id)
-                });
-                writeln!(stdout, "{}", serde_json::to_string(&response)?)?;
-                stdout.flush()?;
-            }
-            "send_message" => {
-                let message = cmd["message"].as_str().unwrap_or("");
-                let response_text = format!(
-                    "Helix received: '{}'. Cognitive cycle completed in Noop mode.",
-                    message
-                );
-                let resp = json!({
-                    "status": "ok",
-                    "type": "message_response",
-                    "content": response_text
-                });
-                writeln!(stdout, "{}", serde_json::to_string(&resp)?)?;
-                stdout.flush()?;
+                if action_id == "send_message" {
+                    let message = cmd["params"]["message"].as_str().unwrap_or("");
+                    let response_text = format!(
+                        "Helix received: '{}'. Cognitive cycle completed in Noop mode.",
+                        message
+                    );
+                    let resp = json!({
+                        "status": "ok",
+                        "type": "message_response",
+                        "content": response_text
+                    });
+                    writeln!(stdout, "{}", serde_json::to_string(&resp)?)?;
+                    stdout.flush()?;
+                } else {
+                    let response = json!({
+                        "status": "ok",
+                        "action": action_id,
+                        "message": format!("Action '{}' acknowledged", action_id)
+                    });
+                    writeln!(stdout, "{}", serde_json::to_string(&response)?)?;
+                    stdout.flush()?;
+                }
             }
             "exit" => {
                 let response = json!({"status": "goodbye"});
