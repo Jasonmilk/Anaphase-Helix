@@ -99,24 +99,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // ======================
-    // Agent Loop Startup
+    // Agent Loop Startup (Async Task - NON BLOCKING)
     // ======================
     let mut agent = AgentLoop::new(
         memory, reason, tool, safety, ui, fear, reflex
     );
 
+    // Spawn cognitive cycle as async task to avoid blocking main thread
+    tokio::spawn(async move {
+        let user_input = "Calculate 2 to the power of 10";
+        println!("User: {}", user_input);
+        if agent.run_cycle(user_input).await.is_ok() {
+            println!("\nCognitive cycle completed successfully.");
+        }
+    });
+
+    // ======================
+    // Keep service running and wait for shutdown signal
+    // ======================
     println!("Anaphase-Helix v0.1.0 started successfully");
-    
-    // Test cognitive cycle
-    let user_input = "Calculate 2 to the power of 10";
-    println!("User: {}", user_input);
-    agent.run_cycle(user_input).await?;
-    println!("\nCognitive cycle completed successfully.");
+    println!("CAP HTTP endpoint: http://0.0.0.0:{}", config.anaphase.cap_http_port);
+    println!("Press Ctrl+C to shutdown the service");
+
+    // Wait for Ctrl+C signal to terminate the program
+    tokio::signal::ctrl_c().await?;
+    println!("Shutting down...");
 
     Ok(())
 }
 
-/// CAP snapshot API handler for remote debugging
+/// API handler for CAP agent snapshot endpoint
 async fn cap_snapshot_handler() -> impl IntoResponse {
     Json(json!({
         "status": "Active",
