@@ -13,6 +13,10 @@ pub struct AnaphaseConfig {
     pub tuck_endpoint: Option<String>,
     pub callosum_endpoint: Option<String>,
     pub cellrix_endpoint: Option<String>,
+    /// Enable HTTP CAP server for remote debugging
+    pub cap_http_enabled: bool,
+    /// Listening port for HTTP CAP server
+    pub cap_http_port: u16,
 }
 
 impl Default for Config {
@@ -32,6 +36,8 @@ impl Default for AnaphaseConfig {
             tuck_endpoint: None,
             callosum_endpoint: None,
             cellrix_endpoint: None,
+            cap_http_enabled: false,
+            cap_http_port: 50061,
         }
     }
 }

@@ -6,12 +6,14 @@
 [anaphase]
 # Service endpoints for external components
 # Empty value = Auto-use Noop adapter (offline mode)
-mind_endpoint = "http://localhost:50051"
+mind_endpoint = ""
 flowmodus_endpoint = ""
 tentacle_endpoint = ""
 tuck_endpoint = ""
 callosum_endpoint = ""
 cellrix_endpoint = ""
+cap_http_enabled = true
+cap_http_port = 50061
 
 [cognitive]
 # AI Model configuration for cognitive modules
