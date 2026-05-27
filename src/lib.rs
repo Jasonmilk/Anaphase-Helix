@@ -8,3 +8,7 @@ pub mod config;
 pub mod helix_mind_api {
     tonic::include_proto!("helix_mind");
 }
+
+pub mod flowmodus {
+    tonic::include_proto!("flowmodus");
+}

@@ -1,5 +1,6 @@
 use anaphase::adapters::*;
 use anaphase::adapters::mind::GrpcMindAdapter;
+use anaphase::adapters::flowmodus::{FlowModusAdapter, GrpcFlowModusAdapter};
 use anaphase::agent_loop::AgentLoop;
 use anaphase::reflex::ReflexArc;
 use anaphase::config;
@@ -11,14 +12,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let config = config::load_config()?;
 
-    // Choose memory adapter
+    // Choose memory adapter: gRPC if endpoint is configured, Noop as fallback
     let memory: Arc<dyn MemoryAdapter> = if let Some(endpoint) = &config.anaphase.mind_endpoint {
         Arc::new(GrpcMindAdapter::new(endpoint).await?)
     } else {
         Arc::new(NoopMemoryAdapter)
     };
 
-    let reason: Arc<dyn ReasoningAdapter> = Arc::new(NoopReasoningAdapter);
+    // Dynamically inject FlowModus adapter based on endpoint protocol
+    // - grpc:// prefix: use GrpcFlowModusAdapter
+    // - http/other: use HTTP FlowModusAdapter
+    // - no config: fall back to NoopReasoningAdapter
+    let reason: Arc<dyn ReasoningAdapter> = if let Some(endpoint) = &config.anaphase.flowmodus_endpoint {
+        if endpoint.starts_with("grpc://") {
+            Arc::new(GrpcFlowModusAdapter::new(&endpoint[7..]).await?)
+        } else {
+            Arc::new(FlowModusAdapter::new(endpoint))
+        }
+    } else {
+        Arc::new(NoopReasoningAdapter)
+    };
+
     let tool: Arc<dyn ToolAdapter> = Arc::new(NoopToolAdapter);
     let safety: Arc<dyn SafetyAdapter> = Arc::new(NoopSafetyAdapter);
     let ui: Arc<dyn UiAdapter> = Arc::new(NoopUiAdapter);

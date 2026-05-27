@@ -1,0 +1,183 @@
+syntax = "proto3";
+
+package helix_mind;
+
+import "google/protobuf/timestamp.proto";
+
+// ---------- Enums ----------
+enum CognitiveMode {
+  SKILLED = 0;
+  ANCHOR = 1;
+  IMAGINATION = 2;
+}
+
+enum AutonomyLevel {
+  AGENT = 0;
+  OPEN = 1;
+  SURVIVAL = 2;
+}
+
+// ---------- Layer 1 Messages ----------
+message QueryRequest {
+  string query = 1;
+}
+
+message QueryResponse {
+  repeated Node nodes = 1;
+  repeated Edge edges = 2;
+  string trace_id = 3;
+  uint64 latency_ms = 4;
+  bool is_partial = 5;
+  string exhaustion_reason = 6;
+}
+
+message RememberRequest {
+  string content = 1;
+}
+
+message RememberResponse {
+  string node_id = 1;
+}
+
+message ForgetRequest {
+  string node_id = 1;
+}
+
+message ForgetResponse {
+  bool success = 1;
+}
+
+// ---------- Layer 2 Messages ----------
+message AdvancedQueryRequest {
+  string query = 1;
+  CognitiveMode mode = 2;
+  uint32 top_k = 3;
+  uint32 max_depth = 4;
+  bool include_recessive = 5;
+}
+
+// ---------- Layer 3 Messages ----------
+message EnergyContext {
+  uint64 token_budget = 1;
+  double heliotropism = 2;
+  double pulse = 3;
+  double vigilance = 4;
+  uint64 latency_limit_ms = 5;
+  double system_load = 6;
+  double familiarity = 7;      // v3.3: task familiarity [0.0, 1.0]
+  uint32 impasse_depth = 8;    // v3.3: impasse depth (0-5)
+}
+
+// v3.3: tool action suggestion returned by Mind
+message SuggestedAction {
+  string action_type = 1;    // e.g. "python_interpreter", "web_search", "cli_command"
+  string parameters = 2;     // JSON parameters conforming to CIS intent format
+  string reason = 3;         // why this action is suggested
+}
+
+message HelixQueryRequest {
+  string query = 1;
+  CognitiveMode suggested_mode = 2;
+  EnergyContext energy_context = 3;
+  bool include_recessive = 4;
+  bool allow_imagination = 5;
+  AutonomyLevel autonomy_level = 6;
+}
+
+message HelixQueryResult {
+  CognitiveMode effective_mode = 1;
+  string mode_negotiation = 2;
+  repeated Node nodes = 3;
+  repeated Edge edges = 4;
+  string trace_id = 5;
+  uint64 latency_ms = 6;
+  uint64 tokens_consumed = 7;
+  bool is_partial = 8;
+  string exhaustion_reason = 9;
+  int32 impasse_level = 10;                  // v3.3
+  int32 stages_attempted = 11;               // v3.3
+  repeated SuggestedAction suggested_actions = 12;  // v3.3
+}
+
+message HelixConsolidateRequest {
+  string type = 1; // "digest" | "crystallize" | "hibernate"
+}
+message HelixConsolidateResult {
+  bool success = 1;
+  string message = 2;
+}
+
+message ReloadGeneLockRequest {}
+message ReloadGeneLockResponse {
+  string l0_hash = 1;
+  string lineage_name = 2;
+  repeated string core_principles = 3;
+}
+
+message SyncHumanViewRequest {
+  string volume = 1;  // volume file name or generation index
+}
+message SyncHumanViewResponse {
+  bool success = 1;
+  repeated string conflicts = 2;
+}
+
+message TriggerReincarnationRequest {
+  string confirm_token = 1;   // must be provided by user
+}
+message TriggerReincarnationResponse {
+  uint64 new_generation = 1;
+}
+
+message FederatedDAGShareRequest {
+  string target_helix_id = 1; // optional, empty means broadcast
+}
+message FederatedDAGShareResponse {
+  string cid = 1;
+}
+
+// ---------- Generic Structures ----------
+message Node {
+  string id = 1;
+  string node_type = 2;
+  string content_json = 3;
+  double heat = 4;
+  bool is_hypothetical = 5;
+  bool is_recessive = 6;
+  string sensitivity = 7;
+  uint64 generation = 8;
+  google.protobuf.Timestamp created_at = 9;
+  google.protobuf.Timestamp last_accessed_at = 10;
+  uint64 access_count = 11;
+  double initial_impact = 12;
+  string corrected_by = 13;
+  string notes = 14;
+  repeated string derived_from = 15;
+}
+
+message Edge {
+  string source_id = 1;
+  string target_id = 2;
+  double weight = 3;
+  string relation_type = 4;
+  bool is_soft = 5;
+}
+
+// ---------- Service ----------
+service HelixMind {
+  // Layer 1
+  rpc Query(QueryRequest) returns (QueryResponse);
+  rpc Remember(RememberRequest) returns (RememberResponse);
+  rpc Forget(ForgetRequest) returns (ForgetResponse);
+
+  // Layer 2
+  rpc AdvancedQuery(AdvancedQueryRequest) returns (QueryResponse);
+
+  // Layer 3
+  rpc HelixQuery(HelixQueryRequest) returns (HelixQueryResult);
+  rpc HelixConsolidate(HelixConsolidateRequest) returns (HelixConsolidateResult);
+  rpc FederatedDAGShare(FederatedDAGShareRequest) returns (FederatedDAGShareResponse);
+  rpc TriggerReincarnation(TriggerReincarnationRequest) returns (TriggerReincarnationResponse);
+  rpc ReloadGeneLock(ReloadGeneLockRequest) returns (ReloadGeneLockResponse);
+  rpc SyncHumanView(SyncHumanViewRequest) returns (SyncHumanViewResponse);
+}
