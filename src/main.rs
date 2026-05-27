@@ -9,9 +9,21 @@ use std::sync::Arc;
 // HTTP CAP server dependencies
 use axum::{Router, routing::get, Json, response::IntoResponse};
 use serde_json::json;
+// STDIO mode dependencies
+use std::io::{self, BufRead, Write};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Parse command line arguments for STDIO mode
+    let args: Vec<String> = std::env::args().collect();
+    let stdio_mode = args.iter().any(|a| a == "--stdio");
+
+    // Start STDIO CAP protocol mode if enabled
+    if stdio_mode {
+        run_stdio_mode().await?;
+        return Ok(());
+    }
+
     // Initialize logging subsystem
     tracing_subscriber::fmt::init();
 
@@ -82,9 +94,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     // ======================
-    // HTTP CAP Server (Configured, No Hardcoding)
+    // HTTP CAP Server (Only start in NON-STDIO mode)
     // ======================
-    if config.anaphase.cap_http_enabled {
+    if !stdio_mode && config.anaphase.cap_http_enabled {
         let addr = format!("0.0.0.0:{}", config.anaphase.cap_http_port);
         let listener = tokio::net::TcpListener::bind(&addr).await?;
         
@@ -125,6 +137,110 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tokio::signal::ctrl_c().await?;
     println!("Shutting down...");
 
+    Ok(())
+}
+
+/// STDIO mode: CAP protocol over standard input/output
+async fn run_stdio_mode() -> Result<(), Box<dyn std::error::Error>> {
+    let stdin = io::stdin();
+    let mut stdout = io::stdout();
+
+    // Print startup message to stderr (not captured by JSON parser)
+    eprintln!("Anaphase STDIO CAP protocol mode active");
+
+    // Read JSON lines from stdin
+    for line in stdin.lock().lines() {
+        let line = line?;
+        let trimmed = line.trim();
+        
+        // Skip empty lines
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        // Parse JSON command
+        let cmd: serde_json::Value = match serde_json::from_str(trimmed) {
+            Ok(v) => v,
+            Err(e) => {
+                // Return error response
+                let error_resp = json!({
+                    "status": "error",
+                    "error": format!("Invalid JSON: {}", e)
+                });
+                writeln!(stdout, "{}", serde_json::to_string(&error_resp)?)?;
+                stdout.flush()?;
+                continue;
+            }
+        };
+
+        // Get command type
+        let cmd_type = cmd["type"].as_str().unwrap_or("");
+
+        // Handle CAP protocol commands
+        match cmd_type {
+            // Handle connection and snapshot requests
+            "connect" | "get_snapshot" => {
+                let snapshot = json!({
+                    "status": "Active",
+                    "metrics": {
+                        "token_consumed": 1234,
+                        "active_tasks": 0,
+                        "memory_nodes": 0
+                    },
+                    "semantic_tree": [
+                        {
+                            "id": "1",
+                            "node_type": "state_tree",
+                            "label": "Cognitive Loop",
+                            "content": "Perception -> PreAssessment -> MemoryRetrieval -> Reasoning -> ReflexCheck -> Execution -> Reflection"
+                        },
+                        {
+                            "id": "2",
+                            "node_type": "text_panel",
+                            "label": "Status",
+                            "content": "Anaphase running in STDIO mode. Ready for commands."
+                        }
+                    ]
+                });
+                writeln!(stdout, "{}", serde_json::to_string(&snapshot)?)?;
+                stdout.flush()?;
+            }
+
+            // Handle action commands
+            "action" => {
+                let action_id = cmd["action"].as_str().unwrap_or("");
+                let params = &cmd["params"];
+                let response = json!({
+                    "status": "ok",
+                    "action": action_id,
+                    "params": params,
+                    "message": format!("Action '{}' acknowledged", action_id)
+                });
+                writeln!(stdout, "{}", serde_json::to_string(&response)?)?;
+                stdout.flush()?;
+            }
+
+            // Handle exit command
+            "exit" => {
+                let response = json!({"status": "goodbye"});
+                writeln!(stdout, "{}", serde_json::to_string(&response)?)?;
+                stdout.flush()?;
+                break;
+            }
+
+            // Unknown command
+            _ => {
+                let error_resp = json!({
+                    "status": "error",
+                    "error": format!("Unknown command type: {}", cmd_type)
+                });
+                writeln!(stdout, "{}", serde_json::to_string(&error_resp)?)?;
+                stdout.flush()?;
+            }
+        }
+    }
+
+    eprintln!("Anaphase STDIO mode exiting");
     Ok(())
 }
 
