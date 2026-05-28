@@ -1,6 +1,8 @@
 pub mod mind;
 pub mod flowmodus;
 pub mod tentacle;
+// New: Declare HTTP reasoning adapter module
+pub mod http_reasoning;
 
 use async_trait::async_trait;
 use serde::{Serialize, Deserialize};

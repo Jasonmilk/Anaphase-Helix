@@ -17,6 +17,12 @@ pub struct AnaphaseConfig {
     pub cap_http_enabled: bool,
     /// Listening port for HTTP CAP server
     pub cap_http_port: u16,
+
+    // New: LLM HTTP reasoning fields
+    pub reasoning_endpoint: Option<String>,
+    pub reasoning_model: Option<String>,
+    pub reasoning_api_key: Option<String>,
+    pub reasoning_max_tokens: Option<u32>,
 }
 
 impl Default for Config {
@@ -38,6 +44,11 @@ impl Default for AnaphaseConfig {
             cellrix_endpoint: None,
             cap_http_enabled: false,
             cap_http_port: 50061,
+
+            reasoning_endpoint: None,
+            reasoning_model: None,
+            reasoning_api_key: None,
+            reasoning_max_tokens: None,
         }
     }
 }

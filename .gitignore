@@ -1,1 +1,28 @@
-/target
+# Sensitive configuration files
+config.toml
+
+# Build artifacts
+target/
+debug/
+release/
+
+# Database files
+*.db
+*.db-journal
+*.db-wal
+
+# Runtime data
+data/
+logs/
+*.log
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# System files
+.DS_Store
+Thumbs.db

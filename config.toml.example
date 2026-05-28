@@ -1,6 +1,6 @@
 # ==============================================
-# Anaphase-Helix Core Configuration
-# Apache-2.0 | Cognitive Engine v0.1.0
+# Anaphase-Helix Configuration Template
+# Copy this file to config.toml and fill in your values.
 # ==============================================
 
 [anaphase]
@@ -12,14 +12,17 @@ tentacle_endpoint = ""
 tuck_endpoint = ""
 callosum_endpoint = ""
 cellrix_endpoint = ""
-cap_http_enabled = true
+
+# HTTP CAP server for remote debugging
+cap_http_enabled = false
 cap_http_port = 50061
 
-# New: OpenAI-compatible LLM reasoning config
-reasoning_endpoint = ""
-reasoning_model = ""
-reasoning_api_key = ""
-reasoning_max_tokens = 2048
+# ---- Reasoning Adapter (OpenAI-compatible API) ----
+# Uncomment and fill these lines to use a real LLM endpoint.
+# reasoning_endpoint = "http://your-llm-host:port/v1"
+# reasoning_model = "your-model-name"
+# reasoning_api_key = "sk-your-api-key"
+# reasoning_max_tokens = 2048
 
 [cognitive]
 # AI Model configuration for cognitive modules
@@ -32,8 +35,6 @@ embedding_model = "BAAI/bge-small-en"
 [immune]
 # Immune system & reflex safety settings
 hard_reflex_enabled = true
-# Risk threshold for soft reflex (intercept = block, warn = alert)
 soft_reflex_threshold_intercept = 0.7
 soft_reflex_threshold_warn = 0.3
-# Inherit safety rules from legacy crystals (default: disabled)
 inherit_safety_rules = false

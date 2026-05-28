@@ -3,6 +3,8 @@ use serde_json::json;
 
 use anaphase::adapters::*;
 use anaphase::adapters::flowmodus::{FlowModusAdapter, GrpcFlowModusAdapter};
+// New: Add direct import for HttpReasoningAdapter
+use anaphase::adapters::http_reasoning::HttpReasoningAdapter;
 use anaphase::agent_loop::AgentLoop;
 use anaphase::reflex::ReflexArc;
 use anaphase::config;
@@ -37,7 +39,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Arc::new(NoopMemoryAdapter)
     };
 
-    let reason: Arc<dyn ReasoningAdapter> = if let Some(endpoint) = &config.anaphase.flowmodus_endpoint {
+    // Priority 1: Use HTTP LLM reasoning adapter first
+    let reason: Arc<dyn ReasoningAdapter> = if let Some(endpoint) = &config.anaphase.reasoning_endpoint {
+        if endpoint.is_empty() {
+            Arc::new(NoopReasoningAdapter)
+        } else {
+            // Simplified type name
+            Arc::new(HttpReasoningAdapter::new(&config.anaphase))
+        }
+    }
+    // Priority 2: Fallback to original FlowModus
+    else if let Some(endpoint) = &config.anaphase.flowmodus_endpoint {
         if endpoint.is_empty() {
             Arc::new(NoopReasoningAdapter)
         } else if endpoint.starts_with("grpc://") {
@@ -108,6 +120,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn run_stdio_mode() -> Result<(), Box<dyn std::error::Error>> {
+    // Load config and initialize agent components for real reasoning
+    let config = config::load_config()?;
+
+    // Initialize reasoning adapter (follow config priority)
+    let reason: Arc<dyn ReasoningAdapter> = if let Some(endpoint) = &config.anaphase.reasoning_endpoint {
+        if endpoint.is_empty() {
+            Arc::new(NoopReasoningAdapter)
+        } else {
+            // Simplified type name
+            Arc::new(HttpReasoningAdapter::new(&config.anaphase))
+        }
+    } else {
+        Arc::new(NoopReasoningAdapter)
+    };
+
+    let memory: Arc<dyn MemoryAdapter> = Arc::new(NoopMemoryAdapter);
+    let tool: Arc<dyn ToolAdapter> = Arc::new(NoopToolAdapter);
+    let safety: Arc<dyn SafetyAdapter> = Arc::new(NoopSafetyAdapter);
+    let ui: Arc<dyn UiAdapter> = Arc::new(NoopUiAdapter);
+    let fear: Arc<dyn FearAdapter> = Arc::new(NoopFearAdapter);
+    let reflex = ReflexArc { safety_rules: vec![] };
+    let mut agent = AgentLoop::new(memory, reason, tool, safety, ui, fear, reflex);
+
+    // STDIO IO start
     let stdin = io::stdin();
     let mut stdout = io::stdout();
 
@@ -165,16 +201,25 @@ async fn run_stdio_mode() -> Result<(), Box<dyn std::error::Error>> {
                 let action_id = cmd["action"].as_str().unwrap_or("");
                 if action_id == "send_message" {
                     let message = cmd["params"]["message"].as_str().unwrap_or("");
-                    let response_text = format!(
-                        "Helix received: '{}'. Cognitive cycle completed in Noop mode.",
-                        message
-                    );
-                    let resp = json!({
-                        "status": "ok",
-                        "type": "message_response",
-                        "content": response_text
-                    });
-                    writeln!(stdout, "{}", serde_json::to_string(&resp)?)?;
+                    // Call real agent reasoning cycle
+                    match agent.run_cycle(message).await {
+                        Ok(()) => {
+                            let response_text = agent.context.reasoning_output.clone();
+                            let resp = json!({
+                                "status": "ok",
+                                "type": "message_response",
+                                "content": response_text
+                            });
+                            writeln!(stdout, "{}", serde_json::to_string(&resp)?)?;
+                        }
+                        Err(e) => {
+                            let resp = json!({
+                                "status": "error",
+                                "content": format!("Reasoning failed: {}", e)
+                            });
+                            writeln!(stdout, "{}", serde_json::to_string(&resp)?)?;
+                        }
+                    }
                     stdout.flush()?;
                 } else {
                     let response = json!({
