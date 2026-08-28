@@ -6,6 +6,7 @@ use anaphase::adapters::flowmodus::{FlowModusAdapter, GrpcFlowModusAdapter};
 // New: Add direct import for HttpReasoningAdapter
 use anaphase::adapters::http_reasoning::HttpReasoningAdapter;
 use anaphase::agent_loop::AgentLoop;
+use anaphase::lifecycle::SessionNotes;
 use anaphase::reflex::ReflexArc;
 use anaphase::config;
 use std::sync::Arc;
@@ -94,6 +95,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Anaphase-Helix v0.1.0 started successfully");
     println!("CAP HTTP endpoint: http://0.0.0.0:{}", config.anaphase.cap_http_port);
+
+    // P10c T1：纪元开始 → 强制苏醒（跨纪元认知重载，读取上一纪元认知脱水简报）
+    let session_path = config
+        .anaphase
+        .session_notes_path
+        .clone()
+        .unwrap_or_else(|| "session_notes.json".to_string());
+    let session = SessionNotes::new(std::path::PathBuf::from(&session_path));
+    match session.wake_up() {
+        Ok(a) => {
+            if a.has_history {
+                println!("[WakeUp] 认知重载：上一纪元脱水简报 {} 字", a.briefing.chars().count());
+            } else {
+                println!("[WakeUp] 无历史纪元（首次唤醒）");
+            }
+        }
+        Err(e) => eprintln!("[WakeUp] 读取失败（降级为无历史）：{}", e),
+    }
+
     println!("Press Ctrl+C to shutdown the service");
 
     let user_input = "Calculate 2 to the power of 10";
@@ -103,6 +123,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     tokio::signal::ctrl_c().await?;
     println!("Shutting down...");
+
+    // P10c T1：纪元结束 → 认知脱水（压缩当前纪元历史为简报，供下一纪元加载）
+    let history = vec![
+        format!("user: {}", user_input),
+        format!("assistant: {}", agent.context.reasoning_output),
+        format!("reflection: {}", agent.context.reflection_notes),
+    ];
+    match session.dehydrate(&history) {
+        Ok(d) => println!("[Dehydrate] 认知脱水完成（简报 {} 字，{} 条）", d.briefing.chars().count(), d.history_len),
+        Err(e) => eprintln!("[Dehydrate] 写入失败：{}", e),
+    }
     Ok(())
 }
 

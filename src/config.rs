@@ -23,6 +23,9 @@ pub struct AnaphaseConfig {
     pub reasoning_model: Option<String>,
     pub reasoning_api_key: Option<String>,
     pub reasoning_max_tokens: Option<u32>,
+
+    /// 纪元会话笔记路径（P10c T1 强制苏醒/认知脱水）：默认 "session_notes.json"
+    pub session_notes_path: Option<String>,
 }
 
 impl Default for Config {
@@ -49,6 +52,8 @@ impl Default for AnaphaseConfig {
             reasoning_model: None,
             reasoning_api_key: None,
             reasoning_max_tokens: None,
+
+            session_notes_path: None,
         }
     }
 }

@@ -4,6 +4,7 @@ pub mod states;
 pub mod reflex;
 pub mod config;
 pub mod hitl;
+pub mod lifecycle;
 
 // Include gRPC auto-generated Helix-Mind API
 pub mod helix_mind_api {
