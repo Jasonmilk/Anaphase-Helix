@@ -6,6 +6,7 @@ pub mod http_reasoning;
 
 use async_trait::async_trait;
 use serde::{Serialize, Deserialize};
+use std::sync::Arc;
 
 // ---------- Memory Adapter ----------
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -30,6 +31,29 @@ impl MemoryAdapter for NoopMemoryAdapter {
     }
     async fn remember(&self, _content: &str) -> Result<(), String> {
         Ok(())
+    }
+}
+
+/// 解析记忆适配器（DNA 铁律 6：所有依赖必须有降级策略，fail-open）。
+/// - `mind_endpoint` 为空/未配置 → `NoopMemoryAdapter`（离线模式）
+/// - 非空但连接失败 → 记录降级事件，回退 `NoopMemoryAdapter`（不 panic）
+/// - 非空且连接成功 → `GrpcMindAdapter`
+pub async fn resolve_memory_adapter(config: &crate::config::AnaphaseConfig) -> Arc<dyn MemoryAdapter> {
+    match config.mind_endpoint.as_deref() {
+        Some(ep) if !ep.is_empty() => {
+            match mind::GrpcMindAdapter::new(ep).await {
+                Ok(adapter) => Arc::new(adapter),
+                Err(e) => {
+                    tracing::warn!(
+                        "mind degraded at resolve: endpoint={} err={}; fallback Noop (fail-open)",
+                        ep,
+                        e
+                    );
+                    Arc::new(NoopMemoryAdapter)
+                }
+            }
+        }
+        _ => Arc::new(NoopMemoryAdapter),
     }
 }
 

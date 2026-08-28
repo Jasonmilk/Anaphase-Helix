@@ -20,7 +20,13 @@
    - P10a 只对齐已冻结的 v4.1 契约
    - 等 CI-144 v2.0 冻结后再接入生态手套路由
 4. **触发链路**：`mind_endpoint` 接线 + 集成测试（起 Mind 服务连真实端点，验证闭环）
-## 回滚阈值
+## T3 执行决议（2026-08-28 追加，ADR-0001 的执行细节补充，非新决策）
+以下为 T1→T3 执行中确认的工程决策，属 ADR-0001 范围内落地细节：
+- **build.rs `build_server(true)`**：生成 server trait，供集成测试实现 mock Mind（Anaphase 本身仅作 client，不启用 server）。集成测试**不依赖真实 Helix-Mind 二进制**（跨仓库解耦、CI 可行），mock 验证契约闭环。
+- **mock server 优雅停机机制**：`serve_with_incoming_shutdown` + oneshot 信号，确保已接受连接也优雅关闭（`abort()` 只停外层 task，不停已接受连接）。
+- **`resolve_memory_adapter` 抽取为可测装配**：从 main.rs 抽至 `src/adapters/mod.rs`，语义为"空端点→Noop / 连接失败→warn+Noop（fail-open）/ 成功→GrpcMindAdapter"。对应 DNA 铁律 6（所有依赖必须有降级策略）。
+- **契约对齐验收**：31 测试全绿（10 单元 + 14 既有集成 + 7 T3 集成），覆盖正常闭环 / trace 透传 / budget_tier 传递 / Mind 离线 fail-open。
+
 若 Anaphase 契约对齐导致现有行为重大偏差，或集成测试覆盖不足产生回归，可回滚至对齐前状态，重新评估实施范围。
 ## 关联
 - Helix-Mind ADR-0010（预算路由）

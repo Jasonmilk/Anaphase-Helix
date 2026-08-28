@@ -23,21 +23,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
     let config = config::load_config()?;
 
-    let memory: Arc<dyn MemoryAdapter> = if let Some(endpoint) = &config.anaphase.mind_endpoint {
-        if endpoint.is_empty() {
-            Arc::new(NoopMemoryAdapter)
-        } else {
-            match mind::GrpcMindAdapter::new(endpoint).await {
-                Ok(adapter) => Arc::new(adapter),
-                Err(e) => {
-                    eprintln!("Warning: Failed to connect to Mind at {}: {}. Falling back to Noop memory.", endpoint, e);
-                    Arc::new(NoopMemoryAdapter)
-                }
-            }
-        }
-    } else {
-        Arc::new(NoopMemoryAdapter)
-    };
+    // 记忆适配器：DNA 铁律 6 fail-open 降级（空→Noop；连接失败→warn+Noop；成功→GrpcMindAdapter）
+    let memory: Arc<dyn MemoryAdapter> = resolve_memory_adapter(&config.anaphase).await;
 
     // Priority 1: Use HTTP LLM reasoning adapter first
     let reason: Arc<dyn ReasoningAdapter> = if let Some(endpoint) = &config.anaphase.reasoning_endpoint {

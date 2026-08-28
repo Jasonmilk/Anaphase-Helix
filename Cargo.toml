@@ -36,6 +36,10 @@ sysinfo = "0.30"
 # HTTP CAP (cellrix)
 axum = "0.7"
 
+[dev-dependencies]
+# Mock Mind gRPC server for integration tests (TcpListenerStream)
+tokio-stream = { version = "0.1", features = ["net"] }
+
 [build-dependencies]
 # Protobuf Code Generation
 tonic-build = "0.10"     # <-- aligned with helix-mind-api (0.10)

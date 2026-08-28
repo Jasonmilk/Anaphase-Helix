@@ -32,6 +32,12 @@
 - `mind_endpoint` 接线（config）+ 集成测试（起 Mind 服务连真实端点，验证闭环）
 - 降级链：`docs/design/dependency-fallback.md`（Mind 不可用 → fail-open；Tuck 除外）
 
-## C.5 记忆契约语义（body-agnostic）
+## C.5 测试契约（ADR-0001 T3 决议）
+
+- Anaphase ↔ Mind 契约闭环通过 **mock Mind server** 验证（`build.rs build_server(true)` 生成 server trait，测试内实现），**不依赖真实 Helix-Mind 二进制**（跨仓库解耦、CI 可行）
+- mock 覆盖：正常闭环 / trace 透传（W3C）/ budget_tier 传递 / Mind 离线 fail-open
+- mock 停机用 `serve_with_incoming_shutdown` + oneshot（优雅关闭已接受连接）
+
+## C.6 记忆契约语义（body-agnostic）
 
 Mind 不产出动作，只通过 gRPC 记忆契约被身体驱动。契约不烘焙任何身体特定假设——Helix-Mind 兼容通用生态（harness、openclaw 等），Anaphase 是其中一个身体实现。

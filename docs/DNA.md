@@ -14,6 +14,7 @@ DNA.md 定义 Anaphase-Helix 的“不可变原则”与“如何生长”——
 ### 原则 1：脑手分离，无锁分立
 Anaphase 自身不拥有任何对话树、决策树的本地存储或状态管理。它将 Helix-Mind 作为其唯一的“潜意识 Git 仓库”。Anaphase 所有的物理执行结果和环境观察，全部以标准的 Commit/Node 形式，单向追加到 Helix-Mind 的意识 DAG 中。
 > **工程映射（rs 分支）**：`src/adapters/mind.rs` 只读 Helix-Mind 的 gRPC 响应，不维护本地 L2/L3 持久化。所有“记忆写入”通过 `HelixConsolidate` RPC 完成。
+> **Mind 不可用降级**：`resolve_memory_adapter` 在 `mind_endpoint` 为空或连接失败时回退 `NoopMemoryAdapter`（fail-open，不 panic），由 `agent_loop` 的 MemoryRetrieval 接管继续推理（DNA 铁律 6）。
 ### 原则 2：零信任凭证隔离
 Anaphase 本身在网络传输层是完全协议中立的。它不直接在进程内配置任何外部大模型的明文 API 密钥、私有 Cookie 或 Token。所有敏感身份凭证全部由最边缘的 Tuck（物理安全闸）存放在物理隔离的硬件保密柜中。
 > **工程映射（rs 分支）**：`src/adapters/tuck.rs`（预留，当前 rs 分支待建）。出网流量强制经 Tuck 代理，凭证标签（如 `weibo_session_1`）传递，明文凭证永不进入 Anaphase 内存。
