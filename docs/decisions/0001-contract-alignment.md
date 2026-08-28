@@ -44,6 +44,12 @@
   3. **措辞**："双向复用"改为**"模式同构 + 接口复用"**——复用的是 `OrchestrationCore` 接口抽象，Mind 规划/认知、Anaphase 执行/编排的职责边界永不合并（脑手分离铁律不变）
   4. **trait 归属推迟**：`OrchestrationCore` 定义归属 P11c 时裁决，P10c 不阻塞
 - **Tentacle Rust 重构**：P10b 后自然启动，硬性对齐：凭证标签流转（Tuck 注入）/ 已见熵布隆过滤器（Callosum）/ 异步协程沙箱（ARM 端侧）/ 动态共识适配层 / 多传输层（gRPC/HTTP/MCP/STDIO）
+## P11a/P11b 统一决议（2026-08-28 追加，认知工艺双向复用轨道调研）
+- **P11a（Anaphase 调用认知工艺）**：**CraftAdapter 不建**。调研结论：Mind v4.1 冻结契约无显式认知工艺 RPC（CraftQuery 不存在）；P10b 间接触发（Anaphase 传 `suggested_mode` + `budget_tier` → Mind System 0 门控消费 → Mind 自主决定是否触发工艺）已覆盖第一层需求；CraftQuery 保持**第二阶段显式调用**（需 Mind 侧新增 RPC，冻结契约变更走 Mind 侧 ADR+Supersede，Anaphase 不单方设计）。符合意志优先 + 勿增实体。
+- **P11b（Mind 调用编排能力）**：**OrchestrationAdapter 不建**。调研结论：Anaphase 侧单向编排链路已就位——`HelixQueryResult.suggested_actions`(12) → `GrpcMindAdapter.query` 消费 → `agent_loop MemoryRetrieval` 注入 context → `Execution`（HITL 闸+工具审计）执行。P11b = **验证闭环**。
+- **P11b 验证策略**（战术微调采纳）：入口 = mock Mind 返回 suggested_actions → 断言流转到 Execution 的集成测试。Mind 侧已就绪用真实 Mind；未就绪 mock 验证不阻塞（与 P10a T3 mock 策略一致）。验证边界：mock 验证 Anaphase 侧流转，Mind 侧认知工艺产出为独立验证项。
+- **P11c（OrchestrationCore trait）**：保持暂缓。trait 归属待 Mind 认知工艺显式化后再裁决，勿增实体。
+- **P11d（双向复用）**：依赖 P11c，同步暂缓。模式同构 + 接口复用，职责边界不合并（脑手分离铁律不变）。
 
 若 Anaphase 契约对齐导致现有行为重大偏差，或集成测试覆盖不足产生回归，可回滚至对齐前状态，重新评估实施范围。
 ## 关联

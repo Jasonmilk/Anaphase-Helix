@@ -7,7 +7,12 @@
 //! 4. Mind 离线 fail-open：连接失败 → resolve 回退 Noop（不 panic）；server 下线 → query 返回 Err
 
 use anaphase::adapters::mind::GrpcMindAdapter;
-use anaphase::adapters::{resolve_memory_adapter, MemoryAdapter};
+use anaphase::adapters::{
+    resolve_memory_adapter, FearAdapter, MemoryAdapter, NoopFearAdapter, NoopReasoningAdapter,
+    NoopSafetyAdapter, NoopToolAdapter, NoopUiAdapter, ReasoningAdapter, SafetyAdapter,
+    ToolAdapter, UiAdapter,
+};
+use anaphase::agent_loop::AgentLoop;
 use anaphase::config::AnaphaseConfig;
 use anaphase::helix_mind_api::helix_mind_server::{HelixMind, HelixMindServer};
 use anaphase::helix_mind_api::{
@@ -17,6 +22,7 @@ use anaphase::helix_mind_api::{
     RememberResponse, SuggestedAction, SyncHumanViewRequest, SyncHumanViewResponse,
     TriggerReincarnationRequest, TriggerReincarnationResponse,
 };
+use anaphase::reflex::ReflexArc;
 use std::sync::{Arc, Mutex};
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
@@ -29,6 +35,8 @@ struct Captured(Arc<Mutex<Vec<HelixQueryRequest>>>);
 #[derive(Default)]
 struct MockMind {
     captured: Captured,
+    /// P11b：mock Mind 返回的 suggested_actions（模拟 Mind 认知工艺产出的动作建议）
+    suggested_actions: Vec<SuggestedAction>,
 }
 
 fn mock_node(content: &str) -> Node {
@@ -71,7 +79,7 @@ impl HelixMind for MockMind {
             exhaustion_reason: "".into(),
             impasse_level: 0,
             stages_attempted: 1,
-            suggested_actions: vec![],
+            suggested_actions: self.suggested_actions.clone(),
             activation_vector: vec![],
             // 响应 echo 请求的 traceparent（Mind 只透传不生成）
             traceparent: req.traceparent.clone(),
@@ -180,6 +188,34 @@ async fn spawn_mock_mind() -> (
     let captured = Captured::default();
     let svc = HelixMindServer::new(MockMind {
         captured: captured.clone(),
+        suggested_actions: vec![],
+    });
+    let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
+    let handle = tokio::spawn(async move {
+        tonic::transport::Server::builder()
+            .add_service(svc)
+            .serve_with_incoming_shutdown(TcpListenerStream::new(listener), async {
+                let _ = shutdown_rx.await;
+            })
+            .await
+            .unwrap();
+    });
+    (format!("http://{}", addr), captured, shutdown_tx, handle)
+}
+
+/// P11b：spawn 一个返回指定 suggested_actions 的 mock Mind（模拟 Mind 认知工艺产出的动作建议）
+async fn spawn_mock_mind_with_actions(actions: Vec<SuggestedAction>) -> (
+    String,
+    Captured,
+    tokio::sync::oneshot::Sender<()>,
+    tokio::task::JoinHandle<()>,
+) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let captured = Captured::default();
+    let svc = HelixMindServer::new(MockMind {
+        captured: captured.clone(),
+        suggested_actions: actions,
     });
     let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
     let handle = tokio::spawn(async move {
@@ -308,4 +344,36 @@ async fn mind_offline_query_returns_err_after_server_down() {
 
     let result = adapter.query("查询", false).await;
     assert!(result.is_err(), "server 下线后 query 必须返回 Err（非 panic）");
+}
+
+/// P11b 验证闭环：mock Mind 返回 suggested_actions → 断言流转到 Execution。
+/// 验证 Anaphase 侧单向编排链路（Mind 产出由真实 Mind 侧独立验证；mock 验证不阻塞）。
+#[tokio::test]
+async fn p11b_suggested_actions_flow_to_execution() {
+    let actions = vec![SuggestedAction {
+        action_type: "web_search".into(),
+        parameters: "{}".into(),
+        reason: "P11b mock：模拟 Mind 认知工艺产出动作建议".into(),
+    }];
+    let (endpoint, _captured, _tx, _handle) = spawn_mock_mind_with_actions(actions).await;
+    let adapter = Arc::new(GrpcMindAdapter::new(&endpoint).await.unwrap());
+
+    // 1) adapter 层：Mind 返回的 suggested_actions 被消费
+    let result = adapter.query("帮我查一下最新研究", false).await.unwrap();
+    assert_eq!(result.suggested_actions, vec!["web_search"], "suggested_actions 应从 Mind 响应消费");
+
+    // 2) agent_loop 全流程：suggested_actions 注入 context → 流转到 Execution（HITL 闸就位）
+    let reason: Arc<dyn ReasoningAdapter> = Arc::new(NoopReasoningAdapter);
+    let tool: Arc<dyn ToolAdapter> = Arc::new(NoopToolAdapter);
+    let safety: Arc<dyn SafetyAdapter> = Arc::new(NoopSafetyAdapter);
+    let ui: Arc<dyn UiAdapter> = Arc::new(NoopUiAdapter);
+    let fear: Arc<dyn FearAdapter> = Arc::new(NoopFearAdapter);
+    let reflex = ReflexArc { safety_rules: vec![] };
+    let mut agent = AgentLoop::new(adapter.clone(), reason, tool, safety, ui, fear, reflex);
+    agent.run_cycle("帮我查一下最新研究").await.unwrap();
+    assert_eq!(
+        agent.context.suggested_actions,
+        vec!["web_search"],
+        "suggested_actions 应流转到 Execution（MemoryRetrieval → context）"
+    );
 }
