@@ -2,83 +2,66 @@
 
 > **DNA 方法论 v1.0** ｜ PLAN.md 是导航牌，不是历史档案（≤150 行）。完成记录进 GROWTH.md。
 
-## 当前阶段：P10a — Mind 契约对齐 + 触发链路
+## 当前阶段：P10b — 认知工艺触发链路
 
-**目标**：对齐 Helix-Mind v4.1 冻结契约（Anaphase 侧已漂移 3 个 Append-Only 字段），打通 Anaphase → Mind 的认知循环触发链路。
+**目标**：打通 Anaphase → Mind 的认知工艺触发链路——`budget_tier` 前置路由（System 0 门控）真正被认知工艺消费；`suggested_mode` 由状态机驱动（非纯长度启发式）；HITL 审批通道接入 Tentacle 契约。
 
 ### 任务清单
 
 | # | 任务 | 内容 | 入口 |
 |---|---|---|---|
-| T1 | proto 契约同步（Append-Only） | 与 Mind proto 逐字段对齐：`BudgetTier` enum + `EnergyContext.budget_tier=9` + `HelixQueryRequest.traceparent=7` + `reserved 8 to max` + `HelixQueryResult.activation_vector=13` + traceparent 回传 | ADR-0001 |
-| T2 | mind.rs 补全 | 构造 `EnergyContext`（含 budget_tier，从状态推导）+ W3C 根 traceparent 生成透传 + 模式/自治从状态机推导（去硬编码） | ADR-0001 |
-| T3 | 接线 + 测试 | `mind_endpoint` 接线 + 集成测试（正常闭环 + **Mind 离线降级闭环**） | ADR-0001 |
+| T1 | System 0 门控经 budget_tier 前置路由验证 | 验证 `EnergyContext.budget_tier` 从 Anaphase 前置传入 Mind 后，被 Helix-Mind 认知工艺（System 0 门控/预算路由）消费；mock Mind 断言 budget_tier 值 + 集成测试扩展 | ADR-0010（Helix-Mind）+ ADR-0001 |
+| T2 | 状态机驱动 suggested_mode | `suggested_mode` 从 query 长度启发式改为 `states.rs` `HelixState` 状态驱动（PreAssessment 输出影响模式选择），保留启发式兜底 | ADR-0001 |
+| T3 | HITL 审批通道（Tentacle 契约） | `check_hitl_approval()` 实现：高风险动作（写操作/网络请求/凭证使用）挂起直至人类确认；接入 Tentacle 契约 | DNA 原则 4 |
 
-### T1 子步骤（proto 同步）
+### T1 子步骤（System 0 门控验证）
 
-1. `proto/helix_mind.proto` 新增 `BudgetTier` enum（与 Mind 一致）：
-   `AUGMENTABLE=0` / `ENDOGENOUS=1` / `EXOGENOUS_REQUIRED=2` / `VOID=3`
-2. `EnergyContext` 追加 `BudgetTier budget_tier = 9;`（Append-Only，不动 1-8）
-3. `HelixQueryRequest` 追加 `string traceparent = 7;` + `reserved 8 to max;`
-4. `HelixQueryResult` 追加 `repeated ActivationEntry activation_vector = 13;` + traceparent 回传字段（对齐 Mind 字段号）
-5. `ActivationEntry` message 定义（与 Mind proto 一致，字段号对齐）
+1. 确认 Helix-Mind 认知工艺（`helix-mind/docs/spec/cognitive-craft.md`）System 0 门控对 `budget_tier` 的消费点
+2. 扩展 mock Mind：断言收到的 `budget_tier` 与 Anaphase 推导一致（极简→ENDOGENOUS / 默认→AUGMENTABLE / 探索→EXOGENOUS_REQUIRED）
+3. 集成测试：不同查询特征 → 断言 Mind 侧收到对应 budget_tier
 
-### T1 契约对齐清单（字段号）
+### T2 子步骤（状态机驱动）
 
-| 消息 | Mind（真相源） | Anaphase（目标） |
-|---|---|---|
-| `EnergyContext` | 1-8 现有 + `budget_tier=9` | 同 Mind |
-| `HelixQueryRequest` | 1-6 现有 + `traceparent=7` + `reserved 8 to max` | 同 Mind |
-| `HelixQueryResult` | 1-12 现有 + `activation_vector=13` + traceparent 回传 | 同 Mind |
+1. `states.rs` 暴露当前 `HelixState`（如 PreAssessment 完成态）
+2. `derive_suggested_mode` 接收状态输入：PreAssessment 判定复杂 → ANCHOR/IMAGINATION；简单 → SKILLED
+3. 保留长度启发式作为无状态兜底（状态缺失时）
+4. 单元测试覆盖状态驱动路径
 
-### T2 子步骤（mind.rs 补全）
+### T3 子步骤（HITL 审批）
 
-1. **EnergyContext 构造**：从 Anaphase 状态推导
-   - `token_budget`：当前纪元预算（config 或状态）
-   - `budget_tier`：由状态推导（用户层级/任务复杂度 → AUGMENTABLE/ENDOGENOUS/EXOGENOUS_REQUIRED/VOID）
-   - `heliotropism/pulse/vigilance`：Amygdala 后置评估（可选，未启用则默认值）
-   - `latency_limit_ms`：config
-2. **traceparent 生成**：请求入口生成 W3C 根 `traceparent`（`00-<trace_id>-<span_id>-01`），经 `HelixQueryRequest` 透传
-3. **去硬编码**：`suggested_mode` / `autonomy_level` 从 Anaphase 状态机推导，不写死 1
-4. **降级钩子**：连接失败/超时 → 降级事件记录（含 trace_id），进入 Noop 路径
-
-### T3 子步骤（接线 + 测试）
-
-1. `config.toml`/`config.rs`：`mind_endpoint` 接线（默认空 = Noop 离线，与 DNA 降级一致）
-2. 集成测试用例：
-   - **正常闭环**：起 Mind 服务 → HelixQuery 返回节点 → Anaphase 收到记忆
-   - **trace 透传**：断言请求中的 traceparent 与响应一致
-   - **budget_tier 传递**：断言 Mind 收到非默认 budget_tier
-   - **Mind 离线降级**：停 Mind → Anaphase 降级运行（无记忆直接推理，fail-open）+ 降级事件被记录
+1. `check_hitl_approval(action, params)`：高风险动作 → 挂起 + 请求人类确认
+2. 未经确认的高风险动作被物理拦截（不执行）
+3. 接入 Tentacle 契约（工具执行前审计）
+4. 单元/集成测试：高风险挂起、确认后放行、拒绝后拦截
 
 ### 技术前提
 
-- Helix-Mind v4.1 契约已冻结（真相源：`helix-mind/crates/helix-mind-api/proto/helix_mind.proto`）
-- Anaphase 现有 proto 前 6 号字段与 Mind 对齐，仅缺 3 个追加字段
-- `src/adapters/mind.rs` 当前 `energy_context: None` + 硬编码模式
-- 降级链：`docs/design/dependency-fallback.md`（组件独立降级；Tuck 可配置硬依赖，启用后不可停摆）
+- P10a 已完成：proto 对齐 v4.1、EnergyContext 构造（budget_tier 推导）、mind.rs 补全、mock Mind 测试基座
+- `states.rs` HelixState 状态机（7 状态）存在
+- Helix-Mind 认知工艺 System 0 门控定义（`docs/spec/cognitive-craft.md`）
+- DNA 原则 4（HITL 人在回路）为设计依据
 
 ### 风险与注意事项
 
-- **字段号冲突**：追加必须与 Mind 完全一致，否则 gRPC 解码错乱（T1 验收重点）
-- **UDS vs TCP**：Mind 默认 UDS + 远程 TCP（mTLS 预留）；P10a 测试用 TCP 即可（本地回环）
-- **FTS/记忆不可用时**：降级为熟练模式直接推理，不阻塞（fail-open）
-- **budget_tier 推导**：先做简单规则（任务复杂度 → tier），不做过度设计（勿增实体）
+- **System 0 门控消费点确认**：若 Mind 侧认知工艺尚未显式消费 budget_tier，T1 退化为"断言传递正确"（勿过度设计，不强迫 Mind 实现）
+- **状态机驱动不破坏启发式**：状态缺失时必须兜底，避免 panic
+- **HITL 不阻塞无风险路径**：仅高风险动作走审批，日常动作零额外延迟
+- **生态手套感知**：P10b 仅预留扩展位（勿增实体），可用性状态感知推迟至 P10c+
 
 ### 验收标准
 
-- `cargo test --workspace` 全绿（含新增 mind 契约测试 ≥ 2 + **Mind 离线降级测试**）
-- Anaphase proto 与 Mind proto 字段号完全对齐（无冲突）
-- mind.rs 不再硬编码 `suggested_mode`/`autonomy_level`/`energy_context`
-- traceparent 从请求入口生成并透传至 Mind
-- **Mind 离线时 Anaphase 降级运行**（无记忆直接推理，fail-open），且降级事件被记录
+- `cargo test --workspace` 全绿（新增 budget_tier 路由 / 状态驱动 / HITL 测试）
+- mock Mind 断言 budget_tier 按查询特征正确传递（System 0 门控链路验证）
+- `suggested_mode` 由状态驱动，无状态时兜底启发式（不 panic）
+- 高风险动作未经确认被物理拦截，确认后放行
+- 方法论闭环：ADR 追加 P10b 决策、GROWTH 记录、spec 同步（decision→code→docs）
 
-## 下一阶段预览：P10b — 认知工艺触发链路
+## 下一阶段预览：P10c — 生态手套感知 + 生命周期实体化
 
-- System 0 门控经 `EnergyContext.budget_tier` 前置路由（ADR-0010）
-- Anaphase 状态机推导认知模式 → Mind `suggested_mode`
-- HITL 审批通道接入 Tentacle 契约
+- 生态手套（MCP/宇树/Unity/鸿蒙）可用性感知（DNA 原则 3 渐进扩展，可用性状态 → 独立扩展位）
+- 强制苏醒 / 认知脱水实体化（`wake_up()` / `dehydrate()`，跨纪元认知重载）
+- 任务 DAG 分支拓扑（`task_dag.rs`，自主生长不越 L0/L1）
 
 ---
 
-*Anaphase-Helix PLAN v1.1（P10a 细节补全，2026-08-28）*
+*Anaphase-Helix PLAN v1.2（P10b 阶段启动，P10a 完成，2026-08-28）*
