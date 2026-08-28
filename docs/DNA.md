@@ -8,9 +8,9 @@
 VISION.md 定义了 Anaphase-Helix 的“是什么”与“为什么”——它是 Helix 的执行躯体，通过 CI-144 与生态沟通，承载纪元代谢与双重熔断。
 DNA.md 定义 Anaphase-Helix 的“不可变原则”与“如何生长”——它是这个躯体的基因锁。修改 DNA 等于修改身份，旧身份的信用不会转移。这不是社会规则，是密码学事实。
 **本文件是所有 Anaphase-Helix 代码变更的最高裁判。** 任何 PR 若与 DNA 冲突，以 DNA 为准。
-## 一、不可变原则（9 条公理）
-> 注：VISION.md 为 8 条顶层叙事原则；DNA 作为代码最高裁判，按 Helix-Mind ADR-0020 补齐第 9 条 trace 根生成（执行铁律）。
-以下 9 条原则是 Anaphase-Helix 所有设计决策的最终依据。
+## 一、不可变原则（10 条公理）
+> 注：VISION.md 为 8 条顶层叙事原则；DNA 作为代码最高裁判，按 Helix-Mind ADR-0020 补齐第 9 条 trace 根生成（执行铁律），并按生态兼容定位补齐第 10 条。
+以下 10 条原则是 Anaphase-Helix 所有设计决策的最终依据。
 ### 原则 1：脑手分离，无锁分立
 Anaphase 自身不拥有任何对话树、决策树的本地存储或状态管理。它将 Helix-Mind 作为其唯一的“潜意识 Git 仓库”。Anaphase 所有的物理执行结果和环境观察，全部以标准的 Commit/Node 形式，单向追加到 Helix-Mind 的意识 DAG 中。
 > **工程映射（rs 分支）**：`src/adapters/mind.rs` 只读 Helix-Mind 的 gRPC 响应，不维护本地 L2/L3 持久化。所有“记忆写入”通过 `HelixConsolidate` RPC 完成。
@@ -50,6 +50,9 @@ Anaphase 不持有 L2/L3 长期记忆图谱（归 Helix-Mind）。但维护当�
 ### 原则 9：trace 根生成（执行铁律，Helix-Mind ADR-0020）
 Anaphase 在**每个外部请求入口**生成全局唯一的根 trace_id（W3C TraceContext 格式），并沿认知循环透传全生态（Mind 只透传，不生成）。它不消费 trace，它分发 trace。
 > **工程映射（rs 分支）**：`src/agent_loop.rs` 在请求入口生成 `traceparent`，经 `src/adapters/mind.rs` 透传至 HelixQueryRequest（字段号 7，Append-Only）。
+### 原则 10：生态兼容（优先 Helix 生态，兼容通用生态）
+Anaphase **优先兼容 Helix 生态**（Mind 记忆契约、Tentacle 工具、Tuck 安全、FlowModus 调度），同时**兼容通用生态**（harness、openclaw 等通用 Agent 编排器/协议）。记忆后端强制 Helix-Mind（单一真理源），但其余接口保持 body-agnostic，不烘焙任何身体特定假设。
+> **工程映射（rs 分支）**：`src/adapters/` 为唯一 IO 边界，adapter 可替换/可降级；`src/agent_loop.rs` 编排层不依赖具体 adapter 实现，只依赖契约。
 ## 二、分层自纠偏系统（N/D/A 三层）
 | 层级 | 名称 | 形式 | 作用 |
 |---|---|---|---|
@@ -67,7 +70,7 @@ Anaphase 在**每个外部请求入口**生成全局唯一的根 trace_id（W3C 
 > - 阶段完成并记录到 GROWTH.md 后，从 PLAN.md 移除该阶段内容
 > - 归档文件随仓库版本化（已移除 `.gitignore` 忽略规则）
 > - 提交前必须人工确认
-## 四、防腐化铁律（5 条）
+## 四、防腐化铁律（6 条）
 | # | 铁律 | 说明 |
 |---|---|---|
 | 1 | **版本以 spec/代码为源真相** | README/门面标注必须对齐，防版本漂移 |
@@ -75,6 +78,7 @@ Anaphase 在**每个外部请求入口**生成全局唯一的根 trace_id（W3C 
 | 3 | **变更先 ADR（D 层冻结）→ 改代码 → 同步门面** | 决策先于代码 |
 | 4 | **生长记录保留近 3 条，超则归档** | 历史永不删除，但按需加载 |
 | 5 | **提交前必须人工确认** | 无自动提交 |
+| 6 | **所有依赖必须有降级策略；已启用的 Tuck 不可降级** | **组件独立降级**：任一生态依赖停摆，其余组件降级继续运行（如 Callosum 失效，Mind/Tentacle/推理照常）。**Tuck 为可配置硬依赖**：是否启用由用户决定（不能强迫用户，debug 模式可不启用）；**一旦启用，Tuck 不允许停摆**（fail-closed，安全不可降级）。CI-144 v2.0 PAL 特征可更优雅实现此语义。降级链见 `docs/design/dependency-fallback.md` |
 ## 五、与 Helix-Mind DNA 的关系
 | 维度 | Helix-Mind DNA | Anaphase-Helix DNA |
 |---|---|---|
@@ -86,6 +90,6 @@ Anaphase 在**每个外部请求入口**生成全局唯一的根 trace_id（W3C 
 | **契约对齐** | — | **优先对齐 Helix-Mind v4.1**（budget_tier/traceparent/activation_vector） |
 **关键原则**：方法论机制（五件套流转、归档规则、ADR 两态）完全复用。哲学内容（9 条原则）独立编写，不拷贝 Helix-Mind。与 Helix-Mind 契约冲突时，一同研讨权衡后决断，不静默改。
 ## 六、一句话总结
-> **Anaphase-Helix DNA.md 是身体的基因锁。它继承 DNA 方法论 v2.0 的通用机制，但 9 条原则独立编写。任何代码变更必须与这 9 条原则对齐，修改 DNA 等于修改身份，旧身份信用不转移。**
+> **Anaphase-Helix DNA.md 是身体的基因锁。它继承 DNA 方法论 v2.0 的通用机制，但 10 条原则独立编写。任何代码变更必须与这 10 条原则对齐，修改 DNA 等于修改身份，旧身份信用不转移。**
 ---
 *《Anaphase-Helix DNA.md》v1.0 完。*

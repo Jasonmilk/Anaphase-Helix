@@ -12,20 +12,22 @@
 |---|---|---|---|
 | T1 | proto 契约同步（Append-Only） | `BudgetTier` enum + `EnergyContext.budget_tier=9` + `HelixQueryRequest.traceparent=7` + `reserved 8 to max` + `HelixQueryResult.activation_vector=13` + traceparent 回传 | ADR-0001 |
 | T2 | mind.rs 补全 | 构造 `EnergyContext`（含 budget_tier，从状态推导）+ W3C 根 trace_id 生成透传 + 模式/自治从状态机推导（去硬编码） | ADR-0001 |
-| T3 | 接线 + 测试 | `mind_endpoint` 接线 + 集成测试（起 Mind 服务连真实端点，验证 HelixQuery 闭环 + traceparent 透传） | ADR-0001 |
+| T3 | 接线 + 测试 | `mind_endpoint` 接线 + 集成测试（起 Mind 服务连真实端点，验证 HelixQuery 闭环 + traceparent 透传）+ **Mind 离线降级测试**（停 Mind 验证降级闭环） | ADR-0001 |
 
 ### 技术前提
 
 - Helix-Mind v4.1 契约已冻结（真相源：`helix-mind/crates/helix-mind-api/proto/helix_mind.proto`）
 - Anaphase 现有 proto 前 6 号字段与 Mind 对齐，仅缺 3 个追加字段
 - `src/adapters/mind.rs` 当前 `energy_context: None` + 硬编码模式
+- 降级链：`docs/design/dependency-fallback.md`（DNA 铁律 #6：所有依赖必须有降级策略，Tuck 除外）
 
 ### 验收标准
 
-- `cargo test --workspace` 全绿（含新增 mind 契约测试 ≥ 2）
+- `cargo test --workspace` 全绿（含新增 mind 契约测试 ≥ 2 + **Mind 离线降级测试**）
 - Anaphase proto 与 Mind proto 字段号完全对齐（无冲突）
 - mind.rs 不再硬编码 `suggested_mode`/`autonomy_level`/`energy_context`
 - traceparent 从请求入口生成并透传至 Mind
+- **Mind 离线时 Anaphase 降级运行**（无记忆直接推理，fail-open），且降级事件被记录
 
 ## 下一阶段预览：P10b — 认知工艺触发链路
 
