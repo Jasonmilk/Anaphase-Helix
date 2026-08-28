@@ -232,14 +232,18 @@ async fn budget_tier_propagates_with_query_complexity() {
     adapter.query("帮我查一下昨天的会议记录", false).await.unwrap();
     // 极简查询 → ENDOGENOUS (1)
     adapter.query("你好", false).await.unwrap();
+    // 探索查询 → EXOGENOUS_REQUIRED (2)
+    adapter.query("帮我研究一下这个课题", false).await.unwrap();
 
     let reqs = captured.0.lock().unwrap();
-    assert_eq!(reqs.len(), 2);
+    assert_eq!(reqs.len(), 3);
     let ec0 = reqs[0].energy_context.as_ref().expect("energy_context 存在");
     assert_eq!(ec0.budget_tier, 0, "中等查询 → AUGMENTABLE");
     assert!(ec0.system_load >= 0.0 && ec0.system_load <= 1.0, "system_load 真实感知");
     let ec1 = reqs[1].energy_context.as_ref().expect("energy_context 存在");
     assert_eq!(ec1.budget_tier, 1, "极简查询 → ENDOGENOUS");
+    let ec2 = reqs[2].energy_context.as_ref().expect("energy_context 存在");
+    assert_eq!(ec2.budget_tier, 2, "探索查询 → EXOGENOUS_REQUIRED（System 0 门控前置路由链路）");
 }
 
 #[tokio::test]
@@ -272,6 +276,26 @@ async fn grpc_adapter_connect_failure_returns_err() {
     // GrpcMindAdapter 连不可达端口 → 返回 Err（而非 panic）
     let result = GrpcMindAdapter::new("http://127.0.0.1:1").await;
     assert!(result.is_err(), "连接失败必须返回 Err 而非 panic");
+}
+
+#[tokio::test]
+async fn suggested_mode_state_driven_overrides_length() {
+    // P10b T2：set_complexity 状态驱动 suggested_mode（无视 query 长度），兜底保留
+    let (endpoint, captured, _tx, _handle) = spawn_mock_mind().await;
+    let adapter = GrpcMindAdapter::new(&endpoint).await.unwrap();
+
+    // 状态=复杂(3)：短 query 也走 IMAGINATION(2)
+    adapter.set_complexity(3);
+    adapter.query("你好", false).await.unwrap();
+    // 状态=简单(1)：长 query 也走 SKILLED(0)
+    adapter.set_complexity(1);
+    let long = "请深入分析这个复杂系统的架构与多维度权衡并给出完整方案建议与风险边界以及所有潜在的未知变量和未来可能的演进方向与备选路径";
+    adapter.query(long, false).await.unwrap();
+
+    let reqs = captured.0.lock().unwrap();
+    assert_eq!(reqs.len(), 2);
+    assert_eq!(reqs[0].suggested_mode, 2, "状态复杂 → IMAGINATION");
+    assert_eq!(reqs[1].suggested_mode, 0, "状态简单 → SKILLED");
 }
 
 #[tokio::test]

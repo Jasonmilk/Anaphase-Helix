@@ -3,6 +3,7 @@ pub mod agent_loop;
 pub mod states;
 pub mod reflex;
 pub mod config;
+pub mod hitl;
 
 // Include gRPC auto-generated Helix-Mind API
 pub mod helix_mind_api {

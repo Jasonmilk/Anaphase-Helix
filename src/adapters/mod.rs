@@ -20,6 +20,9 @@ pub struct QueryResult {
 pub trait MemoryAdapter: Send + Sync {
     async fn query(&self, query: &str, include_recessive: bool) -> Result<QueryResult, String>;
     async fn remember(&self, content: &str) -> Result<(), String>;
+    /// 状态驱动钩子（P10b T2）：Amygdala PreAssessment 输出复杂度（1=简单/2=中等/3=复杂），
+    /// adapter 据此调整 `suggested_mode`。默认实现为空操作（Noop 等忽略）。
+    fn set_complexity(&self, _level: u8) {}
 }
 
 pub struct NoopMemoryAdapter;

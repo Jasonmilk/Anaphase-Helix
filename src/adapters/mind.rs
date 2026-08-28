@@ -13,6 +13,7 @@
 //! 与生态手套感知后扩展。
 
 use async_trait::async_trait;
+use std::sync::atomic::{AtomicU8, Ordering};
 use sysinfo::System;
 use tonic::transport::Channel;
 use tracing::warn;
@@ -26,6 +27,8 @@ use super::{MemoryAdapter, QueryResult};
 
 pub struct GrpcMindAdapter {
     client: HelixMindClient<Channel>,
+    /// Amygdala PreAssessment 输出复杂度（1=简单/2=中等/3=复杂；0=未知，走兜底）
+    complexity: AtomicU8,
 }
 
 impl GrpcMindAdapter {
@@ -34,7 +37,10 @@ impl GrpcMindAdapter {
             .connect()
             .await?;
         let client = HelixMindClient::new(channel);
-        Ok(Self { client })
+        Ok(Self {
+            client,
+            complexity: AtomicU8::new(0),
+        })
     }
 }
 
@@ -45,7 +51,7 @@ impl MemoryAdapter for GrpcMindAdapter {
         let traceparent = generate_traceparent();
         // 身体生命体征：真实系统负载 → EnergyContext.system_load（激活 Mind 紧急通路）。
         let system_load = probe_system_load();
-        let suggested_mode = derive_suggested_mode(query);
+        let suggested_mode = derive_suggested_mode(query, self.complexity.load(Ordering::Relaxed));
         let request = tonic::Request::new(HelixQueryRequest {
             query: query.to_string(),
             suggested_mode: suggested_mode as i32,
@@ -86,6 +92,10 @@ impl MemoryAdapter for GrpcMindAdapter {
             .await
             .map_err(|e| e.to_string())?;
         Ok(())
+    }
+
+    fn set_complexity(&self, level: u8) {
+        self.complexity.store(level.clamp(0, 3), Ordering::Relaxed);
     }
 }
 
@@ -144,15 +154,24 @@ fn derive_budget_tier(query: &str, system_load: f64) -> BudgetTier {
     }
 }
 
-/// 认知模式推导（去硬编码）。短→Skilled；中→Anchor；长→Imagination。
-fn derive_suggested_mode(query: &str) -> CognitiveMode {
-    let len = query.trim().chars().count();
-    if len <= 10 {
-        CognitiveMode::Skilled
-    } else if len < 40 {
-        CognitiveMode::Anchor
-    } else {
-        CognitiveMode::Imagination
+/// 认知模式推导（P10b T2 状态机驱动）：`complexity` 来自 Amygdala PreAssessment 状态输出
+/// （1=简单→Skilled / 2=中等→Anchor / 3=复杂→Imagination）；`0`（未知/未设状态）时
+/// 回退 query 长度启发式兜底（不 panic）。
+fn derive_suggested_mode(query: &str, complexity: u8) -> CognitiveMode {
+    match complexity {
+        1 => CognitiveMode::Skilled,
+        2 => CognitiveMode::Anchor,
+        3 => CognitiveMode::Imagination,
+        _ => {
+            let len = query.trim().chars().count();
+            if len <= 10 {
+                CognitiveMode::Skilled
+            } else if len < 40 {
+                CognitiveMode::Anchor
+            } else {
+                CognitiveMode::Imagination
+            }
+        }
     }
 }
 
@@ -243,11 +262,24 @@ mod tests {
     }
 
     #[test]
-    fn suggested_mode_scales_with_length() {
-        assert_eq!(derive_suggested_mode("你好"), CognitiveMode::Skilled);
-        assert_eq!(derive_suggested_mode("帮我查一下昨天的会议记录"), CognitiveMode::Anchor);
+    fn suggested_mode_scales_with_length_fallback() {
+        // 无状态（complexity=0）→ 长度启发式兜底
+        assert_eq!(derive_suggested_mode("你好", 0), CognitiveMode::Skilled);
+        assert_eq!(derive_suggested_mode("帮我查一下昨天的会议记录", 0), CognitiveMode::Anchor);
         let long = "请深入分析这个复杂系统的架构与多维度权衡并给出完整方案建议与风险边界以及所有潜在的未知变量和未来可能的演进方向与备选路径";
-        assert_eq!(derive_suggested_mode(long), CognitiveMode::Imagination);
+        assert_eq!(derive_suggested_mode(long, 0), CognitiveMode::Imagination);
+    }
+
+    #[test]
+    fn suggested_mode_state_driven_overrides_length() {
+        // 状态机驱动：complexity 明确时优先于 query 长度
+        assert_eq!(derive_suggested_mode("你好", 3), CognitiveMode::Imagination, "复杂状态 → Imagination 无视短 query");
+        assert_eq!(derive_suggested_mode(long_query(), 1), CognitiveMode::Skilled, "简单状态 → Skilled 无视长 query");
+        assert_eq!(derive_suggested_mode("你好", 2), CognitiveMode::Anchor);
+    }
+
+    fn long_query() -> &'static str {
+        "请深入分析这个复杂系统的架构与多维度权衡并给出完整方案建议与风险边界以及所有潜在的未知变量和未来可能的演进方向与备选路径"
     }
 
     #[test]

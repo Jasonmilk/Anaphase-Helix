@@ -1,4 +1,5 @@
 use crate::adapters::*;
+use crate::hitl::HITLApprover;
 use crate::reflex::ReflexArc;
 use crate::states::HelixState;
 use std::sync::Arc;
@@ -32,6 +33,8 @@ pub struct AgentLoop {
     pub current_state: HelixState,
     /// Context carried through the cognitive cycle
     pub context: AgentContext,
+    /// HITL 人在回路审批通道（P10b T3，执行闸；默认 fail-closed）
+    pub hitl: HITLApprover,
 }
 
 /// Context data flowing through the cognitive cycle
@@ -83,6 +86,7 @@ impl AgentLoop {
             transitions,
             current_state: HelixState::Perception,
             context: AgentContext::default(),
+            hitl: HITLApprover::default(),
         }
     }
 
@@ -122,6 +126,9 @@ impl AgentLoop {
                 info!("[PreAssessment] Amygdala pre-assessment");
                 // 3D emotional vector calculation (minimal implementation)
                 self.context.amygdala_vector = (0.7, 0.3, 0.2); // Default: positive, calm, relaxed
+                // 状态机驱动（P10b T2）：Amygdala 启发式复杂度评估 → memory.set_complexity，
+                // 影响后续 query 的 suggested_mode。0=未知走兜底。
+                self.memory.set_complexity(assess_complexity(&self.context.user_input));
                 Ok(TransitionCondition::Success)
             }
             HelixState::MemoryRetrieval => {
@@ -201,29 +208,43 @@ impl AgentLoop {
             }
             HelixState::Execution => {
                 info!("[Execution] Executing tool call...");
-                // Safety audit
                 let action_str = self.context.suggested_actions.join(", ");
-                match self.safety.audit("execute", &action_str).await {
+                let command = "echo"; // P10b T3：真实工具命令由后续 Tentacle 接线提供（当前最小）
+                // HITL 执行闸（P10b T3，DNA 原则 4）：低风险 → 放行；高风险 → 人类确认
+                match self.hitl.check_approval(command, &[action_str.clone()]) {
                     Ok(true) => {
-                        // Execute tool
-                        match self.tool.execute("echo", &[action_str.clone()]).await {
-                            Ok(result) => {
-                                info!("[Execution] Execution result: {}", result);
-                                Ok(TransitionCondition::Success)
+                        // 放行 → 工具审计（safety，原则 5 扩展点）
+                        match self.safety.audit("execute", &action_str).await {
+                            Ok(true) => {
+                                // Execute tool
+                                match self.tool.execute(command, &[action_str.clone()]).await {
+                                    Ok(result) => {
+                                        info!("[Execution] Execution result: {}", result);
+                                        Ok(TransitionCondition::Success)
+                                    }
+                                    Err(e) => {
+                                        warn!("[Execution] Execution failed: {}", e);
+                                        Ok(TransitionCondition::Failure)
+                                    }
+                                }
+                            }
+                            Ok(false) => {
+                                warn!("[Execution] Safety audit rejected");
+                                Ok(TransitionCondition::Failure)
                             }
                             Err(e) => {
-                                warn!("[Execution] Execution failed: {}", e);
-                                Ok(TransitionCondition::Failure)
+                                warn!("[Execution] Safety audit failed, fallback allow: {}", e);
+                                Ok(TransitionCondition::Success)
                             }
                         }
                     }
                     Ok(false) => {
-                        warn!("[Execution] Safety audit rejected");
+                        warn!("[Execution] HITL rejected: high-risk action blocked");
                         Ok(TransitionCondition::Failure)
                     }
                     Err(e) => {
-                        warn!("[Execution] Safety audit failed, fallback allow: {}", e);
-                        Ok(TransitionCondition::Success)
+                        warn!("[Execution] HITL unavailable, high-risk blocked (fail-closed): {}", e);
+                        Ok(TransitionCondition::Failure)
                     }
                 }
             }
@@ -239,5 +260,19 @@ impl AgentLoop {
                 Ok(TransitionCondition::Success)
             }
         }
+    }
+}
+
+/// Amygdala 启发式复杂度评估（P10b T2）：PreAssessment 状态输出 → suggested_mode 状态驱动。
+/// 1=简单 / 2=中等 / 3=复杂。当前为 query 特征启发式（P10b 最小正确）；
+/// 未来独立 `amygdala.rs` 时，此处可替换为多维评估（意图/情感/历史）。0 不返回（状态机必输出 1-3）。
+fn assess_complexity(query: &str) -> u8 {
+    let len = query.trim().chars().count();
+    if len <= 10 {
+        1
+    } else if len < 40 {
+        2
+    } else {
+        3
     }
 }

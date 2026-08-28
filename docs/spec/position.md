@@ -42,3 +42,5 @@ Anaphase-Helix 是 Helix 数字生命体的**执行躯体与编排中枢**。
 ## A.4 生态兼容原则
 
 Anaphase **优先兼容 Helix 生态，同时兼容通用生态**（harness、openclaw 等）。gRPC 记忆契约不烘焙任何身体特定假设（body-agnostic）。生态项目停摆时，其它生态项目可降级运行；**Tuck 例外**——启用 Tuck 后不允许停摆（CI-144 v2.0 特征能力可优雅实现，见 `spec/ci-144.md`）。
+
+**生态手套优先级**：**Cellrix 是 Helix 生态的"原生生态手套"**（观测与操作 Anaphase），优先级高于通用生态手套（MCP 等）。CI-144 v2.0（PAL）当前状态：审查通过、等待冻结，不阻塞 P10b，后续在 Tuck 重构时自然激活。
