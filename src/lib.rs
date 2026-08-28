@@ -6,6 +6,7 @@ pub mod config;
 pub mod hitl;
 pub mod lifecycle;
 pub mod task_dag;
+pub mod gloves;
 
 // Include gRPC auto-generated Helix-Mind API
 pub mod helix_mind_api {
