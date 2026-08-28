@@ -18,12 +18,14 @@ Anaphase 自身不拥有任何对话树、决策树的本地存储或状态管�
 Anaphase 本身在网络传输层是完全协议中立的。它不直接在进程内配置任何外部大模型的明文 API 密钥、私有 Cookie 或 Token。所有敏感身份凭证全部由最边缘的 Tuck（物理安全闸）存放在物理隔离的硬件保密柜中。
 > **工程映射（rs 分支）**：`src/adapters/tuck.rs`（预留，当前 rs 分支待建）。出网流量强制经 Tuck 代理，凭证标签（如 `weibo_session_1`）传递，明文凭证永不进入 Anaphase 内存。
 ### 原则 3：工作态归 Anaphase
-Anaphase 不持有 L2/L3 长期记忆图谱（归 Helix-Mind）。但维护当前纪元的工作记忆（提纯后的短期上下文）与任务 DAG 分支拓扑（自主生长，绝不越过 L0/L1 边界）。
+Anaphase 不持有 L2/L3 长期记忆图谱（归 Helix-Mind）。但维护当前纪元的工作记忆（提纯后的短期上下文）与任务 DAG 分支拓扑（自主生长，绝不越过 L0/L1 边界）。**Anaphase 是身体的感知器官：持续感知宿主系统与资源状态（生命体征），作为 `EnergyContext` 输入传递给 Mind，让认知决策基于真实感知而非猜测。** 生态手套（MCP/宇树/Unity/鸿蒙等）可用性感知为渐进扩展，可用时标记，故障时降级。
 > **工程映射（rs 分支）**：
 > - 工作记忆：`src/working_memory.rs`（待建）中的 `working_memory` 队列（仅当前纪元，不持久化）
 > - 任务 DAG：`src/task_dag.rs`（待建）中的分支拓扑（反向链接至 Helix-Mind 知识库）
 > - 强制苏醒：`src/lifecycle.rs`（待建）`wake_up()` 读取 `session_notes.json`（跨纪元认知重载）
 > - 认知脱水：`src/lifecycle.rs`（待建）`dehydrate()` 压缩历史为简报（供下世代加载）
+> - 生命体征感知：`src/adapters/mind.rs` `probe_system_load()`（已实现，sysinfo → `EnergyContext.system_load` + `budget_tier` 高负载降级）
+> - 生态手套感知：P10b 渐进（可用性状态 → 独立扩展位，勿增实体）
 ### 原则 4：HITL 人在回路审批
 高风险动作（如写操作、网络请求、凭证使用）必须经过人类确认后才能执行。未经确认的高风险动作被物理拦截。
 > **工程映射（rs 分支）**：`src/lifecycle.rs`（待建）中的 `check_hitl_approval()` 在 `SYS_EXECUTE` 前强制调用，高风险动作挂起直至人类确认。
@@ -62,9 +64,14 @@ Anaphase **优先兼容 Helix 生态**（Mind 记忆契约、Tentacle 工具、T
 ## 三、文档生态 SOP（DNA v2.0）
 | 文档 | 职责 | 规则 |
 |---|---|---|
+| **VISION.md** | 愿景根索引（N 层地图） | 极少变更，改动需走 DNA 审查 |
+| **SPEC.md** | 完整叙事（灵魂故事） | 与 spec/ 分卷保持同步 |
+| **RNA.md** | 加载协议（三层闭环） | 新会话按序加载 |
 | **PLAN.md** | 当前阶段导航 + 下一阶段预览 | ≤150 行，超出触发历史迁移 |
 | **GROWTH.md** | 已完成阶段生长记录 | ≤3 条，超则归档至 `docs/archive/growth/` |
+| **DEPRECATE.md** | 凋亡清单 | 每条有明确死期，安葬入 `archive/deprecated/` |
 | **ADR** | 决策记录 | 两态（Draft/Active），Active 后不可覆写，仅可 Superseded |
+| **spec/** | 规格分卷 | 按需加载，版本以 spec/代码为源真相 |
 | **归档** | 历史记录 | 随仓库版本化，永不删除 |
 > **关键规则**：
 > - 阶段完成并记录到 GROWTH.md 后，从 PLAN.md 移除该阶段内容
@@ -88,7 +95,7 @@ Anaphase **优先兼容 Helix 生态**（Mind 记忆契约、Tentacle 工具、T
 | **方法论机制** | PLAN/GROWTH/ADR 流转 | **完全复用**（DNA v2.0 通用机制） |
 | **归档规则** | 历史入仓，不忽略 | **完全复用**（已移除 .gitignore 忽略） |
 | **契约对齐** | — | **优先对齐 Helix-Mind v4.1**（budget_tier/traceparent/activation_vector） |
-**关键原则**：方法论机制（五件套流转、归档规则、ADR 两态）完全复用。哲学内容（9 条原则）独立编写，不拷贝 Helix-Mind。与 Helix-Mind 契约冲突时，一同研讨权衡后决断，不静默改。
+**关键原则**：方法论机制（五件套流转、归档规则、ADR 两态）完全复用。哲学内容（10 条原则）独立编写，不拷贝 Helix-Mind。与 Helix-Mind 契约冲突时，一同研讨权衡后决断，不静默改。
 ## 六、一句话总结
 > **Anaphase-Helix DNA.md 是身体的基因锁。它继承 DNA 方法论 v2.0 的通用机制，但 10 条原则独立编写。任何代码变更必须与这 10 条原则对齐，修改 DNA 等于修改身份，旧身份信用不转移。**
 ---

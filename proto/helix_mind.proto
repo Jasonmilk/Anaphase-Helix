@@ -17,6 +17,15 @@ enum AutonomyLevel {
   SURVIVAL = 2;
 }
 
+// P10a (ADR-0001): cognitive budget routing class, decided by the body before
+// calling Mind. Aligned with Helix-Mind ADR-0010.
+enum BudgetTier {
+  AUGMENTABLE = 0;         // default: normal deep query (liquid + colloid)
+  ENDOGENOUS = 1;          // 0-token emergency — crystals + high-relevance colloids
+  EXOGENOUS_REQUIRED = 2;  // exploration — may touch gas traces
+  VOID = 3;                // no cognition — metadata only
+}
+
 // ---------- Layer 1 Messages ----------
 message QueryRequest {
   string query = 1;
@@ -66,6 +75,7 @@ message EnergyContext {
   double system_load = 6;
   double familiarity = 7;      // v3.3: task familiarity [0.0, 1.0]
   uint32 impasse_depth = 8;    // v3.3: impasse depth (0-5)
+  BudgetTier budget_tier = 9;  // P10a (ADR-0001): cognitive budget routing class
 }
 
 // v3.3: tool action suggestion returned by Mind
@@ -82,6 +92,17 @@ message HelixQueryRequest {
   bool include_recessive = 4;
   bool allow_imagination = 5;
   AutonomyLevel autonomy_level = 6;
+  // P10a (ADR-0001 / Helix-Mind ADR-0020): W3C traceparent, pass-through —
+  // Anaphase creates the root trace_id at the entry (ECOSYSTEM §3.1).
+  string traceparent = 7;
+  reserved 8 to max;  // Append-Only Schema Evolution (Helix-Mind ADR-0012)
+}
+
+// P10a (ADR-0001): SA-Core energy-diffusion activation entry
+// (Helix-Mind frozen-contract payoff, P4 M-10).
+message ActivationEntry {
+  string node_id = 1;
+  double activation = 2;  // 0.0-1.0 activation in this cognitive cycle
 }
 
 message HelixQueryResult {
@@ -97,6 +118,13 @@ message HelixQueryResult {
   int32 impasse_level = 10;                  // v3.3
   int32 stages_attempted = 11;               // v3.3
   repeated SuggestedAction suggested_actions = 12;  // v3.3
+  // P10a (ADR-0001): activation_vector — reserved 13 payoff (Append-Only,
+  // Helix-Mind ADR-0012). Diffusion algorithm fills it later; empty by default.
+  repeated ActivationEntry activation_vector = 13;
+  // P10a (ADR-0001 / Helix-Mind ADR-0020): W3C traceparent, pass-through
+  // (echo of the request).
+  string traceparent = 14;
+  reserved 15 to max;  // Append-Only Schema Evolution (Helix-Mind ADR-0012)
 }
 
 message HelixConsolidateRequest {
