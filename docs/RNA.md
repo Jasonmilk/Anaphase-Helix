@@ -1,6 +1,6 @@
 # Anaphase-Helix RNA — 加载协议 v1.0
 
-> **所属方法论**：DNA 自生长方法论 v2.0
+> **所属方法论**：phyt-DNA v1.0（方法论锚点项目 https://github.com/Jasonmilk/phyt-DNA）
 > **对齐知识本体**：v1.0
 > **状态**：定稿生效
 

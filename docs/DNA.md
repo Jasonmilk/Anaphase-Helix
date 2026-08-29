@@ -1,9 +1,9 @@
 # 🧬 Anaphase-Helix DNA.md
 > **版本**：v1.0
 > **日期**：2026-08-28
-> **继承自**：Helix-Mind DNA.md v2.0（方法论机制复用）、Anaphase-Helix VISION.md v1.0（哲学内容源）
+> **继承自**：phyt-DNA v1.0（方法论机制复用，方法论锚点项目 https://github.com/Jasonmilk/phyt-DNA）、Anaphase-Helix VISION.md v1.0（哲学内容源）
 > **性质**：Anaphase-Helix 的不可变原则与自生长流程
-> **所属方法论**：DNA 自生长方法论 v2.0
+> **所属方法论**：phyt-DNA v1.0
 ## 一粒种子的自白
 VISION.md 定义了 Anaphase-Helix 的“是什么”与“为什么”——它是 Helix 的执行躯体，通过 CI-144 与生态沟通，承载纪元代谢与双重熔断。
 DNA.md 定义 Anaphase-Helix 的“不可变原则”与“如何生长”——它是这个躯体的基因锁。修改 DNA 等于修改身份，旧身份的信用不会转移。这不是社会规则，是密码学事实。

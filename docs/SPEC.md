@@ -1,7 +1,7 @@
 # Anaphase-Helix 知识本体 v1.0
 
 > **继承自**：Anaphase-Helix VISION.md v1.0（2026-08-28）、架构蓝图 v11.0、Helix-Mind 知识本体 v4.1
-> **本版本起**：知识本体由 DNA 自生长方法论（v2.0）管理
+> **本版本起**：知识本体由 phyt-DNA v1.0 管理（方法论锚点项目 https://github.com/Jasonmilk/phyt-DNA）
 > **形态变更**：单文件愿景 → 分卷按需加载（`docs/spec/`）
 > **内容连续性**：VISION 卷 A-E 拆分为分卷，无内容丢失
 
