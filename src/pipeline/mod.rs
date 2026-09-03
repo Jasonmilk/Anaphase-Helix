@@ -56,11 +56,14 @@ impl PipelineConfig {
 }
 
 /// Input to one pipeline run. `job_id` / `created_at` are caller-supplied
-/// (envelope assembled by the pipeline, ADR-0003 decision 5).
+/// (envelope assembled by the pipeline, ADR-0003 decision 5). `identity_labels`
+/// are caller-identity labels forwarded to Tentacle for audit / disclosure
+/// (ADR-0004); BTreeMap keeps the input deterministic.
 pub struct PipelineInput {
     pub job_id: String,
     pub created_at: String,
     pub llm_content: String,
+    pub identity_labels: std::collections::BTreeMap<String, String>,
 }
 
 /// Result of one pipeline run.
@@ -103,16 +106,29 @@ impl Pipeline {
 
     /// Execute every call against Tentacle, returning one evidence record each.
     /// trace_id is derived as `{job_id}#{index}` (deterministic, ADR-0003).
-    pub async fn execute_calls(&self, job: &TtJob) -> Result<Vec<EvidenceRecord>, String> {
+    /// identity_labels are forwarded per job (ADR-0004).
+    pub async fn execute_calls(
+        &self,
+        job: &TtJob,
+        identity_labels: &std::collections::BTreeMap<String, String>,
+    ) -> Result<Vec<EvidenceRecord>, String> {
         let mut records = Vec::with_capacity(job.calls.len());
         for (i, call) in job.calls.iter().enumerate() {
             let params = serde_json::to_string(&call.args)
                 .map_err(|e| format!("serialize args: {e}"))?;
             let trace_id = format!("{}#{i}", job.job_id);
             let started = std::time::Instant::now();
+            let labels: std::collections::HashMap<String, String> =
+                identity_labels.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
             let resp = self
                 .tentacle
-                .execute_tool(&call.tool, &params, &trace_id)
+                .execute_tool_with_labels(
+                    &call.tool,
+                    &params,
+                    &trace_id,
+                    labels,
+                    String::new(), // seen_entropy_bloom: replay guard not yet enabled (ADR-0004)
+                )
                 .await?;
             let duration_ms = started.elapsed().as_millis() as u64;
             let record = if resp.ok {
@@ -204,7 +220,7 @@ impl Pipeline {
         // stage 2 (pure)
         let job = Self::assemble_tt_job(&input.job_id, &input.created_at, calls);
         // stage 3 (IO)
-        let records = self.execute_calls(&job).await?;
+        let records = self.execute_calls(&job, &input.identity_labels).await?;
         // stage 4 (in-memory)
         let evidence_ids: Vec<String> = records.iter().map(|r| r.evidence_id.clone()).collect();
         self.record_evidence(records);

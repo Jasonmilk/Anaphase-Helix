@@ -139,6 +139,7 @@ async fn run_live_loop(llm_content: &str, job_id: &str, clock_now: u64) -> anaph
             job_id: job_id.to_string(),
             created_at: "2026-09-03T00:00:00Z".to_string(),
             llm_content: content,
+            identity_labels: std::collections::BTreeMap::new(),
         })
         .await
         .unwrap();

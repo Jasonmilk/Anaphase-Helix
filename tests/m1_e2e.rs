@@ -89,6 +89,7 @@ async fn run_closed_loop(
             job_id: job_id.to_string(),
             created_at: "2026-09-03T00:00:00Z".to_string(),
             llm_content: content,
+            identity_labels: std::collections::BTreeMap::new(),
         })
         .await
         .unwrap();

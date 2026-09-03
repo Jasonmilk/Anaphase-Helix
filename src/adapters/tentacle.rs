@@ -9,9 +9,8 @@ use super::ToolAdapter;
 ///
 /// M1 (ADR-0003 decision 11): the deterministic pipeline holds this adapter
 /// directly via `execute_tool`; the `ToolAdapter` trait impl is retained as a
-/// compatibility shim for run_cycle. identity_labels / seen_entropy_bloom use
-/// protocol-default empty values (zero hardcoding, DNA principle 11); their
-/// semantics are defined in M1.5.
+/// compatibility shim for run_cycle. identity_labels / seen_entropy_bloom
+/// semantics are defined in M1.5 (ADR-0004) — see `execute_tool` docs.
 pub struct GrpcTentacleAdapter {
     client: TentacleServiceClient<Channel>,
 }
@@ -30,18 +29,39 @@ impl GrpcTentacleAdapter {
     /// `trace_id` is forwarded verbatim (Anaphase is the trace root, DNA
     /// principle 9). Returns the full protocol response so the pipeline can
     /// inspect `ok` / `data` / `error` without lossy reshaping.
+    ///
+    /// M1.5 (ADR-0004): identity_labels / seen_entropy_bloom semantics.
+    /// - identity_labels: caller identity for Tuck audit + progressive
+    ///   disclosure (e.g. {"tenant":"...", "channel":"...", "app":"..."}).
+    ///   Plain labels only — never credentials (Tentacle does not pass secrets).
+    /// - seen_entropy_bloom: caller-side "already-seen entropy" Bloom filter,
+    ///   used to detect duplicate / replayed tool calls (Callosum replay
+    ///   defense). Optional: empty = no replay guard on this call.
     pub async fn execute_tool(
         &self,
         tool: &str,
         params: &str,
         trace_id: &str,
     ) -> Result<ExecuteToolResponse, String> {
+        self.execute_tool_with_labels(tool, params, trace_id, HashMap::new(), String::new())
+            .await
+    }
+
+    /// Execute a tool with explicit identity labels and replay-guard bloom.
+    pub async fn execute_tool_with_labels(
+        &self,
+        tool: &str,
+        params: &str,
+        trace_id: &str,
+        identity_labels: HashMap<String, String>,
+        seen_entropy_bloom: String,
+    ) -> Result<ExecuteToolResponse, String> {
         let request = tonic::Request::new(ExecuteToolRequest {
             tool: tool.to_string(),
             params: params.to_string(),
-            identity_labels: HashMap::new(),
+            identity_labels,
             trace_id: trace_id.to_string(),
-            seen_entropy_bloom: String::new(),
+            seen_entropy_bloom,
         });
         let response = self
             .client
