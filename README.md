@@ -4,7 +4,7 @@
 ![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)
 ![Build](https://img.shields.io/badge/Build-Passing-brightgreen.svg)
 ![Style](https://img.shields.io/badge/Code%20Style-Google-black.svg)
-[![Tests](https://img.shields.io/badge/tests-78%2F78%20passed-green)](#)
+[![Tests](https://img.shields.io/badge/tests-94%2F94%20passed-green)](#)
 
 **The silicon-based operating system & physical brain for digital lifeforms.
 Perceive, reason, act, remember, and immunize — the body that houses the soul.**
@@ -33,12 +33,18 @@ via the CommonIntents protocol stack with zero hard coupling.
   pipeline against a real `tentacle --transport grpc` + real fixture plugins
   (manifest+js, SHA-256 pinned); identity_labels / seen_entropy_bloom semantics
   (ADR-0004); run_cycle Execution resolves real tool names (echo fallback)
+- 🧩 **Candidate E: run_cycle ↔ pipeline merge** (ADR-0005) — structured
+  Reasoning output protocol (`{"calls":[...],"impasse":bool}`) replaces
+  `contains("tool_call")` string matching; the six pipeline stages land in the
+  cognitive states (Reasoning parses + assembles, Execution executes + records
+  evidence, Reflection checks criteria + writes the verdict ledger); all five
+  historical run_cycle hardcodings are now config-sourced (`RunCycleConfig`)
 - ⏱️ **Injectable Clock & Determinism Clamps** — FakeClock tests, derived trace_id,
   BTreeMap over HashMap, no endpoint leakage
 - 🛠️ **Safety-First Execution** — Audited tool calls & immune system interception
 - 🚀 **Zero-Dependency Boot** — Runs fully offline without any external services
-- ✅ **Full Test Coverage** — 78/78 passing (lib + 4 integration suites) +
-  2 live e2e (#[ignore], real Tentacle)
+- ✅ **Full Test Coverage** — 94/94 passing (lib + 5 integration suites) +
+  3 live e2e (#[ignore], real Tentacle)
 
 ## Project Structure
 
@@ -51,17 +57,19 @@ anaphase-helix/
 ├── knowledge_base/
 │   └── fixture-codex.json  # Criteria rules + retry policy (single source of truth)
 ├── docs/
-│   ├── contracts/          # tt_job.schema.json + fixture-data-shapes.md (human contracts)
-│   ├── decisions/          # ADR-0001..0003 (decision records)
+│   ├── contracts/          # tt_job.schema.json + fixture-data-shapes.md + reasoning-output.md
+│   ├── decisions/          # ADR-0001..0005 (decision records)
+│   ├── design/             # candidate-e-recon.md (E-T1 exploration notes)
 │   └── PLAN.md / GROWTH.md / DNA.md / RNA.md   # phyt-DNA methodology
 ├── src/
 │   ├── lib.rs              # Core library (public API + modules)
 │   ├── agent_loop.rs       # 7-state cognitive engine (DAG-driven)
 │   │                       #   + M1.5-T6: Execution resolves real tool name
+│   │                       #   + E: structured Reasoning + pipeline merge (ADR-0005)
 │   ├── reflex.rs           # Somatic immune system (hard + soft reflex)
 │   ├── adapters/           # Adapter traits + Noop fallback + gRPC/HTTP impls
 │   │                       #   + M1.5-T5: identity_labels/bloom semantics
-│   ├── config.rs           # Configuration loader
+│   ├── config.rs           # Configuration loader + RunCycleConfig (zero hardcoding)
 │   ├── contract/           # tt_job types + parse_llm_calls (M1)
 │   ├── evidence/           # Append-only evidence store (M1)
 │   ├── criteria/           # Six pure deterministic checkers (M1)
@@ -69,11 +77,13 @@ anaphase-helix/
 │   ├── pipeline/           # Six-stage deterministic pipeline (M1)
 │   └── hitl.rs / lifecycle.rs / task_dag.rs / gloves.rs
 └── tests/
-    ├── common/mod.rs       # Shared MockTentacle + spawn_mock_tentacle
-    ├── integration_test.rs # Noop adapter + reflex + cognitive cycle (14)
+    ├── common/mod.rs       # Shared MockTentacle + StructuredReasoning stub
+    ├── integration_test.rs # Noop adapter + reflex + cognitive cycle (16)
     ├── mind_integration.rs # Mock Mind gRPC closed loop (9)
     ├── mock_tentacle.rs    # M1-T0/T7: adapter roundtrip + 3 branches (4)
-    └── m1_e2e.rs           # M1-T8: MET/UNMET/deterministic replay (3)
+    ├── m1_e2e.rs           # M1-T8: MET/UNMET/deterministic replay (3)
+    ├── m1_e2e_live.rs      # Real Tentacle e2e (3, #[ignore]) — incl. run_cycle chain
+    └── run_cycle_pipeline.rs # Candidate E: run_cycle ↔ pipeline full merge (8)
 ```
 
 ## Quick Start
@@ -89,18 +99,21 @@ You will see a full cycle:
 
 ## Testing
 
-Run the full suite (**78/78 passing**):
+Run the full suite (**94/94 passing**):
 ```bash
 cargo test
 ```
 
 Coverage:
-- **lib (46)**: adapters, reflex, contract, evidence, criteria, ledger, lifecycle, task_dag, gloves
+- **lib (54)**: adapters, reflex, contract (incl. reasoning-output parsing + job-id derivation),
+  evidence, criteria, ledger (incl. RFC3339 rendering), lifecycle, task_dag, gloves
 - **integration_test (16)**: Noop adapters, hard/soft reflex, dangerous-action block, cognitive cycle, M1.5-T6 real-tool resolution
 - **mind_integration (9)**: mock Mind gRPC closed loop, trace passthrough, budget_tier, P11b actions
 - **mock_tentacle (4)**: Tentacle v1 roundtrip, trace_id verbatim, failure branch, transport error
 - **m1_e2e (3)**: MET verdict, UNMET + retry_due + reopen scan, deterministic replay (byte-identical)
-- **m1_e2e_live (2, #[ignore])**: real Tentacle gRPC + real fixture plugins (manual integration)
+- **run_cycle_pipeline (8)**: candidate-E full chain (MET/UNMET/no-plan/deterministic replay) +
+  run_config-driven behavior (cycle cap, soft-reflex threshold, amygdala vector, mode, placeholder)
+- **m1_e2e_live (3, #[ignore])**: real Tentacle gRPC + real fixture plugins (manual integration)
 
 ## Architecture
 
@@ -132,6 +145,24 @@ Six independently-testable stages — no giant `run()` blob:
 Verdict semantics: **MET** closes the job; **UNMET** carries `retry_due`
 (`now + base_delay`, from fixture-codex) + `parent_id` lineage for M1.5
 cross-session requeue. Reopen = queue consumption (M1.5).
+
+### Candidate E: run_cycle ↔ pipeline mapping (ADR-0005)
+
+The six pipeline stages now land in the cognitive states (ADR-0003 decision 9):
+
+| Pipeline stage | run_cycle state |
+|---|---|
+| 1. Parse LLM calls | `Reasoning` — `parse_reasoning_output` (structured protocol) |
+| 2. Assemble tt_job | `Reasoning` tail — deterministic envelope (job_id = FNV-1a, created_at = clock) |
+| 3. gRPC execute | `Execution` — `execute_structured` → `Pipeline::execute_calls` |
+| 4. Record evidence | `Execution` tail — `record_evidence` |
+| 5. Criteria check | `Reflection` — `Pipeline::check_results` |
+| 6. Verdict ledger | `Reflection` tail — `build_verdict` + `ledger.append` |
+
+Reasoning output protocol (see `docs/contracts/reasoning-output.md`):
+`{"calls":[...],"impasse":bool}` or a bare `[...]` array — the legacy
+`contains("tool_call")` string matching is gone. All five historical run_cycle
+hardcodings are config-sourced via `RunCycleConfig` (DNA principle 11).
 
 ### Adapter Layer (Pluggable & Fault-Tolerant)
 
