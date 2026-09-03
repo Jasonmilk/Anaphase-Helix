@@ -89,6 +89,16 @@ impl Clock for FakeClock {
     }
 }
 
+/// Render unix seconds as an RFC3339 UTC timestamp — the tt_job envelope
+/// `created_at` format (`docs/contracts/tt_job.schema.json`: date-time).
+/// Deterministic: the same seconds always yield the same string, so replay
+/// with an injected clock is byte-identical (candidate E, ADR-0005).
+pub fn unix_secs_to_rfc3339(secs: u64) -> String {
+    chrono::DateTime::from_timestamp(secs as i64, 0)
+        .map(|dt| dt.to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
+        .unwrap_or_else(|| "1970-01-01T00:00:00Z".to_string())
+}
+
 /// Append-only ledger. Records are never mutated or removed.
 pub struct Ledger {
     records: Vec<LedgerRecord>,
@@ -198,5 +208,13 @@ mod tests {
         let jsonl = ledger.to_jsonl();
         let back = Ledger::from_jsonl(&jsonl, Box::new(FakeClock(1000))).unwrap();
         assert_eq!(back.to_jsonl(), jsonl, "roundtrip must be byte-identical");
+    }
+
+    #[test]
+    fn unix_secs_to_rfc3339_epoch_and_offsets() {
+        assert_eq!(unix_secs_to_rfc3339(0), "1970-01-01T00:00:00Z");
+        assert_eq!(unix_secs_to_rfc3339(1000), "1970-01-01T00:16:40Z");
+        // A realistic moment (2026-09-03T00:00:00Z) — deterministic UTC rendering.
+        assert_eq!(unix_secs_to_rfc3339(1788393600), "2026-09-03T00:00:00Z");
     }
 }
