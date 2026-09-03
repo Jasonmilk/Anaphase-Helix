@@ -16,12 +16,19 @@
 // Fixtures are parameterized (fixture-data-shapes.md): default 20-series -> MET,
 // {"series":[1.0]} -> UNMET.
 
+mod common;
+
+use anaphase::adapters::*;
+use anaphase::agent_loop::AgentLoop;
 use anaphase::adapters::http_reasoning::HttpReasoningAdapter;
 use anaphase::adapters::ReasoningAdapter;
 use anaphase::config::AnaphaseConfig;
 use anaphase::ledger::{FakeClock, VerdictStatus};
 use anaphase::pipeline::{Pipeline, PipelineConfig, PipelineInput};
+use anaphase::reflex::ReflexArc;
+use common::StructuredReasoning;
 use std::process::{Child, Command, Stdio};
+use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::sync::oneshot;
@@ -175,4 +182,45 @@ async fn m1_5_live_unmet() {
     assert_eq!(outcome.verdict, VerdictStatus::Unmet, "short series must fail");
     assert_eq!(outcome.retry_due, Some(4600), "clock 1000 + base_delay 3600");
     assert!(outcome.check_reports.iter().any(|r| !r.passed));
+}
+
+#[tokio::test]
+#[ignore = "requires real tentacle binary + node (manual integration)"]
+async fn m1_5_live_run_cycle_structured_chain() {
+    // Candidate E (ADR-0005): run_cycle drives the FULL six-stage chain over
+    // the REAL tentacle binary + real fixture plugins. The reasoning stub emits
+    // the structured calls protocol directly (no mock LLM needed), then
+    // Execution executes via the real gRPC wire and Reflection writes the
+    // verdict ledger. Default fixture -> MET.
+    let port = free_port();
+    let mut child = spawn_real_tentacle(port);
+    let endpoint = format!("http://127.0.0.1:{}", port);
+    let tentacle = connect_with_retry(&endpoint).await;
+
+    let pipe_config = PipelineConfig::from_codex("knowledge_base/fixture-codex.json").unwrap();
+    let pipeline = Pipeline::new(tentacle, Box::new(FakeClock(1000)), pipe_config);
+
+    let mut agent = AgentLoop::new(
+        Arc::new(NoopMemoryAdapter),
+        Arc::new(StructuredReasoning {
+            output: r#"{"calls":[{"tool":"numbers","args":{},"expect":"numbers"}]}"#.into(),
+        }),
+        Arc::new(NoopToolAdapter),
+        Arc::new(NoopSafetyAdapter),
+        Arc::new(NoopUiAdapter),
+        Arc::new(NoopFearAdapter),
+        ReflexArc { safety_rules: vec![] },
+    )
+    .with_pipeline(pipeline);
+
+    agent.run_cycle("calculate").await.unwrap();
+
+    let records = agent.pipeline.as_ref().unwrap().ledger.records();
+    assert_eq!(records.len(), 1, "one verdict for the real chain");
+    match &records[0] {
+        anaphase::ledger::LedgerRecord::Verdict { status: VerdictStatus::Met, .. } => {}
+        other => panic!("real run_cycle chain must be MET, got: {other:?}"),
+    }
+    let _ = child.kill();
+    let _ = child.wait();
 }

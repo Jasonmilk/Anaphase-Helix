@@ -6,6 +6,7 @@
 // unused by one target would otherwise warn as dead_code — allow them here.
 #![allow(dead_code)]
 
+use anaphase::adapters::ReasoningAdapter;
 use anaphase::tentacle_api::tentacle_service_server::{TentacleService, TentacleServiceServer};
 use anaphase::tentacle_api::{
     ExecuteToolRequest, ExecuteToolResponse, ExecuteToolStreamResponse, GetManifestRequest,
@@ -57,6 +58,19 @@ impl MockTentacle {
             .unwrap()
             .insert(tool.to_string(), error.to_string());
         self
+    }
+}
+
+/// Reasoning stub emitting a fixed structured output (candidate-E protocol,
+/// ADR-0005). Used by run_cycle <-> pipeline integration tests and live e2e.
+pub struct StructuredReasoning {
+    pub output: String,
+}
+
+#[async_trait::async_trait]
+impl ReasoningAdapter for StructuredReasoning {
+    async fn reason(&self, _prompt: &str, _model: &str) -> Result<String, String> {
+        Ok(self.output.clone())
     }
 }
 
