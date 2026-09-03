@@ -3,6 +3,29 @@ use anaphase::agent_loop::AgentLoop;
 use anaphase::reflex::ReflexArc;
 use std::sync::Arc;
 
+// ── M1.5-T6 recording adapter: captures the resolved Execution command ──
+
+struct RecordingToolAdapter {
+    pub last_command: std::sync::Mutex<Option<String>>,
+}
+
+impl RecordingToolAdapter {
+    fn new() -> Self {
+        Self { last_command: std::sync::Mutex::new(None) }
+    }
+}
+
+#[async_trait::async_trait]
+impl ToolAdapter for RecordingToolAdapter {
+    async fn execute(&self, command: &str, _args: &[String]) -> Result<String, String> {
+        *self.last_command.lock().unwrap() = Some(command.to_string());
+        Ok(format!("executed: {command}"))
+    }
+    async fn perceive(&self, _query: &str) -> Result<String, String> {
+        Ok("perceived".to_string())
+    }
+}
+
 // ── Adapter Noop tests ─────────────────────────────────────────────
 
 #[tokio::test]
@@ -150,4 +173,66 @@ async fn test_state_transitions_from_perception_to_reflection() {
     
     // After a full cycle, should return to Perception
     assert_eq!(agent.current_state, HelixState::Perception);
+}
+
+// ── M1.5-T6: Execution resolves the configured real tool name ──────────
+
+/// Reasoning stub that signals a tool call (triggers NeedsTool -> Execution).
+struct TriggerToolReasoning;
+
+#[async_trait::async_trait]
+impl ReasoningAdapter for TriggerToolReasoning {
+    async fn reason(&self, _query: &str, _mode: &str) -> Result<String, String> {
+        Ok("tool_call: numbers".to_string())
+    }
+}
+
+#[tokio::test]
+async fn test_execution_resolves_real_tool_command() {
+    use anaphase::states::HelixState;
+
+    let memory: Arc<dyn MemoryAdapter> = Arc::new(NoopMemoryAdapter);
+    let reason: Arc<dyn ReasoningAdapter> = Arc::new(TriggerToolReasoning);
+    let tool = Arc::new(RecordingToolAdapter::new());
+    let tool_adapter: Arc<dyn ToolAdapter> = tool.clone();
+    let safety: Arc<dyn SafetyAdapter> = Arc::new(NoopSafetyAdapter);
+    let ui: Arc<dyn UiAdapter> = Arc::new(NoopUiAdapter);
+    let fear: Arc<dyn FearAdapter> = Arc::new(NoopFearAdapter);
+    let reflex = ReflexArc { safety_rules: vec![] };
+
+    // Configured real tool name -> Execution must call it (not the echo placeholder).
+    let mut agent = AgentLoop::new(memory, reason, tool_adapter, safety, ui, fear, reflex)
+        .with_tool_command("numbers");
+
+    agent.run_cycle("Hello").await.unwrap();
+
+    // Cycle ends back at Perception; the real tool name was resolved.
+    assert_eq!(agent.current_state, HelixState::Perception);
+    assert_eq!(
+        *tool.last_command.lock().unwrap(),
+        Some("numbers".to_string()),
+        "Execution must dispatch to the configured real tool name"
+    );
+}
+
+#[tokio::test]
+async fn test_execution_keeps_echo_placeholder_when_unset() {
+    let memory: Arc<dyn MemoryAdapter> = Arc::new(NoopMemoryAdapter);
+    let reason: Arc<dyn ReasoningAdapter> = Arc::new(TriggerToolReasoning);
+    let tool = Arc::new(RecordingToolAdapter::new());
+    let tool_adapter: Arc<dyn ToolAdapter> = tool.clone();
+    let safety: Arc<dyn SafetyAdapter> = Arc::new(NoopSafetyAdapter);
+    let ui: Arc<dyn UiAdapter> = Arc::new(NoopUiAdapter);
+    let fear: Arc<dyn FearAdapter> = Arc::new(NoopFearAdapter);
+    let reflex = ReflexArc { safety_rules: vec![] };
+
+    // No tool_command -> legacy echo placeholder (backwards compatible).
+    let mut agent = AgentLoop::new(memory, reason, tool_adapter, safety, ui, fear, reflex);
+
+    agent.run_cycle("Hello").await.unwrap();
+    assert_eq!(
+        *tool.last_command.lock().unwrap(),
+        Some("echo".to_string()),
+        "without tool_command, Execution keeps the echo placeholder"
+    );
 }

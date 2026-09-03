@@ -35,6 +35,13 @@ pub struct AgentLoop {
     pub context: AgentContext,
     /// HITL 人在回路审批通道（P10b T3，执行闸；默认 fail-closed）
     pub hitl: HITLApprover,
+    /// M1.5-T6 (ADR-0004): optional real tool name resolved for Execution.
+    /// When set (e.g. "numbers"), Execution calls this tool via the configured
+    /// ToolAdapter (e.g. GrpcTentacleAdapter) instead of the `echo` placeholder.
+    /// None keeps the legacy echo path — existing tests stay untouched.
+    /// This is the first, lowest-risk step of the six-stage run_cycle re-wire
+    /// (ADR-0003 decision 9 mapping table).
+    pub tool_command: Option<String>,
 }
 
 /// Context data flowing through the cognitive cycle
@@ -87,7 +94,16 @@ impl AgentLoop {
             current_state: HelixState::Perception,
             context: AgentContext::default(),
             hitl: HITLApprover::default(),
+            tool_command: None,
         }
+    }
+
+    /// Configure the real tool name resolved for Execution (M1.5-T6).
+    /// When set together with a gRPC-capable ToolAdapter, Execution calls the
+    /// real Tentacle tool instead of the `echo` placeholder.
+    pub fn with_tool_command(mut self, command: impl Into<String>) -> Self {
+        self.tool_command = Some(command.into());
+        self
     }
 
     /// Run one full cognitive cycle
@@ -209,7 +225,8 @@ impl AgentLoop {
             HelixState::Execution => {
                 info!("[Execution] Executing tool call...");
                 let action_str = self.context.suggested_actions.join(", ");
-                let command = "echo"; // P10b T3：真实工具命令由后续 Tentacle 接线提供（当前最小）
+                // M1.5-T6: resolved real tool name (echo placeholder when unset).
+                let command = self.tool_command.as_deref().unwrap_or("echo");
                 // HITL 执行闸（P10b T3，DNA 原则 4）：低风险 → 放行；高风险 → 人类确认
                 match self.hitl.check_approval(command, &[action_str.clone()]) {
                     Ok(true) => {
