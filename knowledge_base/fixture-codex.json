@@ -1,0 +1,14 @@
+{
+  "rules": {
+    "low": 0.0,
+    "high": 100.0,
+    "min_len": 3,
+    "min_n": 2,
+    "tolerance": 0.1,
+    "min_ratio": 0.5
+  },
+  "retry_policy": {
+    "base_delay_secs": 3600,
+    "max_attempts": 3
+  }
+}

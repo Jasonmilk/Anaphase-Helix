@@ -7,6 +7,10 @@ pub mod hitl;
 pub mod lifecycle;
 pub mod task_dag;
 pub mod gloves;
+pub mod contract;
+pub mod evidence;
+pub mod criteria;
+pub mod ledger;
 
 // Include gRPC auto-generated Helix-Mind API
 pub mod helix_mind_api {
