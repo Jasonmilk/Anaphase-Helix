@@ -4,6 +4,7 @@
 //! - fixed-field struct, no HashMap, no endpoint/port fields
 //! - `evidence_id` is derived from `{job_id}#{call_index}` (no randomness)
 
+use crate::contract::Expect;
 use serde::{Deserialize, Serialize};
 
 /// A single tool execution record (success or failure).
@@ -14,6 +15,9 @@ pub struct EvidenceRecord {
     pub job_id: String,
     pub call_index: u32,
     pub tool: String,
+    /// Expected result shape — self-contained so evidence can be re-checked
+    /// independently (M1.5 re-entry without re-deriving from calls).
+    pub expect: Expect,
     pub ok: bool,
     /// Tool response data on success, or error message on failure.
     pub data: String,
@@ -21,12 +25,21 @@ pub struct EvidenceRecord {
 }
 
 impl EvidenceRecord {
-    pub fn new(job_id: &str, call_index: u32, tool: &str, ok: bool, data: &str, duration_ms: u64) -> Self {
+    pub fn new(
+        job_id: &str,
+        call_index: u32,
+        tool: &str,
+        expect: Expect,
+        ok: bool,
+        data: &str,
+        duration_ms: u64,
+    ) -> Self {
         Self {
             evidence_id: format!("{job_id}#{call_index}"),
             job_id: job_id.to_string(),
             call_index,
             tool: tool.to_string(),
+            expect,
             ok,
             data: data.to_string(),
             duration_ms,
@@ -84,8 +97,8 @@ mod tests {
     #[test]
     fn append_then_roundtrip_is_byte_identical() {
         let mut store = EvidenceStore::new();
-        store.append(EvidenceRecord::new("tt_job-001", 0, "numbers", true, r#"{"series":[1.0,2.0]}"#, 5));
-        store.append(EvidenceRecord::new("tt_job-001", 1, "rate", false, "tool failed", 12));
+        store.append(EvidenceRecord::new("tt_job-001", 0, "numbers", Expect::Numbers, true, r#"{"series":[1.0,2.0]}"#, 5));
+        store.append(EvidenceRecord::new("tt_job-001", 1, "rate", Expect::Rate, false, "tool failed", 12));
 
         let jsonl = store.to_jsonl();
         let back = EvidenceStore::from_jsonl(&jsonl).unwrap();
@@ -95,14 +108,14 @@ mod tests {
 
     #[test]
     fn evidence_id_is_derived_not_random() {
-        let r = EvidenceRecord::new("tt_job-007", 3, "text", true, "{}", 1);
+        let r = EvidenceRecord::new("tt_job-007", 3, "text", Expect::Text, true, "{}", 1);
         assert_eq!(r.evidence_id, "tt_job-007#3");
     }
 
     #[test]
     fn failure_records_are_kept() {
         let mut store = EvidenceStore::new();
-        store.append(EvidenceRecord::new("j", 0, "rate", false, "boom", 9));
+        store.append(EvidenceRecord::new("j", 0, "rate", Expect::Rate, false, "boom", 9));
         assert!(!store.records()[0].ok);
         assert_eq!(store.records()[0].data, "boom");
     }

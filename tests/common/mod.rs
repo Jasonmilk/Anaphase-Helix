@@ -1,6 +1,10 @@
 // Shared test helpers for M1 integration tests.
 // Replicates the mind_integration.rs mock-server pattern for the Tentacle v1 protocol.
 // English comments only (project convention).
+//
+// Each integration-test target compiles this module independently, so items
+// unused by one target would otherwise warn as dead_code — allow them here.
+#![allow(dead_code)]
 
 use anaphase::tentacle_api::tentacle_service_server::{TentacleService, TentacleServiceServer};
 use anaphase::tentacle_api::{
@@ -23,10 +27,12 @@ impl CapturedTraceIds {
     }
 }
 
-/// Mock Tentacle service. ExecuteTool returns a preset JSON payload keyed by tool name.
+/// Mock Tentacle service. ExecuteTool returns a preset JSON payload keyed by tool
+/// name, or an explicit failure for tools registered via `with_failing_tool`.
 #[derive(Clone, Default)]
 pub struct MockTentacle {
     tool_data: Arc<Mutex<HashMap<String, String>>>,
+    failing_tools: Arc<Mutex<HashMap<String, String>>>,
     pub captured_trace_ids: CapturedTraceIds,
 }
 
@@ -43,6 +49,15 @@ impl MockTentacle {
             .insert(tool.to_string(), data.to_string());
         self
     }
+
+    /// Register a tool that responds with `ok=false` and the given error message.
+    pub fn with_failing_tool(self, tool: &str, error: &str) -> Self {
+        self.failing_tools
+            .lock()
+            .unwrap()
+            .insert(tool.to_string(), error.to_string());
+        self
+    }
 }
 
 #[tonic::async_trait]
@@ -53,6 +68,15 @@ impl TentacleService for MockTentacle {
     ) -> Result<Response<ExecuteToolResponse>, Status> {
         let req = request.into_inner();
         self.captured_trace_ids.0.lock().unwrap().push(req.trace_id.clone());
+        if let Some(err) = self.failing_tools.lock().unwrap().get(&req.tool).cloned() {
+            return Ok(Response::new(ExecuteToolResponse {
+                ok: false,
+                data: String::new(),
+                error: err,
+                stop_reason: None,
+                duration_ms: 1,
+            }));
+        }
         let data = self
             .tool_data
             .lock()
