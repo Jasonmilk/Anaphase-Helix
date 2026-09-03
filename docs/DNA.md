@@ -8,9 +8,9 @@
 VISION.md 定义了 Anaphase-Helix 的“是什么”与“为什么”——它是 Helix 的执行躯体，通过 CI-144 与生态沟通，承载纪元代谢与双重熔断。
 DNA.md 定义 Anaphase-Helix 的“不可变原则”与“如何生长”——它是这个躯体的基因锁。修改 DNA 等于修改身份，旧身份的信用不会转移。这不是社会规则，是密码学事实。
 **本文件是所有 Anaphase-Helix 代码变更的最高裁判。** 任何 PR 若与 DNA 冲突，以 DNA 为准。
-## 一、不可变原则（10 条公理）
-> 注：VISION.md 为 8 条顶层叙事原则；DNA 作为代码最高裁判，按 Helix-Mind ADR-0020 补齐第 9 条 trace 根生成（执行铁律），并按生态兼容定位补齐第 10 条。
-以下 10 条原则是 Anaphase-Helix 所有设计决策的最终依据。
+## 一、不可变原则（11 条公理）
+> 注：VISION.md 为 8 条顶层叙事原则；DNA 作为代码最高裁判，按 Helix-Mind ADR-0020 补齐第 9 条 trace 根生成（执行铁律），按生态兼容定位补齐第 10 条，并按 M1 里程碑审查补齐第 11 条零硬编码（ADR-0002）。
+以下 11 条原则是 Anaphase-Helix 所有设计决策的最终依据。
 ### 原则 1：脑手分离，无锁分立
 Anaphase 自身不拥有任何对话树、决策树的本地存储或状态管理。它将 Helix-Mind 作为其唯一的“潜意识 Git 仓库”。Anaphase 所有的物理执行结果和环境观察，全部以标准的 Commit/Node 形式，单向追加到 Helix-Mind 的意识 DAG 中。
 > **工程映射（rs 分支）**：`src/adapters/mind.rs` 只读 Helix-Mind 的 gRPC 响应，不维护本地 L2/L3 持久化。所有“记忆写入”通过 `HelixConsolidate` RPC 完成。
@@ -56,6 +56,9 @@ Anaphase 在**每个外部请求入口**生成全局唯一的根 trace_id（W3C 
 ### 原则 10：生态兼容（优先 Helix 生态，兼容通用生态）
 Anaphase **优先兼容 Helix 生态**（Mind 记忆契约、Tentacle 工具、Tuck 安全、FlowModus 调度），同时**兼容通用生态**（harness、openclaw 等通用 Agent 编排器/协议）。记忆后端强制 Helix-Mind（单一真理源），但其余接口保持 body-agnostic，不烘焙任何身体特定假设。
 > **工程映射（rs 分支）**：`src/adapters/` 为唯一 IO 边界，adapter 可替换/可降级；`src/agent_loop.rs` 编排层不依赖具体 adapter 实现，只依赖契约。
+### 原则 11：零硬编码（Zero Hardcoding）
+代码中出现的任何字面量（阈值、占位、模型名、循环上限、坐标向量、字符串常量）必须有来源——配置 / 常量表 / 派生规则。禁止裸硬编码；新增硬编码即违反本原则。协议可选字段用协议默认空值（如空 map / 空串）而非造假占位。
+> **工程映射（rs 分支）**：M1 起所有阈值/占位/魔法数走 `config` 或 `knowledge_base/` 契约文件。run_cycle 既有 5 处硬编码（`0.7/0.3/0.2`、`"left_brain"`、`p_death>0.7`、`"echo"`、`0..7`）为已知技术债，M1.5 随 pipeline 接线一并消除（ADR-0002）。
 ## 二、分层自纠偏系统（N/D/A 三层）
 | 层级 | 名称 | 形式 | 作用 |
 |---|---|---|---|
@@ -96,8 +99,8 @@ Anaphase **优先兼容 Helix 生态**（Mind 记忆契约、Tentacle 工具、T
 | **方法论机制** | PLAN/GROWTH/ADR 流转 | **完全复用**（DNA v2.0 通用机制） |
 | **归档规则** | 历史入仓，不忽略 | **完全复用**（已移除 .gitignore 忽略） |
 | **契约对齐** | — | **优先对齐 Helix-Mind v4.1**（budget_tier/traceparent/activation_vector） |
-**关键原则**：方法论机制（五件套流转、归档规则、ADR 两态）完全复用。哲学内容（10 条原则）独立编写，不拷贝 Helix-Mind。与 Helix-Mind 契约冲突时，一同研讨权衡后决断，不静默改。
+**关键原则**：方法论机制（五件套流转、归档规则、ADR 两态）完全复用。哲学内容（11 条原则）独立编写，不拷贝 Helix-Mind。与 Helix-Mind 契约冲突时，一同研讨权衡后决断，不静默改。
 ## 六、一句话总结
-> **Anaphase-Helix DNA.md 是身体的基因锁。它继承 DNA 方法论 v2.0 的通用机制，但 10 条原则独立编写。任何代码变更必须与这 10 条原则对齐，修改 DNA 等于修改身份，旧身份信用不转移。**
+> **Anaphase-Helix DNA.md 是身体的基因锁。它继承 DNA 方法论 v2.0 的通用机制，但 11 条原则独立编写。任何代码变更必须与这 11 条原则对齐，修改 DNA 等于修改身份，旧身份信用不转移。**
 ---
 *《Anaphase-Helix DNA.md》v1.0 完。*

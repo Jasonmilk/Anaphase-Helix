@@ -18,5 +18,5 @@ pub mod flowmodus_api {
 }
 
 pub mod tentacle_api {
-    tonic::include_proto!("tentacle");
+    tonic::include_proto!("tentacle.v1");
 }

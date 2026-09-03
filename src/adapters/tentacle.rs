@@ -1,12 +1,19 @@
 use async_trait::async_trait;
+use std::collections::HashMap;
 use tonic::transport::Channel;
-use crate::tentacle_api::tentacle_client::TentacleClient;
-use crate::tentacle_api::{ExecuteRequest, PerceiveRequest};
+use crate::tentacle_api::tentacle_service_client::TentacleServiceClient;
+use crate::tentacle_api::{ExecuteToolRequest, ExecuteToolResponse};
 use super::ToolAdapter;
 
-/// gRPC adapter for Helix-Tentacle execution layer.
+/// gRPC adapter for the Helix-Tentacle execution layer (Tentacle v1 protocol).
+///
+/// M1 (ADR-0003 decision 11): the deterministic pipeline holds this adapter
+/// directly via `execute_tool`; the `ToolAdapter` trait impl is retained as a
+/// compatibility shim for run_cycle. identity_labels / seen_entropy_bloom use
+/// protocol-default empty values (zero hardcoding, DNA principle 11); their
+/// semantics are defined in M1.5.
 pub struct GrpcTentacleAdapter {
-    client: TentacleClient<Channel>,
+    client: TentacleServiceClient<Channel>,
 }
 
 impl GrpcTentacleAdapter {
@@ -14,42 +21,56 @@ impl GrpcTentacleAdapter {
         let channel = Channel::from_shared(endpoint.to_string())?
             .connect()
             .await?;
-        let client = TentacleClient::new(channel);
+        let client = TentacleServiceClient::new(channel);
         Ok(Self { client })
+    }
+
+    /// Execute a tool with a raw JSON params string (M1 pipeline entry point).
+    ///
+    /// `trace_id` is forwarded verbatim (Anaphase is the trace root, DNA
+    /// principle 9). Returns the full protocol response so the pipeline can
+    /// inspect `ok` / `data` / `error` without lossy reshaping.
+    pub async fn execute_tool(
+        &self,
+        tool: &str,
+        params: &str,
+        trace_id: &str,
+    ) -> Result<ExecuteToolResponse, String> {
+        let request = tonic::Request::new(ExecuteToolRequest {
+            tool: tool.to_string(),
+            params: params.to_string(),
+            identity_labels: HashMap::new(),
+            trace_id: trace_id.to_string(),
+            seen_entropy_bloom: String::new(),
+        });
+        let response = self
+            .client
+            .clone()
+            .execute_tool(request)
+            .await
+            .map_err(|e| e.to_string())?
+            .into_inner();
+        Ok(response)
     }
 }
 
 #[async_trait]
 impl ToolAdapter for GrpcTentacleAdapter {
+    /// run_cycle compatibility shim: maps (command, args) onto ExecuteTool.
+    /// Not consumed by M1; replaced by execute_tool wiring in M1.5.
     async fn execute(&self, command: &str, args: &[String]) -> Result<String, String> {
-        let request = tonic::Request::new(ExecuteRequest {
-            command: command.to_string(),
-            args: args.to_vec(),
-            channel: "native".to_string(),
-            timeout_ms: 30000,
-            max_memory_mb: 128,
-        });
-        let response = self.client.clone()
-            .execute(request)
-            .await
-            .map_err(|e| e.to_string())?
-            .into_inner();
-        if response.status != 0 {
-            Err(format!("Command failed (status {}): {}", response.status, response.stderr))
-        } else {
-            Ok(response.stdout)
+        let params = serde_json::to_string(args).unwrap_or_else(|_| "[]".to_string());
+        let resp = self.execute_tool(command, &params, "").await?;
+        if !resp.ok {
+            return Err(format!("tool '{}' failed: {}", command, resp.error));
         }
+        Ok(resp.data)
     }
 
-    async fn perceive(&self, query: &str) -> Result<String, String> {
-        let request = tonic::Request::new(PerceiveRequest {
-            query: query.to_string(),
-        });
-        let response = self.client.clone()
-            .perceive(request)
-            .await
-            .map_err(|e| e.to_string())?
-            .into_inner();
-        Ok(response.data)
+    /// Perceive has no counterpart in the Tentacle v1 protocol (no Perceive RPC).
+    /// Returns an explicit error instead of inventing a fake mapping
+    /// (zero hardcoding, DNA principle 11).
+    async fn perceive(&self, _query: &str) -> Result<String, String> {
+        Err("perceive is not supported by the Tentacle v1 protocol".to_string())
     }
 }

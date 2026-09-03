@@ -1,47 +1,123 @@
+// vendored from helix-tentacle/crates/tentacle-transport-grpc/proto/tentacle.proto
+// @ source commit: 26bd357 (Helix-Tentacle rs branch P5 complete + ecosystem integration)
+// canonical source: https://github.com/Jasonmilk/helix-tentacle
+// This file is a verbatim copy of the canonical source. Do NOT trim RPCs/fields or
+// renumber when vendoring. Modifications MUST be synced back to the canonical source;
+// drift prevention: see ADR-0003 (M1 milestone execution architecture).
+
 syntax = "proto3";
-package tentacle;
 
-// Tentacle is the execution layer for Helix. It provides tool execution,
-// environment perception, and progressive information foraging.
-service Tentacle {
-    // Execute a tool or command
-    rpc Execute(ExecuteRequest) returns (ExecuteResponse);
-    // Perceive the environment (system status, network, etc.)
-    rpc Perceive(PerceiveRequest) returns (PerceiveResponse);
+package tentacle.v1;
+
+// Tentacle tool execution service
+//
+// Maps to HTTP transport endpoints:
+// - ListManifests      <-> GET  /v1/manifest
+// - GetManifest        <-> GET  /v1/tools/{name}/manifest
+// - ExecuteTool        <-> POST /v1/tools/{name}/execute
+// - ExecuteToolStream  <-> POST /v1/tools/{name}/execute_stream
+service TentacleService {
+  // Manifest index (progressive disclosure: name + description + version + security level only)
+  rpc ListManifests(ListManifestsRequest) returns (ListManifestsResponse);
+
+  // Fetch full manifest
+  rpc GetManifest(GetManifestRequest) returns (GetManifestResponse);
+
+  // Execute tool (one-shot result)
+  rpc ExecuteTool(ExecuteToolRequest) returns (ExecuteToolResponse);
+
+  // Stream tool execution (SSE equivalent, result stream)
+  rpc ExecuteToolStream(ExecuteToolRequest) returns (stream ExecuteToolStreamResponse);
 }
 
-message ExecuteRequest {
-    // The command/script to execute
-    string command = 1;
-    // Command arguments
-    repeated string args = 2;
-    // Execution channel hint: "native" or "quickjs"
-    string channel = 3;
-    // Maximum execution time in milliseconds
-    uint32 timeout_ms = 4;
-    // Maximum memory in megabytes (for QuickJS)
-    uint32 max_memory_mb = 5;
+// === request/response messages ===
+
+message ListManifestsRequest {}
+
+message ListManifestsResponse {
+  repeated ManifestIndex manifests = 1;
 }
 
-message ExecuteResponse {
-    // Standard output
-    string stdout = 1;
-    // Standard error (if any)
-    string stderr = 2;
-    // Exit code or status
-    int32 status = 3;
-    // Actual execution time in milliseconds
-    uint32 duration_ms = 4;
-    // Peak memory used in kilobytes
-    uint32 memory_kb = 5;
+// Lightweight manifest index (progressive disclosure)
+message ManifestIndex {
+  string name = 1;
+  string description = 2;
+  string version = 3;
+  string security_level = 4; // normal / elevated / critical
 }
 
-message PerceiveRequest {
-    // Perception query (e.g., "system_load", "network_status")
-    string query = 1;
+message GetManifestRequest {
+  string name = 1;
 }
 
-message PerceiveResponse {
-    // Perceived data as JSON string
-    string data = 1;
+message GetManifestResponse {
+  Manifest manifest = 1;
+}
+
+// Full manifest (mirrors tentacle-core::Manifest)
+message Manifest {
+  string name = 1;
+  string version = 2;
+  string description = 3;
+  string executable = 4;
+  Integrity integrity = 5;
+  string parameters_schema = 6; // JSON Schema string
+  repeated string tags = 7;
+  string security_level = 8;
+  uint32 timeout_ms = 9;
+  ForagingConfig foraging_config = 10;
+}
+
+message Integrity {
+  string algorithm = 1; // sha256
+  string hash = 2;
+}
+
+message ForagingConfig {
+  bool enabled = 1;
+  double threshold_delta = 2;
+  uint32 max_pages_per_session = 3;
+}
+
+message ExecuteToolRequest {
+  string tool = 1;
+  string params = 2; // JSON string
+  map<string, string> identity_labels = 3; // credential label forwarding (correction 1)
+  string trace_id = 4;
+  string seen_entropy_bloom = 5; // seen-entropy bloom filter (correction 2, optional)
+}
+
+message ExecuteToolResponse {
+  bool ok = 1;
+  string data = 2; // JSON string
+  string error = 3;
+  StopReason stop_reason = 4; // foraging adaptive termination (not an error)
+  uint64 duration_ms = 5;
+}
+
+message ExecuteToolStreamResponse {
+  string data = 1; // JSON string (per chunk)
+  bool done = 2;
+}
+
+// Stop reason (progressive foraging)
+message StopReason {
+  oneof reason {
+    LowInformationGain low_information_gain = 1;
+    MaxPagesReached max_pages_reached = 2;
+    ZeroGainStreak zero_gain_streak = 3;
+  }
+}
+
+message LowInformationGain {
+  double last_gain = 1;
+  double threshold = 2;
+}
+
+message MaxPagesReached {
+  uint32 pages = 1;
+}
+
+message ZeroGainStreak {
+  uint32 consecutive_pages = 1;
 }
