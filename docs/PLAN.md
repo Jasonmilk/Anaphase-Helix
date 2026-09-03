@@ -2,29 +2,28 @@
 
 > **DNA 方法论 v1.0** ｜ PLAN.md 是导航牌，不是历史档案（≤150 行）。完成记录进 GROWTH.md。
 
-## 当前阶段：M1 里程碑（确定性流水线）— T0-T8 完成，T9 收尾
+## 当前阶段：M1.5 生态合流（候选 D）— 核心完成
 
-**M1 目标（ADR-0003）**：Anaphase 独立完成可回放闭环——mock LLM 产出 tool_calls → 组装 tt_job → gRPC 调 mock Tentacle → evidence 落盘 → 纯函数 criteria 校验 → ledger 写 JSONL。全程确定性，Tentacle 字面零改动。
+**M1.5 目标（ADR-0004）**：Tentacle `--transport grpc` + fixture 插件 + 真实连通 + 语义定义 + run_cycle 渐进接线。
 
-### M1 完成状态
+### M1.5 完成状态
 
 | 任务 | 内容 | 状态 |
 |---|---|---|
-| T0 | vendor Tentacle v1 proto + MockTentacle + GrpcTentacleAdapter 重写 | ✅ 59b08de |
-| T2-T5 | contract / evidence / criteria / ledger 四模块 | ✅ d5f732c |
-| T6-T7 | 复用 HttpReasoningAdapter + mock 联调三分支 | ✅ e2a86c6 |
-| T8 | pipeline 六 stage + m1_e2e 三用例（MET/UNMET/replay） | ✅ e2a86c6 |
-| T9 | ADR-0003 + PLAN v1.7 + GROWTH 快照 | ✅ 本次 |
+| T1 | Tentacle `--transport grpc` 接线（--grpc-port 默认 50051） | ✅ Tentacle d902151 |
+| T2 | fixture 插件 numbers/rate（manifest+js+SHA-256，参数化 MET/UNMET） | ✅ Tentacle d902151 |
+| T3/T4 | 真实连通 e2e（pipeline → 真实 grpc → node 执行） | ✅ 1c1e723 |
+| T5 | identity_labels / seen_entropy_bloom 语义定义 + 透传 | ✅ 6ac3a0e |
+| T6 | run_cycle Execution 接回 step 1（tool_command + echo fallback） | ✅ 4d7e3ec |
+| T7 | ADR-0004 + PLAN v1.8 + GROWTH + README + ECOSYSTEM | ✅ 本次 |
 
-**验收三判据**：① m1_e2e_met + m1_e2e_unmet 双用例全绿 ✅ ② 同一输入跑两次 ledger 字节级一致 ✅ ③ 假时钟扫出 due 的 UNMET ✅
+**关键成果**：M1 mock → M1.5 真实无缝切换（fixture 默认值 = M1 mock 形状 + 判据契约双约束）；真实链路 2 条 e2e 全绿（m1_5_live_met / m1_5_live_unmet）。
 
-**哲学落档**：DNA 原则 11「零硬编码」新增（ADR-0002）；代码注释统一英文。
+### M1.5 剩余项（下一里程碑）
 
-### 关键裁决（ADR-0003）
-
-- **引擎归属**：run_cycle 与 tt_job 基因不兼容（四证据）→ 旁路建 pipeline；M1.5 接回 run_cycle 为必做项（六 stage ↔ 六状态映射表）
-- **重入语义**：UNMET + retry_due + parent_id 谱系；循环 = 队列消费（M1 落账，M1.5 消费）
-- **确定性钳制**：trace_id/evidence_id 派生、禁 HashMap、禁 endpoint
+- **Reasoning 输出结构化**：替换 `contains("tool_call")` 字符串匹配（六 stage 映射表 stage1 落点）
+- **suggested_actions 结构化** + pipeline 完整 merge（stage2-6 落点）
+- seen_entropy_bloom 重放守卫启用（Callosum 协作）
 
 ## 认知工艺双向复用轨道状态（备忘录重编号后）
 
@@ -37,11 +36,12 @@
 
 ## 下一阶段候选
 
-- **候选 D：M1.5 生态合流**（新立，M1 完成后优先）——Tentacle `--transport grpc` + fixture 插件 + 真实连通测试；pipeline 接回 run_cycle（六 stage 映射表）；Tuck 深度集成；identity_labels/seen_entropy_bloom 语义定义
-- **候选 A：Tentacle Rust 重构**（P10b 后自然启动）——凭证标签流转（Tuck 注入）/ 已见熵布隆过滤器（Callosum）/ 异步协程沙箱（ARM 端侧）/ 动态共识适配层 / 多传输层（gRPC/HTTP/MCP/STDIO）
-- **候选 B：生态手套协议渐进**（P10c 预留扩展位）——Cellrix 原生手套协议接入（状态已注册，协议实现挂扩展位）
+- **候选 E：Reasoning 结构化 + pipeline 完整 merge**（M1.5 剩余项，优先）——替换 contains 匹配，suggested_actions 结构化，六 stage 完整落点
+- **候选 D'：M1.5 深化**——seen_entropy_bloom 重放守卫（Callosum）/ Tuck 深度集成 / 真实场景插件（非 fixture）
+- **候选 A：Tentacle Rust 重构**（P10b 后自然启动）——凭证标签流转（Tuck 注入）/ 异步协程沙箱（ARM 端侧）/ 动态共识适配层 / 多传输层扩展
+- **候选 B：生态手套协议渐进**（P10c 预留扩展位）——Cellrix 原生手套协议接入
 - **候选 C：保持 P11c/P11d 暂缓**，等 Mind 侧认知工艺显式化
 
 ---
 
-*Anaphase-Helix PLAN v1.7（M1 确定性流水线 T0-T8 完成，立候选 D，2026-09-03）*
+*Anaphase-Helix PLAN v1.8（M1.5 生态合流核心完成，立候选 E，2026-09-03）*

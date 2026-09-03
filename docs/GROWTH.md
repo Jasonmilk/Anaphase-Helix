@@ -1,22 +1,10 @@
 # Anaphase-Helix 生长记录
-> **版本**：v1.3
+> **版本**：v1.4
 > **日期**：2026-09-03
 > **规则**：仅保留最近 3 条记录，超则归档至 `docs/archive/growth/`
 > **归档策略**：历史随仓库版本化，永不删除
 
 
-## 记录 2：P10c 生命周期实体化 + 生态感知完成（2026-08-28）
-**变异类型**：生命周期实体化 + 任务 DAG + 生态感知 + 跨项目裁决
-**背景**：
-- P10c 目标：把 Anaphase 的"身体本能"实体化（强制苏醒/认知脱水、任务 DAG、生态手套感知）
-**关键决策与发现**：
-1. **T1 强制苏醒/认知脱水**：`src/lifecycle.rs` `SessionNotes`——`wake_up()` 跨纪元认知重载（读上一纪元 `session_notes.json` 简报）+ `dehydrate()` 确定性压缩持久化（0 Token，LLM 端口预留）。工作态归 Anaphase，不触碰 L3 不可篡改
-2. **T2 任务 DAG 分支拓扑**：`src/task_dag.rs`——`dag_branch_create(parent, branch_name, intent, knowledge_ref)` 自主生长；L0/L1 边界守卫（基因锁/自画像保护区不可作为父节点）；`add_subtask`/`attach_leaf` 分化挂载
-3. **T3 生态手套可用性感知**：`src/gloves.rs`——Cellrix 原生手套优先（`GloveTier::Native`）→ MCP 等通用；只做状态注册/查询，**不实现协议**（独立扩展位，勿增实体）
-4. **认知工艺双向复用备忘录裁决落地**：四阶段重编号 P11a→P11d（避免撞号）；CraftQuery 为第二阶段显式调用暂缓（P10b 间接触发已覆盖第一层）；措辞"模式同构+接口复用"（脑手分离铁律不变）；trait 归属 P11c 时裁决
-5. **Tentacle Rust 重构**：硬性对齐纳入（凭证标签流转/布隆过滤器/异步沙箱/动态共识/多传输），P10b 后自然启动
-**状态**：✅ 完成（49 测试全绿，P10c 验收通过）
----
 ## 记录 3：P11a/P11b 认知工艺双向复用轨道调研完成（2026-08-28）
 **变异类型**：跨项目调研 + 裁决 + 链路验证
 **背景**：
@@ -43,4 +31,17 @@
 5. **ADR-0003 落档**：决策 9（旁路 + 六 stage 映射表）/ 10（UNMET + retry_due + 谱系 + 两循环物种）/ 11（pipeline 结构契约）+ 执行决策 1-8、12-15
 **状态**：✅ 完成（76 测试全绿——lib 46 + integration 14 + m1_e2e 3 + mind 9 + mock 4，M1 验收三判据全过）
 ---
-*（记录 1 已归档至 docs/archive/growth/2026-09-03-p10b-cognitive-craft-link.md）*
+## 记录 5：M1.5 生态合流核心完成（2026-09-03）
+**变异类型**：跨仓库联调 + 真实连通 + 语义定义 + run_cycle 渐进接线
+**背景**：
+- M1.5 目标（ADR-0004）：Tentacle `--transport grpc` + fixture 插件 + 真实连通 + 语义定义 + run_cycle 渐进接线
+- 前置：M1 mock 闭环完成（ADR-0003 决策 7 定义 M1.5 范围）
+**关键决策与发现**：
+1. **Tentacle grpc 接线（Tentacle d902151）**：main.rs 新增 `--transport grpc` + `--grpc-port`（默认 50051），复用 scan_plugins + ProcessTool 实例化 → TentacleGrpcService + tonic serve；tentacle crate 新增 tentacle-transport-grpc + tonic 依赖
+2. **fixture 插件（Tentacle d902151）**：fixtures/numbers + rate（manifest+js，SHA-256 完整性校验，参数化 MET/UNMET）。**联调发现**：fixture 默认值必须满足判据契约——numbers 20 序列 sum=210 超 high=100、rate 10/20 的 cross_check 不过，修正为 1..=10 与 {10,10}（= M1 mock 形状）
+3. **真实连通（Anaphase 1c1e723）**：`tests/m1_e2e_live.rs`（#[ignore]，手动联调）spawn 真实 tentacle 二进制 → pipeline 全链路，m1_5_live_met + m1_5_live_unmet 全绿——M1 mock → M1.5 真实无缝切换
+4. **语义定义（Anaphase 6ac3a0e）**：identity_labels（纯标签供 Tuck 审计/渐进披露，绝不传凭证，BTreeMap 确定性注入）+ seen_entropy_bloom（可选重放守卫，当前不启用）；execute_tool_with_labels 新增
+5. **run_cycle 渐进接线（Anaphase 4d7e3ec）**：tool_command（Option<String>）——配置后 Execution 派发真实工具名，未配置保持 echo fallback（向后兼容）；with_tool_command() builder；RecordingToolAdapter 双测试
+**状态**：✅ 完成（78 测试全绿——lib 46 + integration 16 + m1_e2e 3 + mind 9 + mock 4；live 2 条 #[ignore] 手动验证）
+---
+*（记录 2 已归档至 docs/archive/growth/2026-09-03-p10c-lifecycle-ecosystem.md）*

@@ -4,7 +4,7 @@
 ![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)
 ![Build](https://img.shields.io/badge/Build-Passing-brightgreen.svg)
 ![Style](https://img.shields.io/badge/Code%20Style-Google-black.svg)
-[![Tests](https://img.shields.io/badge/tests-76%2F76%20passed-green)](#)
+[![Tests](https://img.shields.io/badge/tests-78%2F78%20passed-green)](#)
 
 **The silicon-based operating system & physical brain for digital lifeforms.
 Perceive, reason, act, remember, and immunize — the body that houses the soul.**
@@ -29,11 +29,16 @@ via the CommonIntents protocol stack with zero hard coupling.
 - 🔬 **M1 Deterministic Pipeline** — Replayable single-pass closed loop:
   LLM calls → tt_job → gRPC Tentacle → evidence → criteria → JSONL ledger
   (byte-identical replay, zero hardcoding, ADR-0003)
+- 🌐 **M1.5 Real Tentacle Connectivity** — `tests/m1_e2e_live.rs` drives the
+  pipeline against a real `tentacle --transport grpc` + real fixture plugins
+  (manifest+js, SHA-256 pinned); identity_labels / seen_entropy_bloom semantics
+  (ADR-0004); run_cycle Execution resolves real tool names (echo fallback)
 - ⏱️ **Injectable Clock & Determinism Clamps** — FakeClock tests, derived trace_id,
   BTreeMap over HashMap, no endpoint leakage
 - 🛠️ **Safety-First Execution** — Audited tool calls & immune system interception
 - 🚀 **Zero-Dependency Boot** — Runs fully offline without any external services
-- ✅ **Full Test Coverage** — 76/76 passing (lib + 4 integration suites)
+- ✅ **Full Test Coverage** — 78/78 passing (lib + 4 integration suites) +
+  2 live e2e (#[ignore], real Tentacle)
 
 ## Project Structure
 
@@ -52,8 +57,10 @@ anaphase-helix/
 ├── src/
 │   ├── lib.rs              # Core library (public API + modules)
 │   ├── agent_loop.rs       # 7-state cognitive engine (DAG-driven)
+│   │                       #   + M1.5-T6: Execution resolves real tool name
 │   ├── reflex.rs           # Somatic immune system (hard + soft reflex)
 │   ├── adapters/           # Adapter traits + Noop fallback + gRPC/HTTP impls
+│   │                       #   + M1.5-T5: identity_labels/bloom semantics
 │   ├── config.rs           # Configuration loader
 │   ├── contract/           # tt_job types + parse_llm_calls (M1)
 │   ├── evidence/           # Append-only evidence store (M1)
@@ -82,17 +89,18 @@ You will see a full cycle:
 
 ## Testing
 
-Run the full suite (**76/76 passing**):
+Run the full suite (**78/78 passing**):
 ```bash
 cargo test
 ```
 
 Coverage:
 - **lib (46)**: adapters, reflex, contract, evidence, criteria, ledger, lifecycle, task_dag, gloves
-- **integration_test (14)**: Noop adapters, hard/soft reflex, dangerous-action block, cognitive cycle
+- **integration_test (16)**: Noop adapters, hard/soft reflex, dangerous-action block, cognitive cycle, M1.5-T6 real-tool resolution
 - **mind_integration (9)**: mock Mind gRPC closed loop, trace passthrough, budget_tier, P11b actions
 - **mock_tentacle (4)**: Tentacle v1 roundtrip, trace_id verbatim, failure branch, transport error
 - **m1_e2e (3)**: MET verdict, UNMET + retry_due + reopen scan, deterministic replay (byte-identical)
+- **m1_e2e_live (2, #[ignore])**: real Tentacle gRPC + real fixture plugins (manual integration)
 
 ## Architecture
 
