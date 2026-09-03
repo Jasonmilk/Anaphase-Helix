@@ -26,6 +26,45 @@ pub struct AnaphaseConfig {
 
     /// 纪元会话笔记路径（P10c T1 强制苏醒/认知脱水）：默认 "session_notes.json"
     pub session_notes_path: Option<String>,
+
+    /// run_cycle state-machine constants (candidate E, ADR-0005).
+    /// DNA principle 11 (ADR-0002): the five historical literals in
+    /// agent_loop.rs now have a config source. Overridable via
+    /// config.toml `[anaphase.run_cycle]`.
+    #[serde(default)]
+    pub run_cycle: RunCycleConfig,
+}
+
+/// run_cycle state-machine constants (candidate E, ADR-0005).
+///
+/// Previously hardcoded in `src/agent_loop.rs` (`0.7/0.3/0.2`,
+/// `"left_brain"`, `p_death > 0.7`, `"echo"`, `0..7`) — this struct is now
+/// their single source (DNA principle 11 / ADR-0002). Defaults are the
+/// documented protocol values; `config.toml` may override each one.
+#[derive(Debug, Clone, Deserialize)]
+pub struct RunCycleConfig {
+    /// PreAssessment default amygdala vector (heliotropism, pulse, vigilance).
+    pub amygdala_default_vector: (f64, f64, f64),
+    /// Reasoning mode label passed to the ReasoningAdapter.
+    pub reasoning_mode: String,
+    /// ReflexCheck soft-reflex block threshold (p_death above -> blocked).
+    pub soft_reflex_threshold: f64,
+    /// Legacy Execution placeholder command when no real tool is resolved.
+    pub execution_placeholder: String,
+    /// run_cycle loop cap (prevents infinite cognitive cycles).
+    pub cycle_cap: usize,
+}
+
+impl Default for RunCycleConfig {
+    fn default() -> Self {
+        Self {
+            amygdala_default_vector: (0.7, 0.3, 0.2), // positive, calm, relaxed
+            reasoning_mode: "left_brain".to_string(),
+            soft_reflex_threshold: 0.7,
+            execution_placeholder: "echo".to_string(),
+            cycle_cap: 7,
+        }
+    }
 }
 
 impl Default for Config {
@@ -54,6 +93,7 @@ impl Default for AnaphaseConfig {
             reasoning_max_tokens: None,
 
             session_notes_path: None,
+            run_cycle: RunCycleConfig::default(),
         }
     }
 }

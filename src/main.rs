@@ -65,6 +65,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let mut agent = AgentLoop::new(memory, reason, tool, safety, ui, fear, reflex);
+    // candidate E (ADR-0005): run_cycle constants come from the config source
+    // (DNA principle 11 / ADR-0002), overridable via config.toml.
+    agent.run_config = config.anaphase.run_cycle.clone();
 
     if config.anaphase.cap_http_enabled && !stdio_mode {
         use axum::{Router, routing::get, Json, response::IntoResponse};

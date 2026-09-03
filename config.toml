@@ -21,6 +21,16 @@ reasoning_model = ""
 reasoning_api_key = ""
 reasoning_max_tokens = 2048
 
+# run_cycle state-machine constants (candidate E, ADR-0005; DNA principle 11).
+# These five values were historically hardcoded in agent_loop.rs — they now
+# have a single config source. Missing section = documented protocol defaults.
+[anaphase.run_cycle]
+amygdala_default_vector = [0.7, 0.3, 0.2]   # PreAssessment amygdala vector
+reasoning_mode = "left_brain"                 # mode label passed to ReasoningAdapter
+soft_reflex_threshold = 0.7                   # p_death above this -> ReflexBlocked
+execution_placeholder = "echo"                # legacy Execution command fallback
+cycle_cap = 7                                 # run_cycle loop cap (infinite-cycle guard)
+
 [cognitive]
 # AI Model configuration for cognitive modules
 amygdala_model = "qwen2.5:2b"

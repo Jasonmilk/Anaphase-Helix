@@ -178,12 +178,14 @@ async fn test_state_transitions_from_perception_to_reflection() {
 // ── M1.5-T6: Execution resolves the configured real tool name ──────────
 
 /// Reasoning stub that signals a tool call (triggers NeedsTool -> Execution).
+/// Emits the candidate-E structured output protocol (ADR-0005) instead of the
+/// legacy "tool_call: numbers" string marker.
 struct TriggerToolReasoning;
 
 #[async_trait::async_trait]
 impl ReasoningAdapter for TriggerToolReasoning {
     async fn reason(&self, _query: &str, _mode: &str) -> Result<String, String> {
-        Ok("tool_call: numbers".to_string())
+        Ok(r#"{"calls":[{"tool":"numbers","args":{},"expect":"numbers"}]}"#.to_string())
     }
 }
 
