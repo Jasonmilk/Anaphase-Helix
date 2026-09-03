@@ -1,22 +1,10 @@
 # Anaphase-Helix 生长记录
-> **版本**：v1.2
-> **日期**：2026-08-28
+> **版本**：v1.3
+> **日期**：2026-09-03
 > **规则**：仅保留最近 3 条记录，超则归档至 `docs/archive/growth/`
 > **归档策略**：历史随仓库版本化，永不删除
 
 
-## 记录 1：P10b 认知工艺触发链路完成（2026-08-28）
-**变异类型**：认知工艺触发链路 + HITL 审批通道 + 跨项目裁决
-**背景**：
-- P10b 目标：打通 Anaphase → Mind 认知工艺触发链路
-**关键决策与发现**：
-1. **T1 System 0 门控经 budget_tier 前置路由验证**：确认 Mind `layer3.rs` 接收映射 `budget_tier` → core `BudgetTier` → `retrieval.query`（链路已通）；划界：预算路由（外部前置）决定扫描范围 / System 0（Mind 内）决定思考深度，二者正交
-2. **T2 状态机驱动 suggested_mode**：`MemoryAdapter::set_complexity` 默认钩子 + `GrpcMindAdapter` AtomicU8 复杂度 + `derive_suggested_mode(query, complexity)` 状态优先（1→Skilled/2→Anchor/3→Imagination），0 兜底长度启发式
-3. **T3 HITL 审批通道**：`src/hitl.rs`（is_high_risk 写/网络/凭证判定 + check_approval，默认 fail-closed）；Execution 接入执行闸；三层闸门串联：工具审计（入库门）→ HITL（执行闸）→ Tuck（边缘物理闸）
-4. **跨项目裁决（认知工艺双向复用备忘录审查）**：方向采纳 + 4 条修正——重编号 P11a→P11d（避免与主线 P10c 撞号）、CraftQuery 暂缓（P10b 间接触发已覆盖第一层，勿增实体）、措辞"模式同构+接口复用"（脑手分离铁律不变）、trait 归属推迟
-5. **生态对齐**：Cellrix = 原生生态手套（优先级最高）；CI-144 v2.0 等待冻结不阻塞；Tentacle Rust 重构硬性对齐（凭证标签/布隆过滤器/异步沙箱/动态共识/多传输）
-**状态**：✅ 完成（37 测试全绿，P10b 验收通过）
----
 ## 记录 2：P10c 生命周期实体化 + 生态感知完成（2026-08-28）
 **变异类型**：生命周期实体化 + 任务 DAG + 生态感知 + 跨项目裁决
 **背景**：
@@ -42,5 +30,17 @@
 5. **P11b 验证测试通过**：`p11b_suggested_actions_flow_to_execution`（adapter 消费 + agent_loop 全流程流转），9 集成测试全绿，全量 50 passed
 **状态**：✅ 完成（P11a/P11b 裁决 + 验证闭环）
 ---
-## 记录 4：预留
-*（按 DNA v2.0 SOP，新记录追加至此，旧记录自动归档）*
+## 记录 4：M1 确定性流水线完成（2026-09-03）
+**变异类型**：M1 里程碑（tt_job 确定性流水线）+ DNA 原则 11 新增
+**背景**：
+- M1 目标：Anaphase 独立完成可回放闭环——mock LLM → tt_job → mock Tentacle → evidence → criteria → ledger（Tentacle 字面零改动）
+- 前置：M1 任务书经四轮严肃审查收敛（路径臆造 → proto 断裂 → mock 传播缺位 → 循环语义半句 + 引擎归属）
+**关键决策与发现**：
+1. **T0 proto 对齐**：vendor Tentacle v1 权威 proto（tentacle.v1，完整拷贝 + 溯源注释）；GrpcTentacleAdapter 重写（ExecuteTool/execute_tool，ToolAdapter trait 保留为 run_cycle 兼容 shim；perceive 明确报错）；MockTentacle + TcpListener mock server（复刻 mind_integration 模式）
+2. **T2-T5 四模块**：contract（tt_job 类型 + parse_llm_calls 三例）/ evidence（append-only + evidence_id 派生 + expect 自包含）/ criteria（六纯函数 + expect→criteria 映射 + 规则数据分离）/ ledger（JSONL + retry_due + parent_id 谱系 + Clock 注入）
+3. **T8 闭环**：pipeline 六 stage（禁巨型 run）+ m1_e2e 三用例（MET / UNMET retry_due=4600 + reopen 扫描 / 同输入同时钟字节级一致）
+4. **DNA 原则 11 新增（ADR-0002）**：零硬编码——run_cycle 5 处硬编码（0.7/0.3/0.2、left_brain、p_death>0.7、echo、0..7）为已知技术债，M1.5 接线时消除；协议可选字段用默认空值
+5. **ADR-0003 落档**：决策 9（旁路 + 六 stage 映射表）/ 10（UNMET + retry_due + 谱系 + 两循环物种）/ 11（pipeline 结构契约）+ 执行决策 1-8、12-15
+**状态**：✅ 完成（76 测试全绿——lib 46 + integration 14 + m1_e2e 3 + mind 9 + mock 4，M1 验收三判据全过）
+---
+*（记录 1 已归档至 docs/archive/growth/2026-09-03-p10b-cognitive-craft-link.md）*
