@@ -7,6 +7,9 @@ use super::ReasoningAdapter;
 // -----------------------------------------------------------------------------
 /// HTTP adapter for FlowModus — deterministic LLM scheduling engine.
 /// This is the legacy HTTP implementation, kept for backward compatibility.
+/// `endpoint` is retained for structural completeness (the gRPC adapter is
+/// the current channel); the field has no reader by design.
+#[allow(dead_code)]
 pub struct FlowModusAdapter {
     endpoint: String,
 }
