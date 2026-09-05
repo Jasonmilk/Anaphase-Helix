@@ -100,6 +100,24 @@ anaphase-helix/
 
 ## Quick Start
 
+One-command backend bootstrap (candidate G-4, ADR-0011):
+
+```bash
+cargo run --bin up               # tentacle + anaphase + readiness probes
+cargo run --bin up -- --cockpit  # + Cellrix cockpit TUI in the foreground
+```
+
+Explicit knobs (all optional): `HELIX_TENTACLE`, `HELIX_FIXTURES_DIR`,
+`HELIX_TENTACLE_PORT`; Anaphase receives `ANAPHASE_TENTACLE_ENDPOINT` /
+`ANAPHASE_REASONING_ENDPOINT` via env (config.toml untouched, 12-factor).
+
+Single-process Noop loop (no external services):
+
+```bash
+cargo run
+```
+
+
 Run the **7-state cognitive loop** in Noop mode (no external services required):
 
 ```bash
@@ -111,7 +129,7 @@ You will see a full cycle:
 
 ## Testing
 
-Run the full suite (**126/126 passing**):
+Run the full suite (**129/129 passing**):
 ```bash
 cargo test
 ```

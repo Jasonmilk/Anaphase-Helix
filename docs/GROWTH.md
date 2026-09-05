@@ -30,6 +30,16 @@
 3. **live 验收（D3）**：tests/m1_5_d4_live.rs 3 例（#[ignore]）——插件目录参数化（TENTACLE_PLUGINS_DIR 默认 /tmp/d4-learn/stable）；真实插件 MET / 未知工具 Err / run_cycle 全链路 MET；**实测 3/3 全绿**（真实 tentacle 二进制 + node + 学习产物）
 4. **执行体占位如实标注**：mcp_proxy.js 是占位实现（echo 参数），真实 MCP 代理执行属 ECOSYSTEM 第二优先级 #4——D'-4 证明"链路真实"，不冒充"执行真实"
 **状态**：✅ 完成（124 测试全绿——lib 61 + integration 16 + m1_e2e 3 + mind 9 + mock 4 + run_cycle_pipeline 8 + episode 10 + replay_guard 4 + security_gate 6 + tuck_gate 3；live 6 条 #[ignore]；生态合计 1228）
+## 记录 12：候选 G 完成 + G-4 bootstrap（2026-09-06）
+
+**变异类型**：一条命令起全栈——从 4 条 CLI 收敛为 1 条（易用性，用户 2026-09-06 明确）
+
+- G-3（Cellrix 侧）：transport 帧契约修复（mock-agent 双通道字节序对齐，Cellrix ADR-0010）——驾驶舱 TUI 双通道真实渲染
+- G-4 bootstrap `up`（ADR-0011）：tentacle（grpc :50051 派生自 endpoint/协议默认 + fixtures）→ anaphase（`ANAPHASE_TENTACLE_ENDPOINT` env 注入，config.toml 零改动）→ 物理探测（TCP 端口就绪）→ 可选 `--cockpit` 拉驾驶舱
+- config.rs `apply_env_overrides`（12-factor env 优先 + fail-open，空值忽略）：3 单测（串行锁防 env 竞争）
+- 实测：tentacle/anaphase 双就绪 + 退出端口全清 + 129 tests 全绿（126 + 3 env）
+- 健康快照：全生态 1242（Cellrix 316 + Anaphase 129 + Tuck 316 + BIND-19 142 + Mind 98 + Tentacle 153 + Glove 45 + MCP 43）
+
 ## 记录 11：候选 G-T2（Anaphase 驾驶舱快照投影端点）完成（2026-09-06）
 **变异类型**：共享快照投影——HTTP 端点与 agent 内部极致解耦
 **背景**：
