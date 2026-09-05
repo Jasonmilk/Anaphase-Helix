@@ -2,7 +2,7 @@
 
 > **DNA 方法论 v1.0** ｜ PLAN.md 是导航牌，不是历史档案（≤150 行）。完成记录进 GROWTH.md。
 
-## 当前阶段：候选 G 启动（G-T2 完成——AgentSnapshot 快照投影端点，Cellrix 侧 G-T3..T5 进行中）
+## 当前阶段：候选 G 完成（G-T2..T6 + G-3 transport 修复 + G-4 bootstrap `up`）——驾驶舱真实渲染、一条命令起全栈；下一步 G-5 易用引导 UX
 
 **候选 D' 目标（ADR-0007/0008/0009）**：M1.5 深化四项全部完成。
 
@@ -28,7 +28,7 @@
 ### 下一阶段候选
 
 - **候选 D' 剩余**：无（四项全部完成；真实 MCP 执行体升级属 ECOSYSTEM 第二优先级 #4）
-- **候选 G：Anaphase 驾驶舱**（进行中：G-T2 ✅ / G-T3..T5 Cellrix 侧 ✅ / G-T6 文档）——Cellrix 白盒驾驶舱（模式栏 + 经历时间线 + Ledger 审查视图 + 生态状态板）；TUI 先行，Web 面板（G2）后续；驾驶模式原型（纯 Anaphase）；正名：驾驶舱监控 Anaphase 意识层，Helix-Mind 灵魂本体不驾驶
+- **候选 G：Anaphase 驾驶舱**（完成：G-T2 ✅ / G-T3..T5 ✅ / G-T6 ✅ / G-3 transport 契约修复 ✅ / G-4 bootstrap ✅）——Cellrix 白盒驾驶舱（模式栏 + 经历时间线 + Ledger 审查视图 + 生态状态板）；TUI 先行，Web 面板（G2）后续；**bootstrap `up`（ADR-0011）：一条命令起全栈（tentacle→anaphase→探测→可选 --cockpit）**；G-5 易用引导 UX（首跑向导）待启
 - **候选 A：Tentacle Rust 重构**（P10b 后自然启动）——凭证标签流转（Tuck 注入）/ 异步协程沙箱（ARM 端侧）/ 动态共识适配层 / 多传输层扩展
 - **候选 B：生态手套协议渐进**（P10c 预留扩展位）——Cellrix 原生手套协议接入
 - **候选 C：保持 P11c/P11d 暂缓**，等 Mind 侧认知工艺显式化
@@ -44,4 +44,4 @@
 
 ---
 
-*Anaphase-Helix PLAN v2.2（候选 G-T2：AgentSnapshot 快照投影端点，2026-09-06）*
+*Anaphase-Helix PLAN v2.3（候选 G 完成 + G-4 bootstrap，2026-09-06）*
