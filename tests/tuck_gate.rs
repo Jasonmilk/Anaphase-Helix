@@ -20,39 +20,12 @@ use anaphase::security::{GateCheck, GateVerdict, SecurityGate};
 use tuck_core::anaphase_bridge::{
     GateDecision, SecurityGateRequest, TuckSecurityGate,
 };
-use tuck_core::credential::{
-    Credential, CredentialError, CredentialStore, IdentityLabel,
-};
+use tuck_core::credential::InMemoryCredentialStore;
 use tuck_core::{Modality, OutputDest, OverrideFlag, ReplayEnable, RiskLevel, SecurityPolicy};
 use uuid::Uuid;
 
 mod common;
 use common::{spawn_mock_tentacle, MockTentacle};
-
-/// Local test credential store. Tuck's own `InMemoryCredentialStore` is
-/// `#[cfg(test)]` (Tuck-internal only), so the adapter supplies its own —
-/// a real CredentialStore impl exercising the same trait, not a stub.
-struct TestCredentialStore;
-
-#[async_trait::async_trait]
-impl CredentialStore for TestCredentialStore {
-    async fn get(&self, _label: &IdentityLabel) -> Result<Credential, CredentialError> {
-        // No credentials in this fixture — the gate passes without injection.
-        Err(CredentialError::NotFound("(none)".to_string()))
-    }
-
-    async fn put(&self, _label: &IdentityLabel, _credential: &[u8]) -> Result<(), CredentialError> {
-        Ok(())
-    }
-
-    async fn delete(&self, _label: &IdentityLabel) -> Result<(), CredentialError> {
-        Ok(())
-    }
-
-    async fn list(&self) -> Result<Vec<IdentityLabel>, CredentialError> {
-        Ok(Vec::new())
-    }
-}
 
 /// Build a 4-byte PFP header (CI-144 physical fact) from explicit parts.
 fn pfp_bytes(risk: RiskLevel) -> [u8; 4] {
@@ -70,7 +43,7 @@ fn pfp_bytes(risk: RiskLevel) -> [u8; 4] {
 /// PFP risk is chosen by an explicit fixture table — a test-only source of
 /// truth, not runtime hardcoding.
 struct TuckGateAdapter {
-    gate: tokio::sync::Mutex<TuckSecurityGate<TestCredentialStore>>,
+    gate: tokio::sync::Mutex<TuckSecurityGate<InMemoryCredentialStore>>,
 }
 
 impl TuckGateAdapter {
@@ -78,7 +51,7 @@ impl TuckGateAdapter {
         Self {
             gate: tokio::sync::Mutex::new(TuckSecurityGate::new(
                 policy,
-                TestCredentialStore,
+                InMemoryCredentialStore::new(),
                 "anaphase_test",
             )),
         }
@@ -206,7 +179,7 @@ async fn tuck_critical_risk_escalates_to_hitl() {
     // adapter's verdict mapping.
     let mut gate = TuckSecurityGate::new(
         SecurityPolicy::default(),
-        TestCredentialStore,
+        InMemoryCredentialStore::new(),
         "anaphase_test",
     );
     let request = SecurityGateRequest {

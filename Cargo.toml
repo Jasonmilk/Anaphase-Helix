@@ -42,7 +42,7 @@ tokio-stream = { version = "0.1", features = ["net"] }
 
 # Real Tuck security gate for the D'-2 integration test (ADR-0008).
 # dev-only: the library itself stays decoupled from tuck-core.
-tuck-core = { git = "https://github.com/Jasonmilk/Tuck", branch = "rs" }
+tuck-core = { git = "https://github.com/Jasonmilk/Tuck", branch = "rs", features = ["test-utils"] }
 
 [build-dependencies]
 # Protobuf Code Generation
