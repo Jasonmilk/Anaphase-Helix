@@ -68,6 +68,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // candidate E (ADR-0005): run_cycle constants come from the config source
     // (DNA principle 11 / ADR-0002), overridable via config.toml.
     agent.run_config = config.anaphase.run_cycle.clone();
+    // ADR-0006: the interaction mode is the semantic record carried through
+    // the loop; physical Mind participation is decided by resolve_memory_adapter
+    // (Noop vs gRPC) — Drive auto-achieves "no experience written" through
+    // the Noop adapter without any runtime branch.
+    agent.mode = config.anaphase.run_cycle.mode;
 
     if config.anaphase.cap_http_enabled && !stdio_mode {
         use axum::{Router, routing::get, Json, response::IntoResponse};

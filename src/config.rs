@@ -1,4 +1,26 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+
+/// Interaction mode of the cognitive loop (ADR-0006): the same Helix with
+/// different Mind participation — not three separate minds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Mode {
+    /// Human drives Anaphase directly; Mind absent (Noop assembly, no
+    /// experience written). Harness-style usage.
+    Drive,
+    /// Helix works with the human as a memory-bearing partner; every turn is
+    /// written as an L3 experience (default — Helix's native state).
+    Partner,
+    /// Mind lives autonomously (sleep/metabolism/recap); Anaphase is its
+    /// executor. Reverse drive lands with Mind P10a; enum reserved here.
+    Survive,
+}
+
+impl Default for Mode {
+    fn default() -> Self {
+        Self::Partner // Helix's native state: a memory-bearing partner
+    }
+}
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
@@ -53,6 +75,10 @@ pub struct RunCycleConfig {
     pub execution_placeholder: String,
     /// run_cycle loop cap (prevents infinite cognitive cycles).
     pub cycle_cap: usize,
+    /// Interaction mode (ADR-0006): Drive (no Mind) / Partner (default,
+    /// with Mind + episode lifecycle) / Survive (Mind autonomous, reserved).
+    #[serde(default)]
+    pub mode: Mode,
 }
 
 impl Default for RunCycleConfig {
@@ -63,6 +89,7 @@ impl Default for RunCycleConfig {
             soft_reflex_threshold: 0.7,
             execution_placeholder: "echo".to_string(),
             cycle_cap: 7,
+            mode: Mode::Partner, // Helix's native state: memory-bearing partner
         }
     }
 }

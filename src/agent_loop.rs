@@ -1,6 +1,6 @@
 use crate::adapters::*;
-use crate::config::RunCycleConfig;
-use crate::contract::{parse_reasoning_output, Call, TtJob};
+use crate::config::{Mode, RunCycleConfig};
+use crate::contract::{derive_episode_id, parse_reasoning_output, Call, TtJob};
 use crate::evidence::EvidenceRecord;
 use crate::hitl::HITLApprover;
 use crate::ledger::unix_secs_to_rfc3339;
@@ -21,6 +21,32 @@ pub enum TransitionCondition {
     Impass,
     ReflexBlocked,
     ReflexPassed,
+}
+
+/// One episode (experience) of the cognitive loop (ADR-0006): the boundary
+/// that groups the turns of a single conversation — "this conversation is an
+/// experience Helix lived". A grouping key only: Mind node ids remain the
+/// unique identity, so episode ids need not be globally unique.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Episode {
+    /// `ep-` + 16 hex, derived deterministically from the first input
+    /// (shared FNV-1a primitive — no UUID, DNA principle 11).
+    pub id: String,
+    /// First input of the experience (the anchor turn).
+    pub first_input: String,
+    /// Completed turn index within the episode (0 at begin, +1 per cycle).
+    pub step: usize,
+}
+
+/// Episode closure payload (ADR-0006 D2): what this experience was — id,
+/// turn count, and the first-input anchor. Written to L3 through the memory
+/// adapter (no new RPC); the cognitive craft (Mind ADR-0021) consumes it
+/// during recap. "Forget the conversation, keep the lesson."
+#[derive(Debug, Clone, PartialEq)]
+pub struct EpisodeDigest {
+    pub episode_id: String,
+    pub turns: usize,
+    pub first_input: String,
 }
 
 /// Core cognitive loop engine for Anaphase
@@ -57,6 +83,14 @@ pub struct AgentLoop {
     /// Reflection checks criteria + writes the verdict ledger (stages 5-6).
     /// None keeps the legacy string/echo path (backwards compatible).
     pub pipeline: Option<Pipeline>,
+    /// Interaction mode (ADR-0006): Drive (no Mind) / Partner (default) /
+    /// Survive (Mind autonomous, reserved for P10a). Physical participation
+    /// is decided at assembly time (Noop vs gRPC memory adapter); this field
+    /// is the semantic record and the config source (no hardcoding).
+    pub mode: Mode,
+    /// Active experience boundary (ADR-0006). None = no episode in progress
+    /// (legacy turn-by-turn behavior, fully backwards compatible).
+    pub episode: Option<Episode>,
 }
 
 /// Context data flowing through the cognitive cycle
@@ -122,6 +156,8 @@ impl AgentLoop {
             tool_command: None,
             run_config: RunCycleConfig::default(),
             pipeline: None,
+            mode: Mode::Partner,
+            episode: None,
         }
     }
 
@@ -147,9 +183,61 @@ impl AgentLoop {
         self
     }
 
+    /// Set the interaction mode (ADR-0006). Physical Mind participation is
+    /// decided at assembly time (Noop vs gRPC memory adapter); this is the
+    /// semantic record carried through the loop.
+    pub fn with_mode(mut self, mode: Mode) -> Self {
+        self.mode = mode;
+        self
+    }
+
+    /// Begin a new episode (experience boundary, ADR-0006 D1). An active
+    /// episode is closed first (digest recorded), so no experience is ever
+    /// silently dropped. Id is deterministic from the first input (shared
+    /// FNV-1a primitive — replayable, no UUID).
+    pub async fn begin_episode(&mut self, input: &str) -> String {
+        if self.episode.is_some() {
+            let _ = self.end_episode().await;
+        }
+        let id = derive_episode_id(input);
+        self.episode = Some(Episode {
+            id: id.clone(),
+            first_input: input.to_string(),
+            step: 0,
+        });
+        id
+    }
+
+    /// Close the active episode (ADR-0006 D2): write an EpisodeDigest to L3
+    /// via the existing memory adapter (no new RPC — semantics match
+    /// INTENT-7 FINISH) and clear the boundary. Idempotent: None when no
+    /// episode is active.
+    pub async fn end_episode(&mut self) -> Option<EpisodeDigest> {
+        let ep = self.episode.take()?;
+        let digest = EpisodeDigest {
+            episode_id: ep.id.clone(),
+            turns: ep.step + 1,
+            first_input: ep.first_input.clone(),
+        };
+        let note = serde_json::json!({
+            "digest": "episode_close",
+            "episode": ep.id,
+            "turns": digest.turns,
+            "first_input": digest.first_input,
+        })
+        .to_string();
+        let _ = self.memory.remember(&note).await;
+        Some(digest)
+    }
+
     /// Run one full cognitive cycle
     pub async fn run_cycle(&mut self, user_input: &str) -> Result<(), String> {
         self.context.user_input = user_input.to_string();
+        // Advance the experience turn index (ADR-0006): each completed cycle
+        // is one turn within the active episode.
+        if let Some(ep) = self.episode.as_mut() {
+            ep.step += 1;
+        }
         
         // Loop cap from config (DNA principle 11): prevents infinite cycles.
         for _ in 0..self.run_config.cycle_cap {
@@ -367,8 +455,23 @@ impl AgentLoop {
                     self.context.p_death,
                     self.context.memory_nodes.len()
                 );
-                // Write to L3 episodic memory
-                let _ = self.memory.remember(&self.context.reflection_notes).await;
+                // Write to L3 episodic memory. Within an active episode the
+                // note carries the experience provenance `{episode_id}#{step}`
+                // as a structured JSON field (ADR-0006 D1) — Mind's L3
+                // `content: JSON` keeps structured records, no schema change.
+                // Without an episode the note is written verbatim (legacy
+                // behaviour, strictly backwards compatible).
+                let _ = match &self.episode {
+                    Some(ep) => {
+                        let structured = serde_json::json!({
+                            "episode": format!("{}#{}", ep.id, ep.step),
+                            "note": self.context.reflection_notes,
+                        })
+                        .to_string();
+                        self.memory.remember(&structured).await
+                    }
+                    None => self.memory.remember(&self.context.reflection_notes).await,
+                };
                 Ok(TransitionCondition::Success)
             }
         }

@@ -83,17 +83,34 @@ pub fn parse_reasoning_output(response: &str) -> Result<ReasoningSignal, String>
     Ok(ReasoningSignal { calls, impasse })
 }
 
-/// Deterministic job-id derivation for run_cycle envelope assembly
-/// (candidate E, ADR-0005). FNV-1a 64-bit over the input, hex-encoded —
-/// no UUID (DNA principle 11 / ADR-0003 decision 12): the same input always
-/// yields the same id, keeping the cognitive chain replayable.
-pub fn derive_job_id(input: &str) -> String {
+/// FNV-1a 64-bit hash over an input (shared derivation primitive).
+/// Single source for all deterministic id prefixes (DNA principle 11:
+/// derivation is a contract-level source, no UUID anywhere).
+pub fn fnv64(input: &str) -> u64 {
     let mut hash: u64 = 0xcbf2_9ce4_8422_2325; // FNV-1a offset basis
     for b in input.as_bytes() {
         hash ^= u64::from(*b);
         hash = hash.wrapping_mul(0x0000_0100_0000_01b3); // FNV-1a prime
     }
-    format!("run-{hash:016x}")
+    hash
+}
+
+/// Deterministic job-id derivation for run_cycle envelope assembly
+/// (candidate E, ADR-0005). FNV-1a 64-bit over the input, hex-encoded —
+/// no UUID (DNA principle 11 / ADR-0003 decision 12): the same input always
+/// yields the same id, keeping the cognitive chain replayable.
+pub fn derive_job_id(input: &str) -> String {
+    format!("run-{:016x}", fnv64(input))
+}
+
+/// Deterministic episode-id derivation for the experience boundary
+/// (ADR-0006). Same FNV-1a primitive as job ids, prefix `ep-` — an episode
+/// (one conversation experienced by Helix) is grouped by its first input,
+/// so the same first input always yields the same id (deterministic replay).
+/// Episode ids are grouping keys, not primary keys: Mind node ids (UUID)
+/// remain the unique identity, so cross-episode collisions are acceptable.
+pub fn derive_episode_id(input: &str) -> String {
+    format!("ep-{:016x}", fnv64(input))
 }
 
 #[cfg(test)]
@@ -191,5 +208,16 @@ mod tests {
         assert_ne!(derive_job_id("hello"), derive_job_id("world"));
         assert!(derive_job_id("hello").starts_with("run-"));
         assert_eq!(derive_job_id("hello").len(), 4 + 16);
+    }
+
+    #[test]
+    fn derive_episode_id_is_deterministic_and_shared_primitive() {
+        // Same FNV-1a primitive as job ids, own prefix (ADR-0006):
+        // deterministic grouping key for the experience boundary.
+        assert_eq!(derive_episode_id("hello"), "ep-a430d84680aabd0b");
+        assert_eq!(derive_episode_id("hello"), derive_episode_id("hello"));
+        assert_ne!(derive_episode_id("hello"), derive_episode_id("world"));
+        assert_ne!(derive_episode_id("hello"), derive_job_id("hello"));
+        assert_eq!(derive_episode_id("hello").len(), 3 + 16);
     }
 }
