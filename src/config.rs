@@ -51,7 +51,7 @@ pub struct AnaphaseConfig {
 
     /// run_cycle state-machine constants (candidate E, ADR-0005).
     /// DNA principle 11 (ADR-0002): the five historical literals in
-    /// agent_loop.rs now have a config source. Overridable via
+    /// run_cycle.rs now have a config source. Overridable via
     /// config.toml `[anaphase.run_cycle]`.
     #[serde(default)]
     pub run_cycle: RunCycleConfig,
@@ -59,7 +59,7 @@ pub struct AnaphaseConfig {
 
 /// run_cycle state-machine constants (candidate E, ADR-0005).
 ///
-/// Previously hardcoded in `src/agent_loop.rs` (`0.7/0.3/0.2`,
+/// Previously hardcoded in `src/run_cycle.rs` (`0.7/0.3/0.2`,
 /// `"left_brain"`, `p_death > 0.7`, `"echo"`, `0..7`) — this struct is now
 /// their single source (DNA principle 11 / ADR-0002). Defaults are the
 /// documented protocol values; `config.toml` may override each one.
@@ -74,6 +74,11 @@ pub struct RunCycleConfig {
     /// Legacy Execution placeholder command when no real tool is resolved.
     pub execution_placeholder: String,
     /// run_cycle loop cap (prevents infinite cognitive cycles).
+    /// Max periods a caller loop may run per interaction (ADR-0016 D1:
+    /// run_cycle is a single-period primitive; this bounds the caller's loop).
+    /// Source: conservative local-LLM context-budget default — the original
+    /// design feared infinite loops and context growth (local endpoints are
+    /// resource-constrained); tune per model window, never a protocol value.
     pub cycle_cap: usize,
     /// Interaction mode (ADR-0006): Drive (no Mind) / Partner (default,
     /// with Mind + episode lifecycle) / Survive (Mind autonomous, reserved).

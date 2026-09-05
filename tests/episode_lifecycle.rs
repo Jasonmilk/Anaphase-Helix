@@ -7,7 +7,7 @@
 use std::sync::{Arc, Mutex};
 
 use anaphase::adapters::*;
-use anaphase::agent_loop::AgentLoop;
+use anaphase::run_cycle::AgentLoop;
 use anaphase::config::{Config, Mode, RunCycleConfig};
 use anaphase::contract::derive_episode_id;
 use anaphase::reflex::ReflexArc;

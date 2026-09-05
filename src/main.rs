@@ -5,7 +5,7 @@ use anaphase::adapters::*;
 use anaphase::adapters::flowmodus::{FlowModusAdapter, GrpcFlowModusAdapter};
 // New: Add direct import for HttpReasoningAdapter
 use anaphase::adapters::http_reasoning::HttpReasoningAdapter;
-use anaphase::agent_loop::AgentLoop;
+use anaphase::run_cycle::AgentLoop;
 use anaphase::lifecycle::SessionNotes;
 use anaphase::reflex::ReflexArc;
 use anaphase::config;
@@ -97,13 +97,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Candidate G-T2: shared snapshot projection (None = HTTP disabled).
     // The endpoint serves it; the loop refreshes it after each cycle.
-    let mut shared_snapshot: Option<Arc<Mutex<Option<anaphase::agent_loop::AgentSnapshot>>>> = None;
+    let mut shared_snapshot: Option<Arc<Mutex<Option<anaphase::run_cycle::AgentSnapshot>>>> = None;
 
     if config.anaphase.cap_http_enabled && !stdio_mode {
         use axum::{Router, routing::get, Json};
         use std::sync::{Arc, Mutex};
 
-        let shared: Arc<Mutex<Option<anaphase::agent_loop::AgentSnapshot>>> =
+        let shared: Arc<Mutex<Option<anaphase::run_cycle::AgentSnapshot>>> =
             Arc::new(Mutex::new(None));
         shared_snapshot = Some(shared.clone());
 
@@ -149,7 +149,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let user_input = "Calculate 2 to the power of 10";
     println!("User: {}", user_input);
-    agent.run_cycle(user_input).await?;
+    // O-1 (ADR-0016 D1): run_cycle is a single-period primitive — the caller
+    // owns the looping policy. Cap from config (DNA principle 11: the 7 is a
+    // conservative local-LLM context-budget default, not a protocol value).
+    for _ in 0..agent.run_config.cycle_cap {
+        let out = agent.run_cycle(user_input).await?;
+        if out.done {
+            break;
+        }
+    }
     println!("\nCognitive cycle completed successfully.");
 
     // Candidate G-T2: refresh the shared snapshot after the cycle, so the
@@ -256,24 +264,22 @@ async fn run_stdio_mode() -> Result<(), Box<dyn std::error::Error>> {
                 let action_id = cmd["action"].as_str().unwrap_or("");
                 if action_id == "send_message" {
                     let message = cmd["params"]["message"].as_str().unwrap_or("");
-                    // Call real agent reasoning cycle
-                    match agent.run_cycle(message).await {
-                        Ok(()) => {
-                            let response_text = agent.context.reasoning_output.clone();
-                            let resp = json!({
-                                "status": "ok",
-                                "type": "message_response",
-                                "content": response_text
-                            });
-                            writeln!(stdout, "{}", serde_json::to_string(&resp)?)?;
+                    // Call real agent reasoning cycle (single-period primitive;
+                    // the caller owns the looping policy, cap from config).
+                    for _ in 0..agent.run_config.cycle_cap {
+                        let out = agent.run_cycle(message).await?;
+                        if out.done {
+                            break;
                         }
-                        Err(e) => {
-                            let resp = json!({
-                                "status": "error",
-                                "content": format!("Reasoning failed: {}", e)
-                            });
-                            writeln!(stdout, "{}", serde_json::to_string(&resp)?)?;
-                        }
+                    }
+                    {
+                        let response_text = agent.context.reasoning_output.clone();
+                        let resp = json!({
+                            "status": "ok",
+                            "type": "message_response",
+                            "content": response_text
+                        });
+                        writeln!(stdout, "{}", serde_json::to_string(&resp)?)?;
                     }
                     stdout.flush()?;
                 } else {

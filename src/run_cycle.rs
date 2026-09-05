@@ -72,6 +72,25 @@ pub struct EpisodeView {
     pub step: usize,
 }
 
+/// Outcome of one cognitive period (ADR-0016 D1): the single-cycle
+/// primitive result. The caller owns the looping policy — how many periods
+/// to run and when to stop is a caller decision, never an engine property.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CycleOutcome {
+    /// Period finished (state machine returned to Perception).
+    pub done: bool,
+    /// Finished via a Success transition.
+    pub success: bool,
+    /// Finished via an impasse condition.
+    pub impasse: bool,
+}
+
+impl Default for CycleOutcome {
+    fn default() -> Self {
+        Self { done: false, success: false, impasse: false }
+    }
+}
+
 /// Core cognitive loop engine for Anaphase
 pub struct AgentLoop {
     pub memory: Arc<dyn MemoryAdapter>,
@@ -280,18 +299,23 @@ impl AgentLoop {
     }
 
     /// Run one full cognitive cycle
-    pub async fn run_cycle(&mut self, user_input: &str) -> Result<(), String> {
+    pub async fn run_cycle(&mut self, user_input: &str) -> Result<CycleOutcome, String> {
         self.context.user_input = user_input.to_string();
-        // Advance the experience turn index (ADR-0006): each completed cycle
+        // Advance the experience turn index (ADR-0006): each completed period
         // is one turn within the active episode.
         if let Some(ep) = self.episode.as_mut() {
             ep.step += 1;
         }
-        
-        // Loop cap from config (DNA principle 11): prevents infinite cycles.
-        for _ in 0..self.run_config.cycle_cap {
+
+        // One period (ADR-0016 D1): walk the 7-state DAG until we return to
+        // Perception. The DAG is acyclic, so at most one pass per state —
+        // the period-step cap is the enum length (derived, not a literal).
+        // Looping policy (how many periods, when to stop) belongs to the
+        // caller; this primitive is atomic and replayable.
+        let mut outcome = CycleOutcome::default();
+        for _ in 0..HelixState::ALL.len() {
             let condition = self.execute_current_state().await?;
-            
+
             if let Some(next_state) = self.transitions.get(&(self.current_state.clone(), condition.clone())) {
                 info!("State transition: {:?} --{:?}--> {:?}", self.current_state, condition, next_state);
                 self.current_state = next_state.clone();
@@ -299,13 +323,16 @@ impl AgentLoop {
                 warn!("No transition rule found: ({:?}, {:?}), returning to Perception", self.current_state, condition);
                 self.current_state = HelixState::Perception;
             }
-            
-            // End cycle after returning to Perception from Reflection
-            if self.current_state == HelixState::Perception && condition == TransitionCondition::Success {
+
+            // Period end: the state machine returned to Perception.
+            if self.current_state == HelixState::Perception {
+                outcome.done = true;
+                outcome.success = condition == TransitionCondition::Success;
+                outcome.impasse = condition == TransitionCondition::Impass;
                 break;
             }
         }
-        Ok(())
+        Ok(outcome)
     }
 
     /// Execute logic for current state and return transition condition
@@ -741,5 +768,29 @@ mod tests {
         assert_eq!(snap.ecosystem.len(), 1);
         assert_eq!(snap.ecosystem[0].name, "cellrix");
         assert_eq!(snap.ecosystem[0].status, crate::gloves::GloveStatus::Available);
+    }
+
+    #[tokio::test]
+    async fn single_period_reports_outcome() {
+        // ADR-0016 D1: one period is an atomic walk that returns to
+        // Perception; the outcome tells the caller whether to loop again.
+        let mut agent = base();
+        let out = agent.run_cycle("hello").await.unwrap();
+        assert!(out.done, "one period always returns to Perception");
+        assert!(out.success, "Noop adapters finish via Success");
+        assert!(!out.impasse, "no impasse with Noop adapters");
+    }
+
+    #[tokio::test]
+    async fn caller_loops_periods_and_step_advances_per_period() {
+        // The caller owns the looping policy: two periods = two atomic walks.
+        // Each period is one turn of the active episode (ADR-0006).
+        let mut agent = base();
+        agent.begin_episode("hello").await;
+        let out1 = agent.run_cycle("hello").await.unwrap();
+        let out2 = agent.run_cycle("world").await.unwrap();
+        assert!(out1.done && out2.done);
+        let ep = agent.episode.expect("episode active");
+        assert_eq!(ep.step, 2, "one turn per period");
     }
 }

@@ -19,7 +19,7 @@
 mod common;
 
 use anaphase::adapters::*;
-use anaphase::agent_loop::AgentLoop;
+use anaphase::run_cycle::AgentLoop;
 use anaphase::adapters::http_reasoning::HttpReasoningAdapter;
 use anaphase::adapters::ReasoningAdapter;
 use anaphase::config::AnaphaseConfig;

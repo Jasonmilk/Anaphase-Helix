@@ -12,7 +12,7 @@ use anaphase::adapters::{
     NoopSafetyAdapter, NoopToolAdapter, NoopUiAdapter, ReasoningAdapter, SafetyAdapter,
     ToolAdapter, UiAdapter,
 };
-use anaphase::agent_loop::AgentLoop;
+use anaphase::run_cycle::AgentLoop;
 use anaphase::config::AnaphaseConfig;
 use anaphase::helix_mind_api::helix_mind_server::{HelixMind, HelixMindServer};
 use anaphase::helix_mind_api::{
@@ -362,7 +362,7 @@ async fn p11b_suggested_actions_flow_to_execution() {
     let result = adapter.query("帮我查一下最新研究", false).await.unwrap();
     assert_eq!(result.suggested_actions, vec!["web_search"], "suggested_actions 应从 Mind 响应消费");
 
-    // 2) agent_loop 全流程：suggested_actions 注入 context → 流转到 Execution（HITL 闸就位）
+    // 2) run_cycle 全流程：suggested_actions 注入 context → 流转到 Execution（HITL 闸就位）
     let reason: Arc<dyn ReasoningAdapter> = Arc::new(NoopReasoningAdapter);
     let tool: Arc<dyn ToolAdapter> = Arc::new(NoopToolAdapter);
     let safety: Arc<dyn SafetyAdapter> = Arc::new(NoopSafetyAdapter);

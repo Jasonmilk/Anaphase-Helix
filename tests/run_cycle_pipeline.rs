@@ -18,7 +18,7 @@
 mod common;
 
 use anaphase::adapters::*;
-use anaphase::agent_loop::AgentLoop;
+use anaphase::run_cycle::AgentLoop;
 use anaphase::config::RunCycleConfig;
 use anaphase::ledger::{FakeClock, LedgerRecord, VerdictStatus};
 use anaphase::pipeline::{Pipeline, PipelineConfig};
@@ -146,21 +146,23 @@ async fn run_cycle_deterministic_replay() {
 // ── E-T6: the five historical hardcodings are config-sourced ────────
 
 #[tokio::test]
-async fn run_config_cycle_cap_stops_early() {
-    // cap=1: the loop returns after the first state, never reaching Perception.
+async fn run_config_cycle_cap_limits_caller_loops() {
+    // ADR-0016 D1: run_cycle is a single-period primitive — the caller owns
+    // the looping policy. cycle_cap from config bounds how many periods the
+    // caller may run (the anti-infinite-loop fuse; the DAG is acyclic, so one
+    // period always finishes at Perception — the cap guards future cycles).
     let mut agent = base_agent(Arc::new(NoopReasoningAdapter))
-        .with_run_config(RunCycleConfig { cycle_cap: 1, ..RunCycleConfig::default() });
-    agent.run_cycle("hello").await.unwrap();
-    assert_ne!(
-        agent.current_state,
-        HelixState::Perception,
-        "cap from config cuts the cycle short"
-    );
-
-    // default cap=7 lets a full cycle finish.
-    let mut full = base_agent(Arc::new(NoopReasoningAdapter));
-    full.run_cycle("hello").await.unwrap();
-    assert_eq!(full.current_state, HelixState::Perception);
+        .with_run_config(RunCycleConfig { cycle_cap: 3, ..RunCycleConfig::default() });
+    let mut periods = 0;
+    for _ in 0..agent.run_config.cycle_cap {
+        periods += 1;
+        let out = agent.run_cycle("hello").await.unwrap();
+        if out.done {
+            break;
+        }
+    }
+    assert!(periods <= 3, "caller loop respects the config cap");
+    assert_eq!(agent.current_state, HelixState::Perception, "one period finishes at Perception");
 }
 
 struct StubFear(pub f64);

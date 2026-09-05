@@ -1,5 +1,5 @@
 use anaphase::adapters::*;
-use anaphase::agent_loop::AgentLoop;
+use anaphase::run_cycle::AgentLoop;
 use anaphase::reflex::ReflexArc;
 use std::sync::Arc;
 
