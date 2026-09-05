@@ -97,3 +97,14 @@
 4. **依赖边界**：并行池/窗口感知→FlowModus；前缀稳定→Callosum；编排层只保证同输入同输出
 5. **轨迹三层**：ledger + evidence + 会话 DAG + stage 事件（比 DSH 多"经历"维度）
 **状态**：✅ ADR-0016 已立（Proposed）+ 同日修订——核对 Helix-Mind ADR-0021/0022/0010 后修正两处越界：①四拍/五工序（含批判性）全归 Mind，Anaphase 只触发 helixQuery（既有契约）不实现工序；②"看口袋"对齐 ADR-0010 = 设置 budget_tier 随请求传入，非新实体；新增三层递进边界（执行层分诊→System 0 门控→五工序）。VISION 补编排哲学指针，PLAN 增候选 O 系列（O-1..O-4 + 两条 FlowModus/Callosum 等待项），生态 1242 测试不变（纯文档轮）
+
+## 记录 13：O-1 落地——结构化分诊 + 生态点亮感知（2026-09-06）
+**变异类型**：编排哲学首个物理落点（ADR-0016 D1/D3 从纸面到代码）
+**背景**：候选 E/F/G 完成、编排哲学 ADR-0016 显式化后，O 系列第一项开工。
+**关键决策**：
+1. **结构化输入零 LLM**：`!tool {"json"}` 在 Perception 分诊为 calls，Reasoning 跳过 LLM 直接组装 tt_job——0 tokens 通道有了第一个物理证明（计数 adapter 断言零调用）
+2. **生态点亮 = 物理事实**：probe_ecosystem 任务开始前一次探测（TCP connect/UDS 文件存在性），fail-open 不阻塞；Cellrix = Native 手套
+3. **感知点落位**：Reasoning 前（升级 LLM 前看一眼口袋）+ Execution 对 tentacle 未点亮记录降级事实
+4. **不越界**：探测只做点亮状态不建连接；budget_tier 仍由 mind.rs 内部 derive（O-1 未覆盖外部 tier 透传）
+**验证**：152 tests 全绿（+12：结构化解析 x4 / LLM 零调用 x2 / 生态探测与投影 x6）；free-text 无回归
+**状态**：✅ 完成，commit ecc1924

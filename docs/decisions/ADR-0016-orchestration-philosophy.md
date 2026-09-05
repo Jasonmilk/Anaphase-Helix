@@ -102,6 +102,16 @@ Mind 五工序编排（ADR-0021：怎么思考，含批判工序）  ← Cogniti
 - 0 tokens 通道误判（把需要理解的问题当结构化处理）→ 对策：升级 LLM 前必须过"按需感知"检查（口袋/资源/任务性质）
 - 事件总线膨胀 → 对策：事件只发 stage 边界与判定结果，不发内部细节；消费方按需订阅
 
+## 4.5 实现状态（O-1 落地，2026-09-06）
+
+| 决策 | 落地点 | 验证 |
+|---|---|---|
+| D1 确定性分诊 | `contract::parse_structured_command`：`!tool {"json"}` 输入在 Perception 直接解析为 calls，Reasoning 跳过 LLM 直接组装 tt_job | 计数 reasoning adapter 证明零调用（`structured_command_bypasses_llm_entirely`）；自由文本仍走 LLM（无回归测试） |
+| D3 按需感知 | `gloves::probe_ecosystem`：任务开始前**一次**物理探测（TCP connect / UDS 文件存在性，fail-open），Cellrix = Native 手套；AgentContext/AgentSnapshot 携带生态点亮状态；Reasoning 前感知点（升级 LLM 前看一眼口袋） | gloves 9 测试；快照投影测试；Execution 对 tentacle 未点亮记录降级事实 |
+
+**设计边界（物理事实优先）**：探测只做"点亮状态"，不建立连接——连接留待使用时 fail-open；
+budget_tier 仍由 mind.rs 内部 derive（既有契约，O-1 未覆盖外部 tier 透传，留 O 系列后续裁决）。
+
 ## 5. 一句话总结
 
 > 心跳是骨架，四拍五工序是 Mind 的灵魂，六哲学是土壤；

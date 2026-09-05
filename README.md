@@ -39,6 +39,14 @@ via the CommonIntents protocol stack with zero hard coupling.
   cognitive states (Reasoning parses + assembles, Execution executes + records
   evidence, Reflection checks criteria + writes the verdict ledger); all five
   historical run_cycle hardcodings are now config-sourced (`RunCycleConfig`)
+- 🧭 **O-1: 0-Token Triage + Ecosystem Lights** (ADR-0016) — the
+  orchestration philosophy lands physically: `!tool {"json":...}` structured
+  commands are parsed in Perception and skip the LLM entirely (proven by a
+  counting reasoning adapter — zero calls); `probe_ecosystem` maps config
+  endpoints to physical lights once per task (TCP connect / UDS file,
+  fail-open; Cellrix = Native glove); AgentContext + AgentSnapshot carry the
+  lights so the cockpit shows *what the body has in hand*; free text still
+  reaches the LLM (no regression)
 - 🧭 **Candidate F: Session-as-Experience** (ADR-0006) — Helix has no "session
   container": a conversation is an *episode* it lives (L3 experience). Each
   reflection write carries `{"episode":"ep-<id>#<step>"}` provenance; closing
@@ -55,7 +63,7 @@ via the CommonIntents protocol stack with zero hard coupling.
   BTreeMap over HashMap, no endpoint leakage
 - 🛠️ **Safety-First Execution** — Audited tool calls & immune system interception
 - 🚀 **Zero-Dependency Boot** — Runs fully offline without any external services
-- ✅ **Full Test Coverage** — 129/129 passing (lib + integration suites incl. security gate + Tuck gate + D'-4 live + cockpit snapshot + bootstrap env) +
+- ✅ **Full Test Coverage** — 152/152 passing (lib + integration suites incl. security gate + Tuck gate + D'-4 live + cockpit snapshot + bootstrap env) +
   3 live e2e (#[ignore], real Tentacle)
 
 ## Project Structure
