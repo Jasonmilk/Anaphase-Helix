@@ -84,3 +84,16 @@
 4. **零硬编码**：`token_consumed: 1234` 静态演示 JSON 消除（DNA 原则 11）
 5. **live 验证**：真实 Anaphase（cap_http 50061）→ curl 输出真实 `{"mode":"partner","state":"Perception","episode":null,"ledger":[]}`；Cellrix HttpAnaphaseClient 真实解析（anaphase_live.rs）
 **状态**：✅ 完成（126 passed + 6 live ignored——lib 63 + 新 capture 2；生态合计 316 + 126 + 其余）
+
+## 记录 12：编排哲学显式化 ADR-0016（2026-09-06）
+**变异类型**：哲学决策固化——防止知识腐烂，编排策略从研讨结论升级为 ADR
+**背景**：
+- 候选 G 完成后，编排策略仍散落在多轮研讨中（分诊/认知工艺挂点/按需感知/依赖边界/轨迹三层）
+- 依据：Anthropic《Building Effective Agents》、DSH 内核源码比对（事件词汇表/surface 投影/工具调度）、Claude Code 架构分析（简单循环 + 周围系统）
+**关键决策**：
+1. **确定性优先分诊**：六 stage 只有"理解自由文本/生成表达"两处必须 LLM，其余 0 tokens 通道
+2. **认知工艺四拍挂点**：检索自评→想、风格对齐→动、预期校准→量、差距评估→记账
+3. **按需感知**：任务前/升级 LLM 前各感知一次（看口袋），不持续轮询
+4. **依赖边界**：并行池/窗口感知→FlowModus；前缀稳定→Callosum；编排层只保证同输入同输出
+5. **轨迹三层**：ledger + evidence + 会话 DAG + stage 事件（比 DSH 多"经历"维度）
+**状态**：✅ ADR-0016 已立（Proposed），VISION 补编排哲学指针，PLAN 增候选 O 系列（O-1..O-4 + 两条 FlowModus/Callosum 等待项），生态 1242 测试不变（纯文档轮）
