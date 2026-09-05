@@ -2,9 +2,9 @@
 
 > **DNA 方法论 v1.0** ｜ PLAN.md 是导航牌，不是历史档案（≤150 行）。完成记录进 GROWTH.md。
 
-## 当前阶段：候选 D'（3/4 完成：D'-1 指纹 + D'-3 接线 + D'-2 Tuck 深度集成）
+## 当前阶段：候选 D'（4/4 完成——D'-1 指纹 + D'-3 接线 + D'-2 Tuck 闸门 + D'-4 真实插件）
 
-**候选 D' 目标（ADR-0007/0008）**：M1.5 深化——D'-1（重放守卫指纹）/ D'-3（启动接线）/ D'-2（Tuck 深度集成）已完成；D'-4（真实场景插件）待 MCP-Learner 升级。
+**候选 D' 目标（ADR-0007/0008/0009）**：M1.5 深化四项全部完成。
 
 ### 候选 D' 完成状态（本轮）
 
@@ -13,9 +13,9 @@
 | D'-1 | `contract::derive_seen_bloom`（bl- 前缀，fnv64 共享原语）替换 execute_calls 空串占位 | ✅ ADR-0007 |
 | D'-3 | `pipeline::resolve_pipeline`（fail-open）+ main.rs tentacle_endpoint 接线 | ✅ ADR-0007 |
 | D'-2 | Tuck 深度集成：`SecurityGate` 接线点 + ledger `blocked` 记录 + 真实 TuckSecurityGate 连通 | ✅ ADR-0008 |
-| D'-4 | 真实场景插件（非 fixture，接入 MCP-Learner stable/ 工具） | ⏸️ 阻塞（MCP-Learner 升级） |
+| D'-4 | 真实场景插件（非 fixture，接入 MCP-Learner stable/ 工具）：`Expect::Ok` 结构判据 + live e2e（真实 Tentacle + 学习产物 3/3 全绿） | ✅ ADR-0009 |
 
-**关键成果**：`seen_entropy_bloom` 从 `""` 占位升级为真实确定性指纹（`bl-` + FNV-1a(`{tool}#{params}`)）；配置 `tentacle_endpoint` 后启动即走六 stage 流水线（fail-open，未配置/失败保持 echo fallback）；**D'-2 管控闭环咽喉落地**——pipeline 执行路径可被 Tuck 闸门拦截（`src/security.rs` SecurityGate trait + `with_security_gate` + ledger `Blocked` 记录，Reject/HITL 阻塞 call 且不进 Tentacle；真实连通测试经 dev-only tuck-core 验证 Low→Pass 执行 / Catastrophic→Reject / Critical→HitlRequired）；121 passed + 3 live（#[ignore]）。
+**关键成果**：`seen_entropy_bloom` 从 `""` 占位升级为真实确定性指纹（`bl-` + FNV-1a(`{tool}#{params}`)）；配置 `tentacle_endpoint` 后启动即走六 stage 流水线（fail-open，未配置/失败保持 echo fallback）；**D'-2 管控闭环咽喉落地**——pipeline 执行路径可被 Tuck 闸门拦截（`src/security.rs` SecurityGate trait + `with_security_gate` + ledger `Blocked` 记录，Reject/HITL 阻塞 call 且不进 Tentacle；真实连通测试经 dev-only tuck-core 验证 Low→Pass 执行 / Catastrophic→Reject / Critical→HitlRequired）；124 passed + 6 live（#[ignore]，含 m1_e2e_live 3 + m1_5_d4_live 3）。
 
 ### M1.5 / 候选 E / 候选 F 剩余项（已消项）
 
@@ -27,7 +27,7 @@
 
 ### 下一阶段候选
 
-- **候选 D' 剩余**：D'-2 Tuck 深度集成（Tuck 侧接口就绪后）/ D'-4 真实场景插件（MCP-Learner 升级后）
+- **候选 D' 剩余**：无（四项全部完成；真实 MCP 执行体升级属 ECOSYSTEM 第二优先级 #4）
 - **候选 G：Cellrix 门面 = 经历时间线**（界面层，独立仓库）——会话列表 = 经历时间线（episode 消化状态：待消化/已内化）、生活视图（睡眠/代谢）、模式状态栏；驾驶模式原型（纯 Anaphase）
 - **候选 A：Tentacle Rust 重构**（P10b 后自然启动）——凭证标签流转（Tuck 注入）/ 异步协程沙箱（ARM 端侧）/ 动态共识适配层 / 多传输层扩展
 - **候选 B：生态手套协议渐进**（P10c 预留扩展位）——Cellrix 原生手套协议接入

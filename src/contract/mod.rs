@@ -8,13 +8,15 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-/// Expected result shape of a tool call (lowercase in JSON: numbers/rate/text).
+/// Expected result shape of a tool call (lowercase in JSON: numbers/rate/text/ok).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum Expect {
     Numbers,
     Rate,
     Text,
+    /// Structured execution success (D'-4): ok:true + args echo.
+    Ok,
 }
 
 /// One planned tool call.

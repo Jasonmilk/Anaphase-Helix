@@ -99,6 +99,17 @@ pub fn ratio_band(numerator: f64, denominator: f64, min: f64) -> CheckReport {
     }
 }
 
+/// Passes when the executor reported structured success and echoed args back.
+/// Zero thresholds: structural contract only (D'-4).
+pub fn exec_ok(ok_flag: bool, echoed: bool) -> CheckReport {
+    let passed = ok_flag && echoed;
+    CheckReport {
+        check: "exec_ok".into(),
+        passed,
+        detail: format!("ok={ok_flag} echo={echoed}"),
+    }
+}
+
 // --- expect -> criteria mapping (ADR-0003 decision 6) ---
 
 /// Run the criteria set mapped from `expect` against tool-return `data`.
@@ -131,6 +142,17 @@ pub fn run_for_expect(expect: &Expect, data: &serde_json::Value, params: &RulePa
             let trend_a = data.get("trend_a").and_then(|v| v.as_f64()).unwrap_or(f64::NAN);
             let trend_b = data.get("trend_b").and_then(|v| v.as_f64()).unwrap_or(f64::NAN);
             vec![divergence(trend_a, trend_b)]
+        }
+        Expect::Ok => {
+            // D'-4: structured execution success. The executor contract echoes
+            // `{"ok": true, "data": {"tool", "params", ...}}` (mcp_proxy.js).
+            let ok_flag = data.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
+            let echoed = data
+                .get("data")
+                .and_then(|d| d.get("params"))
+                .map(|p| !p.is_null())
+                .unwrap_or(false);
+            vec![exec_ok(ok_flag, echoed)]
         }
     }
 }
@@ -198,5 +220,27 @@ mod tests {
         let a = run_for_expect(&Expect::Numbers, &data, &params());
         let b = run_for_expect(&Expect::Numbers, &data, &params());
         assert_eq!(serde_json::to_string(&a).unwrap(), serde_json::to_string(&b).unwrap());
+    }
+
+    #[test]
+    fn ok_mapping_full_pass() {
+        let data = serde_json::json!({"ok": true, "data": {"tool": "t", "params": {"x": 1}}});
+        let reports = run_for_expect(&Expect::Ok, &data, &params());
+        assert_eq!(reports.len(), 1);
+        assert!(reports[0].passed, "{reports:?}");
+    }
+
+    #[test]
+    fn ok_mapping_fails_closed_on_missing_echo() {
+        let data = serde_json::json!({"ok": true});
+        let reports = run_for_expect(&Expect::Ok, &data, &params());
+        assert!(!reports[0].passed, "missing params echo must fail");
+    }
+
+    #[test]
+    fn ok_mapping_fails_closed_on_ok_false() {
+        let data = serde_json::json!({"ok": false, "data": {"tool": "t", "params": {}}});
+        let reports = run_for_expect(&Expect::Ok, &data, &params());
+        assert!(!reports[0].passed, "ok=false must fail");
     }
 }
