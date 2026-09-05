@@ -60,6 +60,8 @@ pub struct AgentSnapshot {
     pub episode: Option<EpisodeView>,
     /// Live ledger entries, newest first (projection, capped).
     pub ledger: Vec<crate::ledger::LedgerRecord>,
+    /// Ecosystem component lights (O-1): what the body has in hand.
+    pub ecosystem: Vec<crate::gloves::GloveInfo>,
 }
 
 /// Episode shape for the snapshot (id / anchor / progress).
@@ -134,6 +136,12 @@ pub struct AgentContext {
     pub evidence: Vec<EvidenceRecord>,
     pub p_death: f64,
     pub reflection_notes: String,
+    /// 生态组件点亮状态（O-1，ADR-0016 D3）：任务开始前探测一次的投影，
+    /// 供执行通道选择与驾驶舱展示。默认空 = 未探测（fail-open，不阻塞）。
+    pub ecosystem: crate::gloves::EcosystemGloves,
+    /// Structured-command marker (O-1): set by Perception when the input
+    /// starts with `!`; Reasoning skips the LLM for this cycle (0 tokens).
+    pub structured: bool,
 }
 
 impl AgentLoop {
@@ -223,6 +231,7 @@ impl AgentLoop {
                 first_input: e.first_input.clone(),
                 step: e.step,
             }),
+            ecosystem: self.context.ecosystem.list(),
             ledger: self
                 .pipeline
                 .as_ref()
@@ -304,7 +313,13 @@ impl AgentLoop {
         match self.current_state {
             HelixState::Perception => {
                 info!("[Perception] Received input: {}", self.context.user_input);
-                // Basic intent parsing (extendable with NER later)
+                // O-1 (ADR-0016 D1): structured-command triage — `!tool` inputs
+                // bypass the LLM entirely (0 tokens, deterministic call plan).
+                if let Some(calls) = crate::contract::parse_structured_command(&self.context.user_input) {
+                    self.context.calls = calls;
+                    self.context.structured = true;
+                    info!("[Perception] structured command detected; LLM bypassed");
+                }
                 Ok(TransitionCondition::Success)
             }
             HelixState::PreAssessment => {
@@ -335,6 +350,26 @@ impl AgentLoop {
                 }
             }
             HelixState::Reasoning => {
+                // O-1 (ADR-0016 D1): structured commands never reach the LLM —
+                // the plan already exists, assemble the job and go.
+                if self.context.structured {
+                    if let Some(p) = self.pipeline.as_ref() {
+                        let job_id = crate::contract::derive_job_id(&self.context.user_input);
+                        let created_at = unix_secs_to_rfc3339(p.ledger.clock_now());
+                        self.context.job = Some(Pipeline::assemble_tt_job(
+                            &job_id,
+                            &created_at,
+                            self.context.calls.clone(),
+                        ));
+                    }
+                    return Ok(TransitionCondition::NeedsTool);
+                }
+                // O-1 (ADR-0016 D3): upgrade-to-LLM sensing point — look at the
+                // pocket once before spending tokens (physical facts only).
+                info!(
+                    "[Reasoning] ecosystem: {:?}",
+                    self.context.ecosystem.list()
+                );
                 info!("[Reasoning] Left-brain reasoning...");
                 match self.reason.reason(&self.context.user_input, &self.run_config.reasoning_mode).await {
                     Ok(output) => {
@@ -421,6 +456,14 @@ impl AgentLoop {
                 // pipeline takes the deterministic path (stages 3-4). Without
                 // either, the legacy string/echo path stays (backwards compat).
                 if self.pipeline.is_some() && !self.context.calls.is_empty() {
+                    // O-1: pipeline resolved at startup, but the physical probe
+                    // says the tentacle is dark — log the degradation fact.
+                    match self.context.ecosystem.status("tentacle") {
+                        Some(crate::gloves::GloveStatus::Unavailable) => {
+                            warn!("[Execution] tentacle dark at runtime; pipeline path may fail-open");
+                        }
+                        _ => {}
+                    }
                     return self.execute_structured().await;
                 }
                 let action_str = self.context.suggested_actions.join(", ");
@@ -582,6 +625,7 @@ fn assess_complexity(query: &str) -> u8 {
     }
 }
 
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -590,6 +634,19 @@ mod tests {
         NoopToolAdapter, NoopUiAdapter,
     };
     use crate::reflex::ReflexArc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    /// Counting reasoning adapter (O-1): proves structured commands never
+    /// reach the LLM — the counter must stay zero for `!tool` inputs.
+    struct CountingReasoning(Arc<AtomicUsize>);
+
+    #[async_trait::async_trait]
+    impl crate::adapters::ReasoningAdapter for CountingReasoning {
+        async fn reason(&self, input: &str, mode: &str) -> Result<String, String> {
+            self.0.fetch_add(1, Ordering::Relaxed);
+            Ok(format!("{{\"calls\":[],\"impasse\":false}} // {}", input))
+        }
+    }
 
     fn base() -> AgentLoop {
         AgentLoop::new(
@@ -623,5 +680,66 @@ mod tests {
         assert!(ep.id.starts_with("ep-"));
         assert_eq!(ep.first_input, "hello");
         assert_eq!(ep.step, 0);
+    }
+
+    #[tokio::test]
+    async fn structured_command_bypasses_llm_entirely() {
+        let calls_count = Arc::new(AtomicUsize::new(0));
+        let reason = Arc::new(CountingReasoning(calls_count.clone()));
+        let mut agent = AgentLoop::new(
+            Arc::new(NoopMemoryAdapter),
+            reason,
+            Arc::new(NoopToolAdapter),
+            Arc::new(NoopSafetyAdapter),
+            Arc::new(NoopUiAdapter),
+            Arc::new(NoopFearAdapter),
+            ReflexArc { safety_rules: vec![] },
+        );
+        agent.context.user_input = "!date".to_string();
+        agent.run_cycle("!date").await.unwrap();
+        assert_eq!(
+            calls_count.load(Ordering::Relaxed),
+            0,
+            "structured command must never call the LLM (0 tokens)"
+        );
+        assert_eq!(agent.context.calls.len(), 1);
+        assert_eq!(agent.context.calls[0].tool, "date");
+        assert!(agent.context.structured);
+    }
+
+    #[tokio::test]
+    async fn free_text_still_reaches_llm() {
+        let calls_count = Arc::new(AtomicUsize::new(0));
+        let reason = Arc::new(CountingReasoning(calls_count.clone()));
+        let mut agent = AgentLoop::new(
+            Arc::new(NoopMemoryAdapter),
+            reason,
+            Arc::new(NoopToolAdapter),
+            Arc::new(NoopSafetyAdapter),
+            Arc::new(NoopUiAdapter),
+            Arc::new(NoopFearAdapter),
+            ReflexArc { safety_rules: vec![] },
+        );
+        agent.context.user_input = "帮我总结一下会议".to_string();
+        agent.run_cycle("帮我总结一下会议").await.unwrap();
+        assert_eq!(
+            calls_count.load(Ordering::Relaxed),
+            1,
+            "free text still goes through the LLM (no triage regression)"
+        );
+    }
+
+    #[tokio::test]
+    async fn snapshot_carries_ecosystem_lights() {
+        let agent = base();
+        let snap = agent.capture();
+        assert!(snap.ecosystem.is_empty(), "unprobed -> empty lights");
+        let mut agent = base();
+        agent.context.ecosystem
+            .register("cellrix", crate::gloves::GloveTier::Native, crate::gloves::GloveStatus::Available);
+        let snap = agent.capture();
+        assert_eq!(snap.ecosystem.len(), 1);
+        assert_eq!(snap.ecosystem[0].name, "cellrix");
+        assert_eq!(snap.ecosystem[0].status, crate::gloves::GloveStatus::Available);
     }
 }

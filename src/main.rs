@@ -65,6 +65,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let mut agent = AgentLoop::new(memory, reason, tool, safety, ui, fear, reflex);
+    // O-1 (ADR-0016 D3): one physical probe at task start — "look at the
+    // pocket before leaving the house". Fail-open: dark components degrade,
+    // never block.
+    agent.context.ecosystem = anaphase::gloves::probe_ecosystem(&config.anaphase).await;
     // candidate E (ADR-0005): run_cycle constants come from the config source
     // (DNA principle 11 / ADR-0002), overridable via config.toml.
     agent.run_config = config.anaphase.run_cycle.clone();

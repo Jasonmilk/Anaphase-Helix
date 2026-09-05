@@ -101,6 +101,46 @@ pub fn fnv64(input: &str) -> u64 {
 /// (candidate E, ADR-0005). FNV-1a 64-bit over the input, hex-encoded —
 /// no UUID (DNA principle 11 / ADR-0003 decision 12): the same input always
 /// yields the same id, keeping the cognitive chain replayable.
+
+/// Structured-command triage (O-1, ADR-0016 D1): `!tool {"json":...}` inputs
+/// skip the LLM entirely — the call plan is parsed deterministically here.
+/// 0 tokens, zero ambiguity: the leading `!` is the explicit "no thinking"
+/// marker. Optional trailing JSON object becomes the args map; bare `!tool`
+/// yields empty args (tool defaults apply). Returns None for free text.
+pub fn parse_structured_command(input: &str) -> Option<Vec<Call>> {
+    let t = input.trim();
+    let body = t.strip_prefix('!')?;
+    let mut parts = body.splitn(2, char::is_whitespace);
+    let tool = parts.next()?.trim();
+    if tool.is_empty() {
+        return None;
+    }
+    let mut args = BTreeMap::new();
+    if let Some(rest) = parts.next() {
+        let rest = rest.trim();
+        if !rest.is_empty() {
+            match serde_json::from_str::<serde_json::Value>(rest) {
+                Ok(serde_json::Value::Object(map)) => {
+                    for (k, v) in map {
+                        args.insert(k, v);
+                    }
+                }
+                // Non-object tail: positional args under "0","1",...
+                _ => {
+                    for (i, piece) in rest.split_whitespace().enumerate() {
+                        args.insert(i.to_string(), serde_json::Value::String(piece.to_string()));
+                    }
+                }
+            }
+        }
+    }
+    Some(vec![Call {
+        tool: tool.to_string(),
+        args,
+        expect: Expect::Ok,
+    }])
+}
+
 pub fn derive_job_id(input: &str) -> String {
     format!("run-{:016x}", fnv64(input))
 }
@@ -244,5 +284,39 @@ mod tests {
         assert_ne!(derive_seen_bloom("numbers", "{}"), derive_episode_id("numbers"));
         assert!(derive_seen_bloom("numbers", "{}").starts_with("bl-"));
         assert_eq!(derive_seen_bloom("numbers", "{}").len(), 3 + 16);
+    }
+
+    #[test]
+    fn structured_command_bare_tool_parses() {
+        let calls = parse_structured_command("!date").unwrap();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].tool, "date");
+        assert!(calls[0].args.is_empty());
+        assert_eq!(calls[0].expect, Expect::Ok);
+    }
+
+    #[test]
+    fn structured_command_json_args_parse() {
+        let calls = parse_structured_command("!echo {\"text\":\"hi\",\"n\":1}").unwrap();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].tool, "echo");
+        assert_eq!(calls[0].args.get("text").unwrap(), &serde_json::json!("hi"));
+        assert_eq!(calls[0].args.get("n").unwrap(), &serde_json::json!(1));
+    }
+
+    #[test]
+    fn structured_command_positional_args_fallback() {
+        let calls = parse_structured_command("!run a b").unwrap();
+        assert_eq!(calls[0].tool, "run");
+        assert_eq!(calls[0].args.get("0").unwrap(), &serde_json::json!("a"));
+        assert_eq!(calls[0].args.get("1").unwrap(), &serde_json::json!("b"));
+    }
+
+    #[test]
+    fn free_text_is_not_structured() {
+        assert!(parse_structured_command("帮我查一下会议记录").is_none());
+        assert!(parse_structured_command("  normal text  ").is_none());
+        assert!(parse_structured_command("!").is_none());
+        assert!(parse_structured_command("!   ").is_none());
     }
 }
