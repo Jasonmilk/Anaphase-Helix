@@ -49,6 +49,27 @@ pub struct EpisodeDigest {
     pub first_input: String,
 }
 
+/// One serializable projection of the agent's live state (candidate G-T2).
+/// The HTTP snapshot endpoint reads this; the loop refreshes it after each
+/// cycle. Projection only — the pipeline ledger and the episode remain the
+/// single sources of truth.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct AgentSnapshot {
+    pub mode: Mode,
+    pub state: crate::states::HelixState,
+    pub episode: Option<EpisodeView>,
+    /// Live ledger entries, newest first (projection, capped).
+    pub ledger: Vec<crate::ledger::LedgerRecord>,
+}
+
+/// Episode shape for the snapshot (id / anchor / progress).
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct EpisodeView {
+    pub id: String,
+    pub first_input: String,
+    pub step: usize,
+}
+
 /// Core cognitive loop engine for Anaphase
 pub struct AgentLoop {
     pub memory: Arc<dyn MemoryAdapter>,
@@ -189,6 +210,25 @@ impl AgentLoop {
     pub fn with_mode(mut self, mode: Mode) -> Self {
         self.mode = mode;
         self
+    }
+
+    /// Project the agent's live state for the snapshot endpoint (candidate
+    /// G-T2). Reads only pub fields — no second source of truth.
+    pub fn capture(&self) -> AgentSnapshot {
+        AgentSnapshot {
+            mode: self.mode,
+            state: self.current_state.clone(),
+            episode: self.episode.as_ref().map(|e| EpisodeView {
+                id: e.id.clone(),
+                first_input: e.first_input.clone(),
+                step: e.step,
+            }),
+            ledger: self
+                .pipeline
+                .as_ref()
+                .map(|p| p.ledger.records().to_vec())
+                .unwrap_or_default(),
+        }
     }
 
     /// Begin a new episode (experience boundary, ADR-0006 D1). An active
@@ -539,5 +579,49 @@ fn assess_complexity(query: &str) -> u8 {
         2
     } else {
         3
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::adapters::{
+        NoopFearAdapter, NoopMemoryAdapter, NoopReasoningAdapter, NoopSafetyAdapter,
+        NoopToolAdapter, NoopUiAdapter,
+    };
+    use crate::reflex::ReflexArc;
+
+    fn base() -> AgentLoop {
+        AgentLoop::new(
+            Arc::new(NoopMemoryAdapter),
+            Arc::new(NoopReasoningAdapter),
+            Arc::new(NoopToolAdapter),
+            Arc::new(NoopSafetyAdapter),
+            Arc::new(NoopUiAdapter),
+            Arc::new(NoopFearAdapter),
+            ReflexArc {
+                safety_rules: vec![],
+            },
+        )
+    }
+
+    #[tokio::test]
+    async fn capture_reflects_mode_and_empty_ledger() {
+        let agent = base().with_mode(Mode::Drive);
+        let snap = agent.capture();
+        assert_eq!(snap.mode, Mode::Drive);
+        assert!(snap.episode.is_none());
+        assert!(snap.ledger.is_empty());
+    }
+
+    #[tokio::test]
+    async fn capture_includes_active_episode() {
+        let mut agent = base();
+        agent.begin_episode("hello").await;
+        let snap = agent.capture();
+        let ep = snap.episode.unwrap();
+        assert!(ep.id.starts_with("ep-"));
+        assert_eq!(ep.first_input, "hello");
+        assert_eq!(ep.step, 0);
     }
 }

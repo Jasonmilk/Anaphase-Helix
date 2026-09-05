@@ -9,7 +9,7 @@ use anaphase::agent_loop::AgentLoop;
 use anaphase::lifecycle::SessionNotes;
 use anaphase::reflex::ReflexArc;
 use anaphase::config;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -91,25 +91,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    // Candidate G-T2: shared snapshot projection (None = HTTP disabled).
+    // The endpoint serves it; the loop refreshes it after each cycle.
+    let mut shared_snapshot: Option<Arc<Mutex<Option<anaphase::agent_loop::AgentSnapshot>>>> = None;
+
     if config.anaphase.cap_http_enabled && !stdio_mode {
-        use axum::{Router, routing::get, Json, response::IntoResponse};
+        use axum::{Router, routing::get, Json};
+        use std::sync::{Arc, Mutex};
 
-        async fn cap_snapshot() -> impl IntoResponse {
-            Json(serde_json::json!({
-                "status": "Active",
-                "metrics": { "token_consumed": 1234 },
-                "semantic_tree": [
-                    {
-                        "id": "1",
-                        "node_type": "state_tree",
-                        "label": "Cognitive Loop",
-                        "content": "Perception -> PreAssessment -> MemoryRetrieval -> Reasoning -> ReflexCheck -> Execution -> Reflection"
-                    }
-                ]
-            }))
-        }
+        let shared: Arc<Mutex<Option<anaphase::agent_loop::AgentSnapshot>>> =
+            Arc::new(Mutex::new(None));
+        shared_snapshot = Some(shared.clone());
 
-        let app = Router::new().route("/v1/agent/snapshot", get(cap_snapshot));
+        let app = Router::new().route("/v1/agent/snapshot", get({
+            let shared = shared.clone();
+            move || async move {
+                match shared.lock().unwrap().clone() {
+                    Some(snap) => Json(serde_json::json!({ "status": "Active", "snapshot": snap })),
+                    None => Json(serde_json::json!({ "status": "booting" })),
+                }
+            }
+        }));
         let addr = format!("0.0.0.0:{}", config.anaphase.cap_http_port);
         let listener = tokio::net::TcpListener::bind(&addr).await?;
         println!("CAP HTTP server started: http://{}", addr);
@@ -145,6 +147,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("User: {}", user_input);
     agent.run_cycle(user_input).await?;
     println!("\nCognitive cycle completed successfully.");
+
+    // Candidate G-T2: refresh the shared snapshot after the cycle, so the
+    // endpoint serves the real mode / episode / ledger projection.
+    if let Some(shared) = &shared_snapshot {
+        *shared.lock().unwrap() = Some(agent.capture());
+    }
 
     tokio::signal::ctrl_c().await?;
     println!("Shutting down...");

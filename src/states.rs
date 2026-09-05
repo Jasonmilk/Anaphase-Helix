@@ -1,7 +1,7 @@
 use petgraph::graph::DiGraph;
 
 /// Core cognitive states for the Anaphase-Helix agent
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize)]
 pub enum HelixState {
     Perception,
     PreAssessment,
