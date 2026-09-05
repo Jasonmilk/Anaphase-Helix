@@ -74,6 +74,7 @@ enum Choice {
     Cockpit,
     Status,
     Config,
+    Configure,
     Exit,
 }
 
@@ -85,7 +86,8 @@ fn parse_choice(line: &str) -> Option<Choice> {
         "" | "1" => Some(Choice::Cockpit),
         "2" => Some(Choice::Status),
         "3" => Some(Choice::Config),
-        "4" | "q" | "Q" => Some(Choice::Exit),
+        "4" => Some(Choice::Configure),
+        "5" | "q" | "Q" => Some(Choice::Exit),
         _ => None,
     }
 }
@@ -237,7 +239,8 @@ fn menu_loop(
         println!("  1. 打开驾驶舱   (Enter 同此)");
         println!("  2. 查看状态");
         println!("  3. 配置说明");
-        println!("  4. 停止并退出   (q)");
+        println!("  4. 配置 LLM（引导输入）");
+        println!("  5. 停止并退出   (q)");
         print!("  选择: ");
         std::io::stdout().flush()?;
 
@@ -268,6 +271,9 @@ fn menu_loop(
                 println!("    [anaphase] cap_http_port = 50061                # 驾驶舱数据端口");
                 println!("  修改后需重启 up 生效。");
             }
+            Some(Choice::Configure) => {
+                run_config_wizard(&std::env::current_dir()?.join("config.toml"))?;
+            }
             Some(Choice::Exit) => {
                 println!("  停止并退出...");
                 break;
@@ -282,9 +288,105 @@ fn menu_loop(
     Ok(())
 }
 
+/// Interactive LLM configuration wizard (menu choice 4): asks base_url,
+/// model and api_key one question at a time (choices, not commands), backs
+/// up `config.toml`, applies line-level updates and tells the user to
+/// restart `up`. The api_key prompt disables terminal echo via `stty`
+/// (present on macOS/Linux) — no new crate dependency.
+fn run_config_wizard(config_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    if !config_path.exists() {
+        println!("  [warn] 未找到 {} → 请在 anaphase-helix 目录运行 up", config_path.display());
+        return Ok(());
+    }
+    let original = std::fs::read_to_string(config_path)?;
+
+    println!("\n  —— 配置 LLM（引导输入，Enter 跳过保持现值）——");
+    print!("  base_url（OpenAI 兼容，如 https://api.deepseek.com）: ");
+    std::io::stdout().flush()?;
+    let base_url = read_line();
+
+    print!("  model（如 deepseek-chat）: ");
+    std::io::stdout().flush()?;
+    let model = read_line();
+
+    print!("  api_key（输入不回显）: ");
+    std::io::stdout().flush()?;
+    let key = read_line_hidden();
+
+    let updated = apply_reasoning_updates(&original, &base_url, &model, &key);
+    if updated == original {
+        println!("  [i] 无变更，config.toml 未改动");
+        return Ok(());
+    }
+    // Backup the current file, then write (overwrite is the explicit wizard
+    // intent; the .bak preserves recovery).
+    let backup = config_path.with_extension("toml.bak");
+    std::fs::write(&backup, &original)?;
+    std::fs::write(config_path, &updated)?;
+    println!("  [ok] 已写入 {}（原文件备份: {}）", config_path.display(), backup.display());
+    println!("  [i] 重启 up 生效（退出后重新运行）");
+    Ok(())
+}
+
+/// Apply reasoning config updates at line level: replace the three keyed
+/// lines in place, keep everything else byte-identical. Empty input leaves
+/// the existing value untouched (Enter = keep). Pure function — tested.
+fn apply_reasoning_updates(config_text: &str, base_url: &str, model: &str, key: &str) -> String {
+    let updates = [
+        ("reasoning_endpoint", base_url),
+        ("reasoning_model", model),
+        ("reasoning_api_key", key),
+    ];
+    let mut out_lines: Vec<String> = Vec::new();
+    let mut replaced = [false; 3];
+    for line in config_text.lines() {
+        let mut done = line.to_string();
+        for (i, (field, value)) in updates.iter().enumerate() {
+            let trimmed = line.trim_start();
+            if trimmed.starts_with(&format!("{field} =")) && !value.is_empty() {
+                done = format!("{field} = \"{}\"", escape_toml(value));
+                replaced[i] = true;
+                break;
+            }
+        }
+        out_lines.push(done);
+    }
+    if !replaced.iter().all(|r| *r) {
+        eprintln!("  [warn] 部分字段行未找到（{}），未修改这些字段",
+            updates.iter().zip(replaced.iter())
+                .filter(|(_, r)| !**r)
+                .map(|(u, _)| u.0)
+                .collect::<Vec<_>>()
+                .join(", "));
+    }
+    out_lines.join("\n")
+}
+
+/// Escape a value for a TOML basic string (quotes and backslashes).
+fn escape_toml(value: &str) -> String {
+    value.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+/// Read one line from stdin (trimmed).
+fn read_line() -> String {
+    let mut line = String::new();
+    if std::io::stdin().read_line(&mut line).is_ok() {
+        line.trim().to_string()
+    } else {
+        String::new()
+    }
+}
+
+/// Read one line with terminal echo disabled (`stty -echo`), restored after.
+fn read_line_hidden() -> String {
+    let _ = Command::new("stty").arg("-echo").status();
+    let line = read_line();
+    let _ = Command::new("stty").arg("echo").status();
+    line
+}
+
 /// Physical status: probe both ports + read the live snapshot summary.
-fn print_status(grpc_port: u16, snapshot_port: u16, mode: &str) {
-    let tentacle_up = TcpStream::connect(("127.0.0.1", grpc_port)).is_ok();
+fn print_status(grpc_port: u16, snapshot_port: u16, mode: &str) {    let tentacle_up = TcpStream::connect(("127.0.0.1", grpc_port)).is_ok();
     let anaphase_up = TcpStream::connect(("127.0.0.1", snapshot_port)).is_ok();
     println!("  Tentacle (grpc :{grpc_port}): {}", if tentacle_up { "运行中" } else { "未运行" });
     println!("  Anaphase (snapshot :{snapshot_port}): {}", if anaphase_up { "运行中" } else { "未运行" });
@@ -348,7 +450,7 @@ mod tests {
     fn parse_choice_numbers_and_quit() {
         assert_eq!(parse_choice("2"), Some(Choice::Status));
         assert_eq!(parse_choice("3"), Some(Choice::Config));
-        assert_eq!(parse_choice("4"), Some(Choice::Exit));
+        assert_eq!(parse_choice("5"), Some(Choice::Exit));
         assert_eq!(parse_choice("q"), Some(Choice::Exit));
         assert_eq!(parse_choice("Q"), Some(Choice::Exit));
     }
@@ -356,13 +458,53 @@ mod tests {
     #[test]
     fn parse_choice_unknown_is_none() {
         assert_eq!(parse_choice("x"), None);
-        assert_eq!(parse_choice("5"), None);
+        assert_eq!(parse_choice("6"), None);
         assert_eq!(parse_choice("abc"), None);
     }
 
     #[test]
+    fn parse_choice_configure_is_five() {
+        assert_eq!(parse_choice("4"), Some(Choice::Configure));
+        assert_eq!(parse_choice("5"), Some(Choice::Exit));
+    }
+
+    #[test]
+    fn apply_updates_replaces_three_fields_keeps_rest() {
+        let cfg = "reasoning_endpoint = \"\"\nreasoning_model = \"\"\nreasoning_api_key = \"\"\ncap_http_port = 50061\n";
+        let out = apply_reasoning_updates(cfg, "https://api.deepseek.com", "deepseek-chat", "sk-abc");
+        assert!(out.contains("reasoning_endpoint = \"https://api.deepseek.com\""));
+        assert!(out.contains("reasoning_model = \"deepseek-chat\""));
+        assert!(out.contains("reasoning_api_key = \"sk-abc\""));
+        assert!(out.contains("cap_http_port = 50061"));
+        assert_eq!(out.lines().count(), 4); // no line added/removed
+    }
+
+    #[test]
+    fn apply_updates_empty_input_keeps_existing() {
+        let cfg = "reasoning_endpoint = \"http://old\"\nreasoning_model = \"m1\"\nreasoning_api_key = \"k1\"\n";
+        let out = apply_reasoning_updates(cfg, "", "m2", "");
+        assert!(out.contains("reasoning_endpoint = \"http://old\""));
+        assert!(out.contains("reasoning_model = \"m2\""));
+        assert!(out.contains("reasoning_api_key = \"k1\""));
+    }
+
+    #[test]
+    fn apply_updates_escapes_quotes_and_backslashes() {
+        let cfg = "reasoning_api_key = \"\"\n";
+        let out = apply_reasoning_updates(cfg, "", "", "a\"b\\c");
+        assert!(out.contains("reasoning_api_key = \"a\\\"b\\\\c\""));
+    }
+
+    #[test]
+    fn apply_updates_noop_when_all_empty() {
+        let cfg = "reasoning_endpoint = \"x\"";
+        let out = apply_reasoning_updates(cfg, "", "", "");
+        assert_eq!(out, cfg);
+    }
+
+    #[test]
     fn all_present_nothing_missing() {
-        let dir = std::env::temp_dir().join(format!("up-test-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("up-test-present-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let f = |name: &str| -> PathBuf {
             let p = dir.join(name);
@@ -375,7 +517,7 @@ mod tests {
 
     #[test]
     fn anaphase_missing_is_fatal() {
-        let dir = std::env::temp_dir().join(format!("up-test-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("up-test-fatal-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let f = |name: &str| -> PathBuf {
             let p = dir.join(name);
@@ -389,7 +531,7 @@ mod tests {
 
     #[test]
     fn missing_names_build_hints() {
-        let dir = std::env::temp_dir().join(format!("up-test-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("up-test-missing-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let missing = check_prereqs(
             &dir.join("t"),

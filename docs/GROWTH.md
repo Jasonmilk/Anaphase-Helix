@@ -30,6 +30,16 @@
 3. **live 验收（D3）**：tests/m1_5_d4_live.rs 3 例（#[ignore]）——插件目录参数化（TENTACLE_PLUGINS_DIR 默认 /tmp/d4-learn/stable）；真实插件 MET / 未知工具 Err / run_cycle 全链路 MET；**实测 3/3 全绿**（真实 tentacle 二进制 + node + 学习产物）
 4. **执行体占位如实标注**：mcp_proxy.js 是占位实现（echo 参数），真实 MCP 代理执行属 ECOSYSTEM 第二优先级 #4——D'-4 证明"链路真实"，不冒充"执行真实"
 **状态**：✅ 完成（124 测试全绿——lib 61 + integration 16 + m1_e2e 3 + mind 9 + mock 4 + run_cycle_pipeline 8 + episode 10 + replay_guard 4 + security_gate 6 + tuck_gate 3；live 6 条 #[ignore]；生态合计 1228）
+## 记录 15：G-7 配置向导（2026-09-06）
+
+**变异类型**：LLM 引导输入——用户（2026-09-06）"Anaphase 有没有引导我输入 api key?"
+
+- ADR-0015：up 菜单选项 4 = 配置 LLM（base_url/model/api_key 一问一答，Enter 跳过保持现值）
+- api_key 输入不回显（stty -echo 包裹，零新依赖；pty 实测捕获输出无 key 明文）
+- 写盘前备份 config.toml.bak；行级替换其余字节保留；空输入不写盘；字段缺失诚实 warn
+- 实测：菜单 → 4 → 三字段写入 → 备份存在 → 还原往返一致
+- 140 tests 全绿（135 + 5）；下一步 G2 Web 优化
+
 ## 记录 14：G-6 交互菜单（2026-09-06）
 
 **变异类型**：一条命令之后只有选择题——用户（2026-09-06）"我觉得应该让用户做选择题，一个命令之后，最好就别出现命令了吧？！"
