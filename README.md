@@ -100,25 +100,24 @@ anaphase-helix/
 
 ## Quick Start
 
-One-command backend bootstrap (candidate G-4, ADR-0011):
+**One command, full stack** (candidate G-4, ADR-0011) — Tentacle (gRPC + fixture plugins) → Anaphase (endpoint injected via env, `config.toml` untouched) → readiness probes → optional cockpit:
 
 ```bash
-cargo run --bin up               # tentacle + anaphase + readiness probes
+cargo run --bin up               # backend: tentacle + anaphase, probes both ready
 cargo run --bin up -- --cockpit  # + Cellrix cockpit TUI in the foreground
 ```
 
-Explicit knobs (all optional): `HELIX_TENTACLE`, `HELIX_FIXTURES_DIR`,
+Prereqs (build once, then `up` just works):
+- `helix-tentacle`: `cargo build` → `target/debug/tentacle`
+- `Cellrix`: `cargo build` → `target/debug/cellrix-cli` + `target/debug/mock-agent`
+
+All knobs optional: `HELIX_TENTACLE` (binary path), `HELIX_FIXTURES_DIR`,
 `HELIX_TENTACLE_PORT`; Anaphase receives `ANAPHASE_TENTACLE_ENDPOINT` /
-`ANAPHASE_REASONING_ENDPOINT` via env (config.toml untouched, 12-factor).
+`ANAPHASE_REASONING_ENDPOINT` via env (12-factor, config.toml untouched).
+Fail-open: missing Tentacle binary → Noop offline mode, never blocks.
+Exit: Ctrl+C (whole process group receives SIGINT together).
 
-Single-process Noop loop (no external services):
-
-```bash
-cargo run
-```
-
-
-Run the **7-state cognitive loop** in Noop mode (no external services required):
+**Single-process Noop loop** (no external services — shows the 7-state cycle):
 
 ```bash
 cargo run
