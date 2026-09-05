@@ -4,7 +4,7 @@
 ![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)
 ![Build](https://img.shields.io/badge/Build-Passing-brightgreen.svg)
 ![Style](https://img.shields.io/badge/Code%20Style-Google-black.svg)
-[![Tests](https://img.shields.io/badge/tests-110%2F110%20passed-green)](#)
+[![Tests](https://img.shields.io/badge/tests-121%2F121%20passed-green)](#)
 
 **The silicon-based operating system & physical brain for digital lifeforms.
 Perceive, reason, act, remember, and immunize — the body that houses the soul.**
@@ -55,7 +55,7 @@ via the CommonIntents protocol stack with zero hard coupling.
   BTreeMap over HashMap, no endpoint leakage
 - 🛠️ **Safety-First Execution** — Audited tool calls & immune system interception
 - 🚀 **Zero-Dependency Boot** — Runs fully offline without any external services
-- ✅ **Full Test Coverage** — 110/110 passing (lib + 7 integration suites) +
+- ✅ **Full Test Coverage** — 121/121 passing (lib + 9 integration suites incl. security gate + Tuck gate) +
   3 live e2e (#[ignore], real Tentacle)
 
 ## Project Structure
@@ -111,7 +111,7 @@ You will see a full cycle:
 
 ## Testing
 
-Run the full suite (**110/110 passing**):
+Run the full suite (**121/121 passing**):
 ```bash
 cargo test
 ```

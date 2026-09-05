@@ -31,6 +31,17 @@ pub enum LedgerRecord {
         /// to count attempts by chain length (ADR-0003 decision 10).
         parent_id: Option<String>,
     },
+    /// A call physically blocked by the security gate (ADR-0008 D'-2).
+    /// Distinct from a verdict: the action never executed, so it cannot be
+    /// MET or UNMET. Kept as its own record type to preserve the append-only
+    /// Verdict shape (ADR-0003 decision 10).
+    Blocked {
+        job_id: String,
+        tool: String,
+        index: u32,
+        reason: String,
+        identity_label: Option<String>,
+    },
 }
 
 impl LedgerRecord {
@@ -59,6 +70,23 @@ impl LedgerRecord {
             check_reports,
             retry_due: Some(retry_due),
             parent_id,
+        }
+    }
+
+    /// A call blocked by the security gate (ADR-0008). The action never ran.
+    pub fn blocked(
+        job_id: &str,
+        tool: &str,
+        index: u32,
+        reason: &str,
+        identity_label: Option<&str>,
+    ) -> Self {
+        LedgerRecord::Blocked {
+            job_id: job_id.to_string(),
+            tool: tool.to_string(),
+            index,
+            reason: reason.to_string(),
+            identity_label: identity_label.map(|s| s.to_string()),
         }
     }
 }

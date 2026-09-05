@@ -12,6 +12,7 @@ pub mod evidence;
 pub mod criteria;
 pub mod ledger;
 pub mod pipeline;
+pub mod security;
 
 // Include gRPC auto-generated Helix-Mind API
 pub mod helix_mind_api {

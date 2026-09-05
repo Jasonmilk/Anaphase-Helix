@@ -26,7 +26,7 @@ tracing = "0.1"
 tracing-subscriber = "0.3"
 
 # Utilities
-uuid = { version = "1", features = ["v4", "serde"] }
+uuid = { version = "1", features = ["v4", "v5", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 petgraph = "0.6"
 
@@ -39,6 +39,10 @@ axum = "0.7"
 [dev-dependencies]
 # Mock Mind gRPC server for integration tests (TcpListenerStream)
 tokio-stream = { version = "0.1", features = ["net"] }
+
+# Real Tuck security gate for the D'-2 integration test (ADR-0008).
+# dev-only: the library itself stays decoupled from tuck-core.
+tuck-core = { git = "https://github.com/Jasonmilk/Tuck", branch = "rs" }
 
 [build-dependencies]
 # Protobuf Code Generation

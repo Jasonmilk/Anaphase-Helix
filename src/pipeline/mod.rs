@@ -19,8 +19,10 @@ use crate::contract::{derive_seen_bloom, parse_llm_calls, Call, TtJob};
 use crate::criteria::{run_for_expect, CheckReport, RuleParams};
 use crate::evidence::{EvidenceRecord, EvidenceStore};
 use crate::ledger::{Clock, Ledger, LedgerRecord, SystemClock, VerdictStatus};
+use crate::security::{GateCheck, GateVerdict, SecurityGate};
 use crate::adapters::tentacle::GrpcTentacleAdapter;
 use serde::Deserialize;
+use std::sync::Arc;
 
 /// Retry scheduling policy (from fixture-codex.json).
 #[derive(Debug, Clone, Deserialize)]
@@ -81,6 +83,8 @@ pub struct Pipeline {
     pub config: PipelineConfig,
     pub evidence: EvidenceStore,
     pub ledger: Ledger,
+    /// Optional security gate (ADR-0008 D'-2). `None` = legacy behavior.
+    pub security_gate: Option<Arc<dyn SecurityGate>>,
 }
 
 impl Pipeline {
@@ -92,7 +96,13 @@ impl Pipeline {
         // The clock lives in the ledger; the pipeline reads it via the ledger
         // so a single injectable time source drives the whole run.
         let ledger = Ledger::new(clock);
-        Self { tentacle, config, evidence: EvidenceStore::new(), ledger }
+        Self { tentacle, config, evidence: EvidenceStore::new(), ledger, security_gate: None }
+    }
+
+    /// Inject a security gate (ADR-0008). `None` restores legacy behavior.
+    pub fn with_security_gate(mut self, gate: Option<Arc<dyn SecurityGate>>) -> Self {
+        self.security_gate = gate;
+        self
     }
 
     // ---- stage 2: pure ----
@@ -108,7 +118,7 @@ impl Pipeline {
     /// trace_id is derived as `{job_id}#{index}` (deterministic, ADR-0003).
     /// identity_labels are forwarded per job (ADR-0004).
     pub async fn execute_calls(
-        &self,
+        &mut self,
         job: &TtJob,
         identity_labels: &std::collections::BTreeMap<String, String>,
     ) -> Result<Vec<EvidenceRecord>, String> {
@@ -117,6 +127,36 @@ impl Pipeline {
             let params = serde_json::to_string(&call.args)
                 .map_err(|e| format!("serialize args: {e}"))?;
             let trace_id = format!("{}#{i}", job.job_id);
+
+            // Security gate before execution (ADR-0008 D'-2). Reject/HITL
+            // block the call and write a `blocked` ledger record — the
+            // action never reaches Tentacle.
+            if let Some(gate) = &self.security_gate {
+                let verdict = gate
+                    .check(&GateCheck {
+                        job_id: job.job_id.clone(),
+                        index: i as u32,
+                        tool: call.tool.clone(),
+                        args_json: params.clone(),
+                        identity_labels: identity_labels.clone(),
+                    })
+                    .await;
+                if !verdict.permits() {
+                    let reason = match &verdict {
+                        GateVerdict::Reject(r) | GateVerdict::HitlRequired(r) => r.clone(),
+                        _ => "blocked by security gate".to_string(),
+                    };
+                    self.ledger.append(LedgerRecord::blocked(
+                        &job.job_id,
+                        &call.tool,
+                        i as u32,
+                        &reason,
+                        identity_labels.get("identity").map(|s| s.as_str()),
+                    ));
+                    return Err(format!("blocked by security gate: {reason}"));
+                }
+            }
+
             let started = std::time::Instant::now();
             let labels: std::collections::HashMap<String, String> =
                 identity_labels.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
@@ -230,6 +270,9 @@ impl Pipeline {
         let verdict = self.build_verdict(&job.job_id, evidence_ids.clone(), &reports, None);
         let (verdict_status, retry_due) = match &verdict {
             LedgerRecord::Verdict { status, retry_due, .. } => (status.clone(), *retry_due),
+            // Blocked records are appended inside execute_calls and short-circuit
+            // with an Err before stage 6 — unreachable here by construction.
+            LedgerRecord::Blocked { .. } => unreachable!("blocked records only arise from the security gate path"),
         };
         self.ledger.append(verdict);
 

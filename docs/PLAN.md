@@ -2,20 +2,20 @@
 
 > **DNA 方法论 v1.0** ｜ PLAN.md 是导航牌，不是历史档案（≤150 行）。完成记录进 GROWTH.md。
 
-## 当前阶段：候选 D'（部分完成：D'-1 重放守卫指纹 + D'-3 启动接线）
+## 当前阶段：候选 D'（3/4 完成：D'-1 指纹 + D'-3 接线 + D'-2 Tuck 深度集成）
 
-**候选 D' 目标（ADR-0007）**：M1.5 深化——不阻塞项先行（D'-1 seen_entropy_bloom 重放守卫指纹 + D'-3 main.rs pipeline 接线）；D'-2（Tuck 深度集成）/ D'-4（真实场景插件）仍阻塞。
+**候选 D' 目标（ADR-0007/0008）**：M1.5 深化——D'-1（重放守卫指纹）/ D'-3（启动接线）/ D'-2（Tuck 深度集成）已完成；D'-4（真实场景插件）待 MCP-Learner 升级。
 
 ### 候选 D' 完成状态（本轮）
 
 | 任务 | 内容 | 状态 |
 |---|---|---|
-| D'-1 | `contract::derive_seen_bloom`（bl- 前缀，fnv64 共享原语）替换 execute_calls 空串占位 | ✅ |
-| D'-3 | `pipeline::resolve_pipeline`（fail-open）+ main.rs tentacle_endpoint 接线 | ✅ |
-| D'-2 | Tuck 深度集成（HITL 审批通道 + identity_labels 审计闭环） | ⏸️ 阻塞（Tuck 侧接口） |
+| D'-1 | `contract::derive_seen_bloom`（bl- 前缀，fnv64 共享原语）替换 execute_calls 空串占位 | ✅ ADR-0007 |
+| D'-3 | `pipeline::resolve_pipeline`（fail-open）+ main.rs tentacle_endpoint 接线 | ✅ ADR-0007 |
+| D'-2 | Tuck 深度集成：`SecurityGate` 接线点 + ledger `blocked` 记录 + 真实 TuckSecurityGate 连通 | ✅ ADR-0008 |
 | D'-4 | 真实场景插件（非 fixture，接入 MCP-Learner stable/ 工具） | ⏸️ 阻塞（MCP-Learner 升级） |
 
-**关键成果**：`seen_entropy_bloom` 从 `""` 占位升级为真实确定性指纹（`bl-` + FNV-1a(`{tool}#{params}`)）；配置 `tentacle_endpoint` 后启动即走六 stage 流水线（fail-open，未配置/失败保持 echo fallback）；110 passed + 3 live（#[ignore]）。
+**关键成果**：`seen_entropy_bloom` 从 `""` 占位升级为真实确定性指纹（`bl-` + FNV-1a(`{tool}#{params}`)）；配置 `tentacle_endpoint` 后启动即走六 stage 流水线（fail-open，未配置/失败保持 echo fallback）；**D'-2 管控闭环咽喉落地**——pipeline 执行路径可被 Tuck 闸门拦截（`src/security.rs` SecurityGate trait + `with_security_gate` + ledger `Blocked` 记录，Reject/HITL 阻塞 call 且不进 Tentacle；真实连通测试经 dev-only tuck-core 验证 Low→Pass 执行 / Catastrophic→Reject / Critical→HitlRequired）；121 passed + 3 live（#[ignore]）。
 
 ### M1.5 / 候选 E / 候选 F 剩余项（已消项）
 
