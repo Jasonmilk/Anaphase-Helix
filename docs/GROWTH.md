@@ -96,4 +96,4 @@
 3. **按需感知**：任务前/升级 LLM 前各感知一次（看口袋），不持续轮询
 4. **依赖边界**：并行池/窗口感知→FlowModus；前缀稳定→Callosum；编排层只保证同输入同输出
 5. **轨迹三层**：ledger + evidence + 会话 DAG + stage 事件（比 DSH 多"经历"维度）
-**状态**：✅ ADR-0016 已立（Proposed），VISION 补编排哲学指针，PLAN 增候选 O 系列（O-1..O-4 + 两条 FlowModus/Callosum 等待项），生态 1242 测试不变（纯文档轮）
+**状态**：✅ ADR-0016 已立（Proposed）+ 同日修订——核对 Helix-Mind ADR-0021/0022/0010 后修正两处越界：①四拍/五工序（含批判性）全归 Mind，Anaphase 只触发 helixQuery（既有契约）不实现工序；②"看口袋"对齐 ADR-0010 = 设置 budget_tier 随请求传入，非新实体；新增三层递进边界（执行层分诊→System 0 门控→五工序）。VISION 补编排哲学指针，PLAN 增候选 O 系列（O-1..O-4 + 两条 FlowModus/Callosum 等待项），生态 1242 测试不变（纯文档轮）

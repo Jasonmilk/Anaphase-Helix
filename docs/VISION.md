@@ -32,8 +32,8 @@ Helix-Mind 是灵魂，Anaphase-Helix 是身体。
 > 原子原则是宪法（冻结）；编排哲学是执行策略（随实践演化）。冲突时以宪法为准。
 
 - **确定性优先分诊**：0 tokens 优先 > 少 tokens/小 LLM > 多 tokens/大 LLM。六 stage 中只有"理解没说清的话"与"生成要说的话"两处必须 LLM，其余全走确定性通道。
-- **认知工艺四拍挂点**：干活前检索自评 → 想；干活中风格对齐 → 动；交作业预期校准 → 量；收反馈差距评估 → 记账。伙伴/生存模式加载，驾驶模式不加载。
-- **按需感知（看口袋）**：任务开始前、升级 LLM 前各感知一次（tokens 预算/系统内存/生态点亮），不持续轮询——出门坐车前看表，不是时刻看表。
+- **认知工艺触发点（不实现）**：四拍（伙伴模式元认知，ADR-0022）与五工序（思考工序，含批判性，ADR-0021）全归 Mind；Anaphase 只触发 helixQuery 并消费 effective_mode/suggested_actions 编排执行。
+- **按需感知 = 设置 budget_tier**（ADR-0010）：任务开始前、升级 LLM 前各感知一次（tokens 预算/系统内存/生态点亮），映射为 AUGMENTABLE/ENDOGENOUS/EXOGENOUS_REQUIRED/VOID 随 helixQuery 传入，不持续轮询——出门坐车前看表，不是时刻看表。
 - **依赖边界**：并行调度与上下文窗口感知归 FlowModus；前缀稳定/KV 缓存复用归 Callosum；编排层只保证同输入同输出。
 - **轨迹三层**：ledger（做了什么）+ evidence（为什么）+ 会话 DAG（经历了什么）+ stage 事件（过程）——全程白盒可查。
 

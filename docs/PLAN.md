@@ -4,16 +4,16 @@
 
 ## 当前阶段：候选 G 完成 + 编排哲学显式化（ADR-0016 已立）——下一步按编排哲学落地（O 系列）
 
-**编排哲学（ADR-0016，2026-09-06）**：确定性优先分诊（0 tokens > 少/小 LLM > 多/大 LLM）+ 认知工艺四拍挂点 + 按需感知（看口袋）+ 依赖边界（并行/窗口感知→FlowModus；前缀稳定→Callosum）+ 轨迹三层。详见 `docs/decisions/ADR-0016-orchestration-philosophy.md`。
+**编排哲学（ADR-0016，2026-09-06，修订版）**：确定性优先分诊（0 tokens > 少/小 LLM > 多/大 LLM）+ 认知工艺触发点（四拍/五工序归 Mind，Anaphase 只触发）+ 按需感知 = 设置 budget_tier（ADR-0010）+ 三层递进边界（执行层分诊→System 0 门控→五工序）+ 依赖边界（并行/窗口感知→FlowModus；前缀稳定→Callosum）+ 轨迹三层。详见 `docs/decisions/ADR-0016-orchestration-philosophy.md`。
 
 ### 候选 O 系列（编排哲学落地，按依赖序）
 
 | # | 任务 | 验收 | 依赖 |
 |---|---|---|---|
-| O-1 | 想 stage 通道：按需感知（口袋/资源/生态点亮）→ 记忆检索（L1/L2）→ 世界搜索 → 批判性判断 → 才动手 | 感知点仅任务前/升级前两处；结构化输入零 LLM | ADR-0016 D1/D3 |
-| O-2 | stage 事件总线：六 stage 边界发确定性事件（stage_begin/stage_end/verdict） | Cellrix/Tuck 可订阅；事件 = 过程，ledger = 事实，职责分明 | ADR-0016 D5 |
+| O-1 | 想 stage 接 Mind 契约：感知（口袋/资源/生态点亮）→ 设置 budget_tier（ADR-0010）→ 触发 helixQuery → 消费 effective_mode/suggested_actions 编排执行 | tier 随请求传入；结构化输入零 LLM；感知点仅任务前/升级前两处 | ADR-0016 D1/D2.5/D3 |
+| O-2 | stage 事件总线：六 stage 边界发确定性事件（stage_begin/stage_end/verdict），携带 W3C traceparent（与认知工艺共享 trace_id） | Cellrix/Tuck 可订阅；事件 = 过程，ledger = 事实，职责分明 | ADR-0016 D5 |
 | O-3 | 按需加载落点：请求只带本轮所需（窗口 L0 按轮取 + 磁石点开才读） | Memory-Efficient 模式（25 轮上下文近零增长） | 候选 G 快照 |
-| O-4 | 认知工艺挂点接线：四拍接入 run_cycle（伙伴模式验证） | 四拍各有落点；驾驶模式不加载 | O-1/O-2 |
+| O-4 | 认知工艺触发接线验证（伙伴模式）：想 stage 触发 Mind → Mind 走四拍/五工序 → Anaphase 按建议编排 | 触发链路真实连通；驾驶模式不触发；Anaphase 零工序实现（回归 ADR-0021 边界） | O-1/O-2 |
 | ⏳ | 并行调度 + 上下文窗口感知 | 等待 FlowModus | FlowModus 未完成 |
 | ⏳ | 前缀稳定/KV 缓存复用 | 等待 Callosum，不勉强 | Callosum |
 
