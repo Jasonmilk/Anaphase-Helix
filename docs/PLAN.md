@@ -2,7 +2,7 @@
 
 > **DNA 方法论 v1.0** ｜ PLAN.md 是导航牌，不是历史档案（≤150 行）。完成记录进 GROWTH.md。
 
-## 当前阶段：候选 D'（4/4 完成——D'-1 指纹 + D'-3 接线 + D'-2 Tuck 闸门 + D'-4 真实插件）
+## 当前阶段：候选 G 启动（G-T2 完成——AgentSnapshot 快照投影端点，Cellrix 侧 G-T3..T5 进行中）
 
 **候选 D' 目标（ADR-0007/0008/0009）**：M1.5 深化四项全部完成。
 
@@ -15,7 +15,7 @@
 | D'-2 | Tuck 深度集成：`SecurityGate` 接线点 + ledger `blocked` 记录 + 真实 TuckSecurityGate 连通 | ✅ ADR-0008 |
 | D'-4 | 真实场景插件（非 fixture，接入 MCP-Learner stable/ 工具）：`Expect::Ok` 结构判据 + live e2e（真实 Tentacle + 学习产物 3/3 全绿） | ✅ ADR-0009 |
 
-**关键成果**：`seen_entropy_bloom` 从 `""` 占位升级为真实确定性指纹（`bl-` + FNV-1a(`{tool}#{params}`)）；配置 `tentacle_endpoint` 后启动即走六 stage 流水线（fail-open，未配置/失败保持 echo fallback）；**D'-2 管控闭环咽喉落地**——pipeline 执行路径可被 Tuck 闸门拦截（`src/security.rs` SecurityGate trait + `with_security_gate` + ledger `Blocked` 记录，Reject/HITL 阻塞 call 且不进 Tentacle；真实连通测试经 dev-only tuck-core 验证 Low→Pass 执行 / Catastrophic→Reject / Critical→HitlRequired）；124 passed + 6 live（#[ignore]，含 m1_e2e_live 3 + m1_5_d4_live 3）。
+**关键成果**：`seen_entropy_bloom` 从 `""` 占位升级为真实确定性指纹（`bl-` + FNV-1a(`{tool}#{params}`)）；配置 `tentacle_endpoint` 后启动即走六 stage 流水线（fail-open，未配置/失败保持 echo fallback）；**D'-2 管控闭环咽喉落地**——pipeline 执行路径可被 Tuck 闸门拦截（`src/security.rs` SecurityGate trait + `with_security_gate` + ledger `Blocked` 记录，Reject/HITL 阻塞 call 且不进 Tentacle；真实连通测试经 dev-only tuck-core 验证 Low→Pass 执行 / Catastrophic→Reject / Critical→HitlRequired）；**候选 G-T2（ADR-0010）**——`AgentLoop::capture()` 共享快照投影（mode/state/episode/ledger），`/v1/agent/snapshot` 输出真实状态（消除 `token_consumed: 1234` 硬编码），HTTP 端点不触碰 agent 内部（极致解耦）；126 passed + 6 live（#[ignore]，含 m1_e2e_live 3 + m1_5_d4_live 3）。
 
 ### M1.5 / 候选 E / 候选 F 剩余项（已消项）
 
@@ -28,7 +28,7 @@
 ### 下一阶段候选
 
 - **候选 D' 剩余**：无（四项全部完成；真实 MCP 执行体升级属 ECOSYSTEM 第二优先级 #4）
-- **候选 G：Cellrix 门面 = 经历时间线**（界面层，独立仓库）——会话列表 = 经历时间线（episode 消化状态：待消化/已内化）、生活视图（睡眠/代谢）、模式状态栏；驾驶模式原型（纯 Anaphase）
+- **候选 G：Anaphase 驾驶舱**（进行中：G-T2 ✅ / G-T3..T5 Cellrix 侧 ✅ / G-T6 文档）——Cellrix 白盒驾驶舱（模式栏 + 经历时间线 + Ledger 审查视图 + 生态状态板）；TUI 先行，Web 面板（G2）后续；驾驶模式原型（纯 Anaphase）；正名：驾驶舱监控 Anaphase 意识层，Helix-Mind 灵魂本体不驾驶
 - **候选 A：Tentacle Rust 重构**（P10b 后自然启动）——凭证标签流转（Tuck 注入）/ 异步协程沙箱（ARM 端侧）/ 动态共识适配层 / 多传输层扩展
 - **候选 B：生态手套协议渐进**（P10c 预留扩展位）——Cellrix 原生手套协议接入
 - **候选 C：保持 P11c/P11d 暂缓**，等 Mind 侧认知工艺显式化
@@ -44,4 +44,4 @@
 
 ---
 
-*Anaphase-Helix PLAN v2.1（候选 D' 部分完成：D'-1 重放守卫指纹 + D'-3 启动接线，2026-09-05）*
+*Anaphase-Helix PLAN v2.2（候选 G-T2：AgentSnapshot 快照投影端点，2026-09-06）*
