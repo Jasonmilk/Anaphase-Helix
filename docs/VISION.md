@@ -42,8 +42,8 @@ Helix-Mind 是灵魂，Anaphase-Helix 是身体。
 | 组件 | 角色 | 与 Anaphase 的关系 |
 |---|---|---|
 | **Helix-Mind** | 海马体/记忆中枢（灵魂） | 通过 gRPC 驱动，Mind 只建议不执行 |
-| **Anaphase-Helix** | 执行躯体/编排中枢（身体） | 本仓库 |
-| **Helix-Tentacle** | 战术武器库（手脚） | 工具执行、无状态动作 |
+| **Anaphase-Helix** | 执行躯体/过程编排中枢（身体） | 本仓库 |
+| **Helix-Tentacle** | 战术武器库（手脚）/执行编排 (tt_job) | 工具执行、无状态动作 |
 | **Tuck** | 物理合规闸门（免疫系统） | 凭证隔离、安全审计、硬拦截（强制） |
 | **Helix-Callosum** | 神经桥接器（胼胝体） | 上下文压缩、KV 缓存复用 |
 | **Cellrix** | 语义投影终端（眼睛/皮肤） | 渲染、交互、可视化 |

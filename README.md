@@ -4,7 +4,7 @@
 ![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)
 ![Build](https://img.shields.io/badge/Build-Passing-brightgreen.svg)
 ![Style](https://img.shields.io/badge/Code%20Style-Google-black.svg)
-[![Tests](https://img.shields.io/badge/tests-94%2F94%20passed-green)](#)
+[![Tests](https://img.shields.io/badge/tests-105%2F105%20passed-green)](#)
 
 **The silicon-based operating system & physical brain for digital lifeforms.
 Perceive, reason, act, remember, and immunize — the body that houses the soul.**
@@ -39,11 +39,19 @@ via the CommonIntents protocol stack with zero hard coupling.
   cognitive states (Reasoning parses + assembles, Execution executes + records
   evidence, Reflection checks criteria + writes the verdict ledger); all five
   historical run_cycle hardcodings are now config-sourced (`RunCycleConfig`)
+- 🧭 **Candidate F: Session-as-Experience** (ADR-0006) — Helix has no "session
+  container": a conversation is an *episode* it lives (L3 experience). Each
+  reflection write carries `{"episode":"ep-<id>#<step>"}` provenance; closing
+  an episode writes a digest (id/turns/first-input) through the existing
+  remember channel. Three modes — `Drive` (human at the wheel, Noop mind),
+  `Partner` (memory-bearing collaboration, default), `Survive` (Mind
+  autonomous, reserved) — are config-sourced, with zero runtime branches
+  (assembly-time adapter choice does the isolation)
 - ⏱️ **Injectable Clock & Determinism Clamps** — FakeClock tests, derived trace_id,
   BTreeMap over HashMap, no endpoint leakage
 - 🛠️ **Safety-First Execution** — Audited tool calls & immune system interception
 - 🚀 **Zero-Dependency Boot** — Runs fully offline without any external services
-- ✅ **Full Test Coverage** — 94/94 passing (lib + 5 integration suites) +
+- ✅ **Full Test Coverage** — 105/105 passing (lib + 6 integration suites) +
   3 live e2e (#[ignore], real Tentacle)
 
 ## Project Structure
@@ -99,7 +107,7 @@ You will see a full cycle:
 
 ## Testing
 
-Run the full suite (**94/94 passing**):
+Run the full suite (**105/105 passing**):
 ```bash
 cargo test
 ```
@@ -113,6 +121,9 @@ Coverage:
 - **m1_e2e (3)**: MET verdict, UNMET + retry_due + reopen scan, deterministic replay (byte-identical)
 - **run_cycle_pipeline (8)**: candidate-E full chain (MET/UNMET/no-plan/deterministic replay) +
   run_config-driven behavior (cycle cap, soft-reflex threshold, amygdala vector, mode, placeholder)
+- **episode_lifecycle (10)**: candidate-F experience boundary (deterministic episode id via shared
+  FNV-1a, begin/end lifecycle, auto-close of previous episode, L3 provenance on reflection notes,
+  verbatim legacy writes, mode serde roundtrip + config load)
 - **m1_e2e_live (3, #[ignore])**: real Tentacle gRPC + real fixture plugins (manual integration)
 
 ## Architecture

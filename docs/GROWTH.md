@@ -1,22 +1,10 @@
 # Anaphase-Helix 生长记录
-> **版本**：v1.5
-> **日期**：2026-09-03
+> **版本**：v1.6
+> **日期**：2026-09-05
 > **规则**：仅保留最近 3 条记录，超则归档至 `docs/archive/growth/`
 > **归档策略**：历史随仓库版本化，永不删除
 
 
-## 记录 4：M1 确定性流水线完成（2026-09-03）
-**变异类型**：M1 里程碑（tt_job 确定性流水线）+ DNA 原则 11 新增
-**背景**：
-- M1 目标：Anaphase 独立完成可回放闭环——mock LLM → tt_job → mock Tentacle → evidence → criteria → ledger（Tentacle 字面零改动）
-- 前置：M1 任务书经四轮严肃审查收敛（路径臆造 → proto 断裂 → mock 传播缺位 → 循环语义半句 + 引擎归属）
-**关键决策与发现**：
-1. **T0 proto 对齐**：vendor Tentacle v1 权威 proto（tentacle.v1，完整拷贝 + 溯源注释）；GrpcTentacleAdapter 重写（ExecuteTool/execute_tool，ToolAdapter trait 保留为 run_cycle 兼容 shim；perceive 明确报错）；MockTentacle + TcpListener mock server（复刻 mind_integration 模式）
-2. **T2-T5 四模块**：contract（tt_job 类型 + parse_llm_calls 三例）/ evidence（append-only + evidence_id 派生 + expect 自包含）/ criteria（六纯函数 + expect→criteria 映射 + 规则数据分离）/ ledger（JSONL + retry_due + parent_id 谱系 + Clock 注入）
-3. **T8 闭环**：pipeline 六 stage（禁巨型 run）+ m1_e2e 三用例（MET / UNMET retry_due=4600 + reopen 扫描 / 同输入同时钟字节级一致）
-4. **DNA 原则 11 新增（ADR-0002）**：零硬编码——run_cycle 5 处硬编码（0.7/0.3/0.2、left_brain、p_death>0.7、echo、0..7）为已知技术债，M1.5 接线时消除；协议可选字段用默认空值
-5. **ADR-0003 落档**：决策 9（旁路 + 六 stage 映射表）/ 10（UNMET + retry_due + 谱系 + 两循环物种）/ 11（pipeline 结构契约）+ 执行决策 1-8、12-15
-**状态**：✅ 完成（76 测试全绿——lib 46 + integration 14 + m1_e2e 3 + mind 9 + mock 4，M1 验收三判据全过）
 ---
 ## 记录 5：M1.5 生态合流核心完成（2026-09-03）
 **变异类型**：跨仓库联调 + 真实连通 + 语义定义 + run_cycle 渐进接线
@@ -45,3 +33,18 @@
 **状态**：✅ 完成（94 测试全绿——lib 54 + integration 16 + m1_e2e 3 + mind 9 + mock 4 + run_cycle_pipeline 8；live 3 条 #[ignore] 手动验证；生态合计 1168）
 ---
 *（记录 3 已归档至 docs/archive/growth/2026-08-28-p11ab-craft-orchestration.md）*
+
+---
+## 记录 7：候选 F（会话即经历）完成（2026-09-05）
+**变异类型**：经历边界 + 三模式参与度（生态级哲学首落码 Anaphase）
+**背景**：
+- 候选 F 目标（ADR-0006）：Helix 无会话概念——对话是 Helix 的经历（L3 情景），Mind 应能"看到"会话（元认知）；驾驶/伙伴/生存三模式有效运行
+- 前置：候选 E 完成（Reasoning 结构化 + pipeline merge）；ADR-0022/0023 草案经严肃审查拦截（ADR 编号冲突 0022-0030 已占用、编造 spec §15 引用、协议版本失实 v0.6/v0.7-draft vs 实测 v1.0.0-RFC-4），不落库
+**关键决策与发现**：
+1. **复用点全核验**（物理事实优先）：Mind L3 `content: JSON` 保留结构化记录 + 默认 PRIVATE + 突触切断语义；认知工艺已有"元批判"工序与独立会话隔离（ADR-0021）；INTENT-7 已有 FINISH（认知循环结束→L3 收尾）与 autonomy_level=AGENT/OPEN/SURVIVAL；main.rs 已有 NoopMemoryAdapter（驾驶基础）——**不新建 crate / 协议 / RPC / L3 schema 字段**
+2. **Episode 边界（D1）**：`contract::fnv64` 提取共用派生原语 + `derive_episode_id`（前缀 `ep-`，与 job 的 `run-` 同模式，确定性回放无 UUID）；AgentLoop `episode: Option<Episode>`；Reflection 写入带 `{id}#{step}` provenance 的结构化 JSON（无 episode 时原样——严格向后兼容 94 测试）
+3. **经历收束（D2）**：`end_episode` 生成 EpisodeDigest（id/turns/first_input）经既有 remember 通道写 L3（语义对应 INTENT-7 FINISH）；`begin_episode` 自动收束旧 episode（不丢经历）；幂等
+4. **三模式（D3）**：`config::Mode { Drive, Partner, Survive }`（serde snake_case，默认 Partner=Helix 本体）；Drive=Noop 装配（已有路径），Partner=GrpcMind+episode 生命周期，Survive=枚举占位（反向驱动待 Mind P10a）；**运行期零 if 分支**（Noop 天然隔离，极致解耦）
+5. **验证**：tests/episode_lifecycle.rs 10 例（golden 派生/生命周期/自动收束/幂等/provenance/兼容/mode serde）+ contract 1 例（fnv64 共用断言）
+**状态**：✅ 完成（105 测试全绿——lib 55 + integration 16 + m1_e2e 3 + mind 9 + mock 4 + run_cycle_pipeline 8 + episode 10；live 3 条 #[ignore] 手动验证；生态合计 1179）
+---
