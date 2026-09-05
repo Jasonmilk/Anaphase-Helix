@@ -100,7 +100,7 @@ anaphase-helix/
 
 ## Quick Start
 
-**One command, full stack** (candidate G-4, ADR-0011) — Tentacle (gRPC + fixture plugins) → Anaphase (endpoint injected via env, `config.toml` untouched) → readiness probes → optional cockpit:
+**One command, full stack** (candidate G-4 ADR-0011 + G-5 ADR-0012) — Tentacle (gRPC + fixture plugins) → Anaphase (endpoint injected via env, `config.toml` untouched) → readiness probes → optional cockpit. The launcher is a **first-run guide**: welcome banner → prereq checks (each missing binary names its `cargo build` hint) → startup status → next steps.
 
 ```bash
 cargo run --bin up               # backend: tentacle + anaphase, probes both ready
@@ -128,7 +128,7 @@ You will see a full cycle:
 
 ## Testing
 
-Run the full suite (**129/129 passing**):
+Run the full suite (**132/132 passing**):
 ```bash
 cargo test
 ```
