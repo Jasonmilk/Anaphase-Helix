@@ -4,7 +4,7 @@
 ![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)
 ![Build](https://img.shields.io/badge/Build-Passing-brightgreen.svg)
 ![Style](https://img.shields.io/badge/Code%20Style-Google-black.svg)
-[![Tests](https://img.shields.io/badge/tests-105%2F105%20passed-green)](#)
+[![Tests](https://img.shields.io/badge/tests-110%2F110%20passed-green)](#)
 
 **The silicon-based operating system & physical brain for digital lifeforms.
 Perceive, reason, act, remember, and immunize — the body that houses the soul.**
@@ -47,11 +47,15 @@ via the CommonIntents protocol stack with zero hard coupling.
   `Partner` (memory-bearing collaboration, default), `Survive` (Mind
   autonomous, reserved) — are config-sourced, with zero runtime branches
   (assembly-time adapter choice does the isolation)
+- 🔁 **Replay-Guard Fingerprint + Bootstrap Wiring** (ADR-0007) — `seen_entropy_bloom`
+  carries a real deterministic fingerprint (`bl-` + FNV-1a over `{tool}#{params}`, shared primitive)
+  instead of the `""` placeholder; configuring `tentacle_endpoint` wires the six-stage pipeline at
+  startup (fail-open: empty/unreachable falls back to the legacy echo path)
 - ⏱️ **Injectable Clock & Determinism Clamps** — FakeClock tests, derived trace_id,
   BTreeMap over HashMap, no endpoint leakage
 - 🛠️ **Safety-First Execution** — Audited tool calls & immune system interception
 - 🚀 **Zero-Dependency Boot** — Runs fully offline without any external services
-- ✅ **Full Test Coverage** — 105/105 passing (lib + 6 integration suites) +
+- ✅ **Full Test Coverage** — 110/110 passing (lib + 7 integration suites) +
   3 live e2e (#[ignore], real Tentacle)
 
 ## Project Structure
@@ -107,14 +111,14 @@ You will see a full cycle:
 
 ## Testing
 
-Run the full suite (**105/105 passing**):
+Run the full suite (**110/110 passing**):
 ```bash
 cargo test
 ```
 
 Coverage:
-- **lib (54)**: adapters, reflex, contract (incl. reasoning-output parsing + job-id derivation),
-  evidence, criteria, ledger (incl. RFC3339 rendering), lifecycle, task_dag, gloves
+- **lib (56)**: adapters, reflex, contract (incl. reasoning-output parsing + job-id/episode-id/bloom
+  derivation), evidence, criteria, ledger (incl. RFC3339 rendering), lifecycle, task_dag, gloves
 - **integration_test (16)**: Noop adapters, hard/soft reflex, dangerous-action block, cognitive cycle, M1.5-T6 real-tool resolution
 - **mind_integration (9)**: mock Mind gRPC closed loop, trace passthrough, budget_tier, P11b actions
 - **mock_tentacle (4)**: Tentacle v1 roundtrip, trace_id verbatim, failure branch, transport error
@@ -124,6 +128,9 @@ Coverage:
 - **episode_lifecycle (10)**: candidate-F experience boundary (deterministic episode id via shared
   FNV-1a, begin/end lifecycle, auto-close of previous episode, L3 provenance on reflection notes,
   verbatim legacy writes, mode serde roundtrip + config load)
+- **replay_guard (4)**: candidate-D' partial — real entropy fingerprint on the wire (`bl-` + FNV-1a over
+  `{tool}#{params}`, replay-stable), `resolve_pipeline` fail-open (empty/unreachable endpoint -> None),
+  configured endpoint wires the pipeline (ADR-0007)
 - **m1_e2e_live (3, #[ignore])**: real Tentacle gRPC + real fixture plugins (manual integration)
 
 ## Architecture
