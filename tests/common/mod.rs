@@ -28,6 +28,17 @@ impl CapturedTraceIds {
     }
 }
 
+/// Captures every `seen_entropy_bloom` fingerprint that reaches the mock
+/// (ADR-0007 D'-1 replay-guard wire-layer assertion).
+#[derive(Clone, Default)]
+pub struct CapturedBloom(Arc<Mutex<Vec<String>>>);
+
+impl CapturedBloom {
+    pub fn all(&self) -> Vec<String> {
+        self.0.lock().unwrap().clone()
+    }
+}
+
 /// Mock Tentacle service. ExecuteTool returns a preset JSON payload keyed by tool
 /// name, or an explicit failure for tools registered via `with_failing_tool`.
 #[derive(Clone, Default)]
@@ -35,6 +46,7 @@ pub struct MockTentacle {
     tool_data: Arc<Mutex<HashMap<String, String>>>,
     failing_tools: Arc<Mutex<HashMap<String, String>>>,
     pub captured_trace_ids: CapturedTraceIds,
+    pub captured_bloom: CapturedBloom,
 }
 
 impl MockTentacle {
@@ -82,6 +94,7 @@ impl TentacleService for MockTentacle {
     ) -> Result<Response<ExecuteToolResponse>, Status> {
         let req = request.into_inner();
         self.captured_trace_ids.0.lock().unwrap().push(req.trace_id.clone());
+        self.captured_bloom.0.lock().unwrap().push(req.seen_entropy_bloom.clone());
         if let Some(err) = self.failing_tools.lock().unwrap().get(&req.tool).cloned() {
             return Ok(Response::new(ExecuteToolResponse {
                 ok: false,

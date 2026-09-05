@@ -113,6 +113,16 @@ pub fn derive_episode_id(input: &str) -> String {
     format!("ep-{:016x}", fnv64(input))
 }
 
+/// Deterministic entropy fingerprint for a tool call (ADR-0007, D'-1 replay
+/// guard): `bl-` + FNV-1a over `{tool}#{params}`. Carries the call's
+/// characteristic to the executor (Tentacle `seen_entropy_bloom` field) —
+/// same call always yields the same fingerprint (deterministic replay), a
+/// different call yields a different one. The executor's consumption point
+/// is a cross-repo follow-up; the envelope layer only carries the feature.
+pub fn derive_seen_bloom(tool: &str, params: &str) -> String {
+    format!("bl-{:016x}", fnv64(&format!("{tool}#{params}")))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -219,5 +229,18 @@ mod tests {
         assert_ne!(derive_episode_id("hello"), derive_episode_id("world"));
         assert_ne!(derive_episode_id("hello"), derive_job_id("hello"));
         assert_eq!(derive_episode_id("hello").len(), 3 + 16);
+    }
+
+    #[test]
+    fn derive_seen_bloom_is_deterministic_and_call_distinct() {
+        // Same tool+params -> same fingerprint; different call -> different
+        // fingerprint (ADR-0007 D'-1). Prefix family: run- / ep- / bl-.
+        assert_eq!(derive_seen_bloom("numbers", "{}"), derive_seen_bloom("numbers", "{}"));
+        assert_ne!(derive_seen_bloom("numbers", "{}"), derive_seen_bloom("rate", "{}"));
+        assert_ne!(derive_seen_bloom("numbers", "{}"), derive_seen_bloom("numbers", "{\"n\":2}"));
+        assert_ne!(derive_seen_bloom("numbers", "{}"), derive_job_id("numbers"));
+        assert_ne!(derive_seen_bloom("numbers", "{}"), derive_episode_id("numbers"));
+        assert!(derive_seen_bloom("numbers", "{}").starts_with("bl-"));
+        assert_eq!(derive_seen_bloom("numbers", "{}").len(), 3 + 16);
     }
 }

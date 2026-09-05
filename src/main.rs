@@ -74,6 +74,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // the Noop adapter without any runtime branch.
     agent.mode = config.anaphase.run_cycle.mode;
 
+    // ADR-0007 D'-3: wire the deterministic execution channel at startup.
+    // `tentacle_endpoint` configured -> the six-stage pipeline replaces the
+    // legacy echo fallback; empty/failed -> fail-open (None, legacy path).
+    let pipeline_config =
+        anaphase::pipeline::PipelineConfig::from_codex("knowledge_base/fixture-codex.json")
+            .map_err(|e| eprintln!("Warning: failed to load fixture-codex: {e}")) // warn + continue
+            .ok();
+    if let Some(pcfg) = pipeline_config {
+        if let Some(pipeline) =
+            anaphase::pipeline::resolve_pipeline(config.anaphase.tentacle_endpoint.clone(), pcfg)
+                .await
+        {
+            agent = agent.with_pipeline(pipeline);
+            eprintln!("Pipeline wired to Tentacle endpoint (deterministic execution channel active)");
+        }
+    }
+
     if config.anaphase.cap_http_enabled && !stdio_mode {
         use axum::{Router, routing::get, Json, response::IntoResponse};
 

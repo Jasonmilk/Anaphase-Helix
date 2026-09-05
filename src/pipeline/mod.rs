@@ -15,10 +15,10 @@
 //! File IO (writing evidence.jsonl / ledger.jsonl) is the caller's job — the
 //! pipeline owns the state machine + serialization, keeping it replayable.
 
-use crate::contract::{parse_llm_calls, Call, TtJob};
+use crate::contract::{derive_seen_bloom, parse_llm_calls, Call, TtJob};
 use crate::criteria::{run_for_expect, CheckReport, RuleParams};
 use crate::evidence::{EvidenceRecord, EvidenceStore};
-use crate::ledger::{Clock, Ledger, LedgerRecord, VerdictStatus};
+use crate::ledger::{Clock, Ledger, LedgerRecord, SystemClock, VerdictStatus};
 use crate::adapters::tentacle::GrpcTentacleAdapter;
 use serde::Deserialize;
 
@@ -127,7 +127,7 @@ impl Pipeline {
                     &params,
                     &trace_id,
                     labels,
-                    String::new(), // seen_entropy_bloom: replay guard not yet enabled (ADR-0004)
+                    derive_seen_bloom(&call.tool, &params), // ADR-0007 D'-1: real entropy fingerprint, not the "" placeholder
                 )
                 .await?;
             let duration_ms = started.elapsed().as_millis() as u64;
@@ -240,5 +240,26 @@ impl Pipeline {
             verdict: verdict_status,
             retry_due,
         })
+    }
+}
+
+/// Bootstrap assembly of the deterministic execution channel (ADR-0007 D'-3):
+/// fail-open — an empty endpoint or a failed connection yields None (legacy
+/// echo fallback keeps working), never a startup error. Mirrors the
+/// `resolve_memory_adapter` pattern (DNA principle 6 fail-open).
+pub async fn resolve_pipeline(
+    endpoint: Option<String>,
+    config: PipelineConfig,
+) -> Option<Pipeline> {
+    let endpoint = match endpoint {
+        Some(e) if !e.is_empty() => e,
+        _ => return None,
+    };
+    match GrpcTentacleAdapter::new(&endpoint).await {
+        Ok(tentacle) => Some(Pipeline::new(tentacle, Box::new(SystemClock), config)),
+        Err(e) => {
+            eprintln!("Warning: failed to connect to Tentacle at {endpoint}: {e}. Falling back to legacy execution.");
+            None
+        }
     }
 }
