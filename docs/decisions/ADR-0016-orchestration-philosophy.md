@@ -62,6 +62,7 @@ Mind 五工序编排（ADR-0021：怎么思考，含批判工序）  ← Cogniti
 ### D4: 依赖边界（FlowModus / Callosum）
 
 | 能力 | 归属 | 状态 |
+| LLM/API 分类与按需调配 | FlowModus | ⏳ 待商议（方向已确认：API/LLM 分类按需调配；敏感路由 = Hard Filter 的 user-defined bias 实例；本地 llama 经 Tuck OpenAI 兼容端点注册为 residency:local 供应商；KV cache 命中场景 Helix-Mind 才值得指定 LLM。细节待 FlowModus 计划时定） |
 |---|---|---|
 | 并行工具调度（并行池 + 独占屏障） | FlowModus（管理 API 与 tokens） | ⏳ 等待 FlowModus，完成前串行可工作 |
 | 上下文窗口感知 | FlowModus | ⏳ 等待；当前"给用户看就够了" |
@@ -108,6 +109,7 @@ Mind 五工序编排（ADR-0021：怎么思考，含批判工序）  ← Cogniti
 |---|---|---|
 | D1 确定性分诊 | `contract::parse_structured_command`：`!tool {"json"}` 输入在 Perception 直接解析为 calls，Reasoning 跳过 LLM 直接组装 tt_job | 计数 reasoning adapter 证明零调用（`structured_command_bypasses_llm_entirely`）；自由文本仍走 LLM（无回归测试） |
 | D3 按需感知 | `gloves::probe_ecosystem`：任务开始前**一次**物理探测（TCP connect / UDS 文件存在性，fail-open），Cellrix = Native 手套；AgentContext/AgentSnapshot 携带生态点亮状态；Reasoning 前感知点（升级 LLM 前看一眼口袋） | gloves 9 测试；快照投影测试；Execution 对 tentacle 未点亮记录降级事实 |
+| D1 单周期原语 | `run_cycle()` 从内置循环改为**单周期原子原语**：7 状态 DAG 走一圈返回 `CycleOutcome{done,success,impasse}`；循环策略归调用方（main/测试各自 while，cap 用 config）；周期步数上限 = 枚举长度（派生）；模块 agent_loop 改名 run_cycle 名实相符 | 154 tests 全绿；单周期 outcome 测试 + 调用方循环测试；cap 测试改为调用方语义 |
 
 **设计边界（物理事实优先）**：探测只做"点亮状态"，不建立连接——连接留待使用时 fail-open；
 budget_tier 仍由 mind.rs 内部 derive（既有契约，O-1 未覆盖外部 tier 透传，留 O 系列后续裁决）。

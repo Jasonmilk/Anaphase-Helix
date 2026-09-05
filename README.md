@@ -47,6 +47,12 @@ via the CommonIntents protocol stack with zero hard coupling.
   fail-open; Cellrix = Native glove); AgentContext + AgentSnapshot carry the
   lights so the cockpit shows *what the body has in hand*; free text still
   reaches the LLM (no regression)
+- 🔄 **Single-Period Primitive** (ADR-0016 D1) — `run_cycle()` is an atomic
+  primitive: one walk of the 7-state DAG returns `CycleOutcome{done,success,
+  impasse}`; the caller owns the looping policy (cap from config as the
+  anti-infinite-loop fuse; period-step cap derived from the enum length).
+  Module renamed `agent_loop` → `run_cycle` — the name now matches the
+  semantics (body = AgentLoop type, heartbeat = run_cycle, life = caller loop)
 - 🧭 **Candidate F: Session-as-Experience** (ADR-0006) — Helix has no "session
   container": a conversation is an *episode* it lives (L3 experience). Each
   reflection write carries `{"episode":"ep-<id>#<step>"}` provenance; closing
@@ -63,7 +69,7 @@ via the CommonIntents protocol stack with zero hard coupling.
   BTreeMap over HashMap, no endpoint leakage
 - 🛠️ **Safety-First Execution** — Audited tool calls & immune system interception
 - 🚀 **Zero-Dependency Boot** — Runs fully offline without any external services
-- ✅ **Full Test Coverage** — 152/152 passing (lib + integration suites incl. security gate + Tuck gate + D'-4 live + cockpit snapshot + bootstrap env) +
+- ✅ **Full Test Coverage** — 154/154 passing (lib + integration suites incl. security gate + Tuck gate + D'-4 live + cockpit snapshot + bootstrap env) +
   3 live e2e (#[ignore], real Tentacle)
 
 ## Project Structure

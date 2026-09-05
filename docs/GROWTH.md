@@ -108,3 +108,14 @@
 4. **不越界**：探测只做点亮状态不建连接；budget_tier 仍由 mind.rs 内部 derive（O-1 未覆盖外部 tier 透传）
 **验证**：152 tests 全绿（+12：结构化解析 x4 / LLM 零调用 x2 / 生态探测与投影 x6）；free-text 无回归
 **状态**：✅ 完成，commit ecc1924
+
+## 记录 14：run_cycle 单周期原语化 + 模块改名（2026-09-06）
+**变异类型**：语义归位——名字与职责一致（ADR-0016 D1 落地深化）
+**背景**：用户指出"我们不是 run_cycle 吗？"——模块叫 agent_loop 但状态机函数叫 run_cycle，名实不符；且 run_cycle 内部自带 for 循环（cycle_cap=7）是"内置完整循环"形态（黑盒），与"单周期原语"（循环归调用方）的哲学不符。
+**关键决策**：
+1. **run_cycle = 单周期原子原语**：7 状态 DAG 走一圈返回 CycleOutcome{done/success/impasse}；周期步数上限 = HelixState::ALL.len()（枚举派生，非字面量）
+2. **循环归调用方**：main 与测试各自 while（cap 用 config 的 cycle_cap）；防死循环责任随循环权转移——cap 语义从"内部截断"变"调用方保险丝"
+3. **模块改名 agent_loop → run_cycle**（git mv，11 文件）；AgentLoop 类型保留（它是跑循环的 agent 主体，非循环本身）
+4. **cycle_cap 来源落地**：config 注释写明 7 = 本地 LLM 上下文预算保守默认（初代设计动机：防死循环 + 控上下文 + 本地 API 条件有限）
+**验证**：154 tests 全绿（+2 单周期语义测试：outcome 报告 + 调用方循环 episode step 每周期 +1）；cap 测试从"内部截断"重写为"调用方循环尊重 cap"
+**状态**：✅ 完成，commit 3c8349c
