@@ -9,7 +9,7 @@ use crate::reflex::ReflexArc;
 use crate::states::HelixState;
 use std::sync::Arc;
 use std::collections::{BTreeMap, HashMap};
-use tracing::{info, trace, warn};
+use tracing::{debug, info, trace, warn};
 
 /// State transition conditions
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -410,6 +410,49 @@ impl AgentLoop {
     /// period (job_id-derived, deterministic). ts comes from the SAME injected
     /// Clock as the ledger/stage events (极致复用 — one time source, no second
     /// clock): FakeClock makes the black box byte-identical replayable too.
+    /// P10d (ADR-0032): check the agenda and execute due alarms. Each due
+    /// alarm: if the action is in the configured whitelist → run the
+    /// consolidate chain (action maps 1:1 to a helix_consolidate kind),
+    /// then ack done. Unknown action → ack done with a warning (released,
+    /// never deadlocked); failure → ack done with the error recorded
+    /// (honest release; retry policy is future work — no over-engineering).
+    async fn check_wakeup(&self) {
+        let jitter = self.run_config.wakeup_jitter_minutes;
+        match self.memory.wakeup(jitter).await {
+            Ok(alarms) if !alarms.is_empty() => {
+                info!("[Wakeup] {} due alarm(s)", alarms.len());
+                for alarm in alarms {
+                    let supported = self.run_config.wakeup_actions.contains(&alarm.action);
+                    if !supported {
+                        warn!(
+                            "[Wakeup] unsupported action '{}' (job {}), acking done",
+                            alarm.action, alarm.job_id
+                        );
+                        let _ = self.memory.wakeup_ack(&alarm.claim_id, "done").await;
+                        continue;
+                    }
+                    match self.memory.consolidate(&alarm.action).await {
+                        Ok(()) => {
+                            info!("[Wakeup] action '{}' executed (job {})", alarm.action, alarm.job_id);
+                            let _ = self.memory.wakeup_ack(&alarm.claim_id, "done").await;
+                        }
+                        Err(e) => {
+                            warn!(
+                                "[Wakeup] action '{}' failed (job {}): {} — releasing claim",
+                                alarm.action, alarm.job_id, e
+                            );
+                            let _ = self.memory.wakeup_ack(&alarm.claim_id, "done").await;
+                        }
+                    }
+                }
+            }
+            Ok(_) => {}
+            Err(e) => {
+                debug!("[Wakeup] skipped (unavailable or failed): {}", e);
+            }
+        }
+    }
+
     fn emit_cycle(&self, phase: &str, detail: &str) {
         if let Some(ring) = self.events.as_ref() {
             let mut guard = ring.lock().unwrap();
@@ -438,6 +481,14 @@ impl AgentLoop {
         // is one turn within the active episode.
         if let Some(ep) = self.episode.as_mut() {
             ep.step += 1;
+        }
+
+        // P10d (ADR-0032): wake-up check — look at Mind's agenda once per
+        // interaction (no daemon yet; elastic window limits frequency).
+        // Silent degradation: unavailable adapter or failure skips the
+        // check entirely (enhancement, never a dependency).
+        if self.run_config.wakeup_enabled {
+            self.check_wakeup().await;
         }
 
         // One period (ADR-0016 D1): walk the 7-state DAG until we return to

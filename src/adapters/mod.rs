@@ -29,6 +29,18 @@ pub struct CraftNote {
     pub value_grade: String,
 }
 
+/// One due alarm handed to the waker (P10d, ADR-0032): the semantic action
+/// Anaphase will execute (action → consolidate kind), plus the deterministic
+/// claim handle used for the ack.
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WakeupAlarm {
+    pub job_id: String,
+    pub action: String,
+    pub due_at: String,
+    pub mode: String,
+    pub claim_id: String,
+}
+
 #[async_trait]
 pub trait MemoryAdapter: Send + Sync {
     async fn query(&self, query: &str, include_recessive: bool) -> Result<QueryResult, String>;
@@ -42,6 +54,23 @@ pub trait MemoryAdapter: Send + Sync {
     /// degrade silently on Err: craft is an enhancement, never a dependency.
     async fn craft(&self, _query: &str, _job_id: &str) -> Result<CraftNote, String> {
         Err("craft unavailable".to_string())
+    }
+    /// P10d (ADR-0032): wake-up check — list due alarms from Mind's agenda
+    /// (ana_wakeup). Default = unavailable (Noop ignores; GrpcMindAdapter
+    /// implements). Callers degrade silently on Err: wake-up is an
+    /// enhancement, never a dependency.
+    async fn wakeup(&self, _jitter_minutes: u32) -> Result<Vec<WakeupAlarm>, String> {
+        Err("wakeup unavailable".to_string())
+    }
+    /// P10d (ADR-0032): acknowledge a claimed alarm (ana_wakeup_ack).
+    /// Default = unavailable; GrpcMindAdapter implements.
+    async fn wakeup_ack(&self, _claim_id: &str, _status: &str) -> Result<(), String> {
+        Err("wakeup_ack unavailable".to_string())
+    }
+    /// P10d (ADR-0032): run a Mind metabolism action (helix_consolidate).
+    /// Default = unavailable; GrpcMindAdapter implements.
+    async fn consolidate(&self, _kind: &str) -> Result<(), String> {
+        Err("consolidate unavailable".to_string())
     }
 }
 

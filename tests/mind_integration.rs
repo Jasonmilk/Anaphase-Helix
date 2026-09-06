@@ -38,6 +38,10 @@ struct MockMind {
     captured: Captured,
     /// P11b：mock Mind 返回的 suggested_actions（模拟 Mind 认知工艺产出的动作建议）
     suggested_actions: Vec<SuggestedAction>,
+    /// P10d (ADR-0032)：ana_wakeup 返回的 due alarms（默认空；测试注入）。
+    due_alarms: Vec<anaphase::helix_mind_api::AlarmDue>,
+    /// P10d：ack 调用记录（claim_id, status）。
+    acked: std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>>,
 }
 
 fn mock_node(content: &str) -> Node {
@@ -139,6 +143,28 @@ impl HelixMind for MockMind {
             message: "mock".into(),
         }))
     }
+    async fn ana_wakeup(
+        &self,
+        _request: Request<anaphase::helix_mind_api::AnaWakeupRequest>,
+    ) -> Result<Response<anaphase::helix_mind_api::AnaWakeupResult>, Status> {
+        Ok(Response::new(anaphase::helix_mind_api::AnaWakeupResult {
+            alarms: self.due_alarms.clone(),
+            claimed: self.due_alarms.len() as u32,
+        }))
+    }
+
+    async fn ana_wakeup_ack(
+        &self,
+        request: Request<anaphase::helix_mind_api::AnaWakeupAckRequest>,
+    ) -> Result<Response<anaphase::helix_mind_api::AnaWakeupAckResult>, Status> {
+        let req = request.into_inner();
+        self.acked.lock().unwrap().push((req.claim_id, req.status));
+        Ok(Response::new(anaphase::helix_mind_api::AnaWakeupAckResult {
+            success: true,
+            message: "mock".into(),
+        }))
+    }
+
     async fn federated_dag_share(
         &self,
         _request: Request<anaphase::helix_mind_api::FederatedDagShareRequest>,
@@ -206,6 +232,8 @@ async fn spawn_mock_mind() -> (
     let svc = HelixMindServer::new(MockMind {
         captured: captured.clone(),
         suggested_actions: vec![],
+        due_alarms: vec![],
+        acked: std::sync::Arc::new(std::sync::Mutex::new(vec![])),
     });
     let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
     let handle = tokio::spawn(async move {
@@ -233,6 +261,8 @@ async fn spawn_mock_mind_with_actions(actions: Vec<SuggestedAction>) -> (
     let svc = HelixMindServer::new(MockMind {
         captured: captured.clone(),
         suggested_actions: actions,
+        due_alarms: vec![],
+        acked: std::sync::Arc::new(std::sync::Mutex::new(vec![])),
     });
     let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
     let handle = tokio::spawn(async move {

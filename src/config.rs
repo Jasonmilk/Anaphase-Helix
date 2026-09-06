@@ -176,6 +176,33 @@ pub struct RunCycleConfig {
     /// with Mind + episode lifecycle) / Survive (Mind autonomous, reserved).
     #[serde(default)]
     pub mode: Mode,
+    /// P10d (ADR-0032): wake-up check on each interaction cycle. Mind never
+    /// self-wakes; Anaphase looks at the agenda per cycle (elastic window
+    /// limits frequency — no daemon yet, honest).
+    #[serde(default = "default_wakeup_enabled")]
+    pub wakeup_enabled: bool,
+    /// P10d (ADR-0032): peak-congestion window width for jittered alarms
+    /// (minutes). 0 = off (strict due for all). Human config default 60.
+    #[serde(default = "default_wakeup_jitter")]
+    pub wakeup_jitter_minutes: u32,
+    /// P10d (ADR-0032): alarm actions Anaphase knows how to execute — each
+    /// value maps 1:1 to a helix_consolidate kind. Protocol default:
+    /// "hibernate" (sleep review chain, P10c). Unknown actions are acked
+    /// done with a warning (released, never deadlocked).
+    #[serde(default = "default_wakeup_actions")]
+    pub wakeup_actions: Vec<String>,
+}
+
+fn default_wakeup_enabled() -> bool {
+    true
+}
+
+fn default_wakeup_jitter() -> u32 {
+    60
+}
+
+fn default_wakeup_actions() -> Vec<String> {
+    vec!["hibernate".into()]
 }
 
 impl Default for RunCycleConfig {
@@ -187,6 +214,9 @@ impl Default for RunCycleConfig {
             execution_placeholder: "echo".to_string(),
             cycle_cap: 7,
             mode: Mode::Partner, // Helix's native state: memory-bearing partner
+            wakeup_enabled: true,
+            wakeup_jitter_minutes: 60,
+            wakeup_actions: vec!["hibernate".into()],
         }
     }
 }
@@ -296,6 +326,9 @@ mod tests {
                     execution_placeholder: "echo".into(),
                     cycle_cap: 7,
                     mode: Mode::Partner,
+                    wakeup_enabled: true,
+                    wakeup_jitter_minutes: 60,
+                    wakeup_actions: vec!["hibernate".into()],
                 },
                 rails: RailsConfig::default(),
                 mind: MindConfig::default(),

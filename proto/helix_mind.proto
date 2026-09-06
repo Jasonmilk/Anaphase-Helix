@@ -167,6 +167,37 @@ message HelixCraftResult {
   string traceparent = 6;        // echo of request
   reserved 7 to max;             // Append-Only Schema Evolution (ADR-0012)
 }
+// P10d (ADR-0032): ana_wakeup — Anaphase wake-up channel + peak congestion guard.
+// Mind never self-wakes (no heartbeat rule): it registers alarms (data) and
+// answers passively. Anaphase holds the physical clock and calls ana_wakeup
+// at its own cadence (config default 08:00 + interaction gaps).
+message AlarmDue {
+  string job_id = 1;       // deterministic alarm#{job_id} provenance
+  string action = 2;       // semantic action Anaphase will execute (e.g. "hibernate")
+  string due_at = 3;       // ISO timestamp (original due)
+  string mode = 4;         // "punctual" | "jittered"
+  string claim_id = 5;     // deterministic claim#{job_id}#{seq} — ack handle
+}
+
+message AnaWakeupRequest {
+  uint32 jitter_minutes = 1; // peak-congestion window (config default 60, 0 = off)
+}
+
+message AnaWakeupResult {
+  repeated AlarmDue alarms = 1; // due alarms, atomically claimed
+  uint32 claimed = 2;
+}
+
+message AnaWakeupAckRequest {
+  string claim_id = 1; // from AlarmDue.claim_id
+  string status = 2;   // "done" | "renewed"
+}
+
+message AnaWakeupAckResult {
+  bool success = 1;
+  string message = 2;
+}
+
 
 
 message ReloadGeneLockRequest {}
@@ -239,6 +270,8 @@ service HelixMind {
   rpc HelixQuery(HelixQueryRequest) returns (HelixQueryResult);
   rpc HelixConsolidate(HelixConsolidateRequest) returns (HelixConsolidateResult);
   rpc HelixCraft(HelixCraftRequest) returns (HelixCraftResult); // P10 (ADR-0031)
+  rpc AnaWakeup(AnaWakeupRequest) returns (AnaWakeupResult); // P10d (ADR-0032)
+  rpc AnaWakeupAck(AnaWakeupAckRequest) returns (AnaWakeupAckResult); // P10d (ADR-0032)
   rpc FederatedDAGShare(FederatedDAGShareRequest) returns (FederatedDAGShareResponse);
   rpc TriggerReincarnation(TriggerReincarnationRequest) returns (TriggerReincarnationResponse);
   rpc ReloadGeneLock(ReloadGeneLockRequest) returns (ReloadGeneLockResponse);

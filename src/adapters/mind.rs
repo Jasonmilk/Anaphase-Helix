@@ -22,8 +22,8 @@ use uuid::Uuid;
 use crate::config::MindConfig;
 use crate::helix_mind_api::helix_mind_client::HelixMindClient;
 use crate::helix_mind_api::{
-    AutonomyLevel, BudgetTier, CognitiveMode, EnergyContext, HelixCraftRequest, HelixQueryRequest,
-    RememberRequest,
+    AnaWakeupAckRequest, AnaWakeupRequest, AutonomyLevel, BudgetTier, CognitiveMode, EnergyContext,
+    HelixConsolidateRequest, HelixCraftRequest, HelixQueryRequest, RememberRequest,
 };
 use super::{MemoryAdapter, QueryResult};
 
@@ -145,6 +145,73 @@ impl MemoryAdapter for GrpcMindAdapter {
             synthesis: inner.synthesis,
             value_grade: inner.value_grade,
         })
+    }
+
+    /// P10d (ADR-0032): wake-up check — ask Mind's agenda for due alarms
+    /// (ana_wakeup). The jitter window (peak-congestion guard) comes from
+    /// MindConfig (human config default 60, 0 = off). Degradation: Err
+    /// surfaces to the caller, which skips the check silently.
+    async fn wakeup(&self, jitter_minutes: u32) -> Result<Vec<super::WakeupAlarm>, String> {
+        let request = tonic::Request::new(AnaWakeupRequest { jitter_minutes });
+        let inner = self
+            .client
+            .clone()
+            .ana_wakeup(request)
+            .await
+            .map_err(|e| e.to_string())?
+            .into_inner();
+        Ok(inner
+            .alarms
+            .into_iter()
+            .map(|a| super::WakeupAlarm {
+                job_id: a.job_id,
+                action: a.action,
+                due_at: a.due_at,
+                mode: a.mode,
+                claim_id: a.claim_id,
+            })
+            .collect())
+    }
+
+    /// P10d (ADR-0032): acknowledge a claimed alarm (done / renewed).
+    async fn wakeup_ack(&self, claim_id: &str, status: &str) -> Result<(), String> {
+        let request = tonic::Request::new(AnaWakeupAckRequest {
+            claim_id: claim_id.to_string(),
+            status: status.to_string(),
+        });
+        let inner = self
+            .client
+            .clone()
+            .ana_wakeup_ack(request)
+            .await
+            .map_err(|e| e.to_string())?
+            .into_inner();
+        if inner.success {
+            Ok(())
+        } else {
+            Err(inner.message)
+        }
+    }
+
+    /// P10d (ADR-0032): run a Mind metabolism action (helix_consolidate).
+    /// The action value from an alarm maps directly to the consolidate kind
+    /// ("hibernate" → sleep review chain, P10c).
+    async fn consolidate(&self, kind: &str) -> Result<(), String> {
+        let request = tonic::Request::new(HelixConsolidateRequest {
+            r#type: kind.to_string(),
+        });
+        let inner = self
+            .client
+            .clone()
+            .helix_consolidate(request)
+            .await
+            .map_err(|e| e.to_string())?
+            .into_inner();
+        if inner.success {
+            Ok(())
+        } else {
+            Err(inner.message)
+        }
     }
 
     fn set_complexity(&self, level: u8) {
