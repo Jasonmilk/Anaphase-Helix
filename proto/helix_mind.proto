@@ -135,6 +135,40 @@ message HelixConsolidateResult {
   string message = 2;
 }
 
+// P10 (ADR-0031): cognitive craft — Anaphase-triggered orchestration.
+// Retrieval (HelixQuery) and orchestration (HelixCraft) stay decoupled.
+message ProcessStep {
+  string process = 1;  // structural | critical | creative | situational | meta_critical
+  string mode = 2;     // skilled | anchored | imaginative
+}
+
+message StepOutput {
+  string process = 1;
+  string content = 2;
+}
+
+message HelixCraftRequest {
+  string query = 1;              // raw input (fact anchor, uncropped in MSC)
+  repeated ProcessStep steps = 2; // process+mode pairs, 1..=max_steps
+  string global_constraints = 3;  // MSC global constraints schema
+  string job_id = 4;              // caller job id → deterministic trace_id (craft#{job_id})
+  EnergyContext energy_context = 5;
+  AutonomyLevel autonomy_level = 6;
+  string traceparent = 7;         // pass-through (echo, never generate — P3c rule)
+  reserved 8 to max;             // Append-Only Schema Evolution (ADR-0012)
+}
+
+message HelixCraftResult {
+  string trace_id = 1;           // deterministic craft#{job_id}
+  repeated StepOutput steps = 2;
+  string synthesis = 3;          // Hegelian convergence
+  string value_grade = 4;        // P10b populates (ValueAssessor); empty until then
+  int64 tokens_consumed = 5;
+  string traceparent = 6;        // echo of request
+  reserved 7 to max;             // Append-Only Schema Evolution (ADR-0012)
+}
+
+
 message ReloadGeneLockRequest {}
 message ReloadGeneLockResponse {
   string l0_hash = 1;
@@ -204,6 +238,7 @@ service HelixMind {
   // Layer 3
   rpc HelixQuery(HelixQueryRequest) returns (HelixQueryResult);
   rpc HelixConsolidate(HelixConsolidateRequest) returns (HelixConsolidateResult);
+  rpc HelixCraft(HelixCraftRequest) returns (HelixCraftResult); // P10 (ADR-0031)
   rpc FederatedDAGShare(FederatedDAGShareRequest) returns (FederatedDAGShareResponse);
   rpc TriggerReincarnation(TriggerReincarnationRequest) returns (TriggerReincarnationResponse);
   rpc ReloadGeneLock(ReloadGeneLockRequest) returns (ReloadGeneLockResponse);

@@ -16,6 +16,19 @@ pub struct QueryResult {
     pub suggested_actions: Vec<String>,
 }
 
+/// Cognitive craft outcome (P10a, ADR-0031): the deterministic orchestration
+/// synthesis from Mind's helix_craft. Injected into the Reasoning prompt as a
+/// zero-token "think first" note.
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct CraftNote {
+    /// Deterministic trace (craft#{job_id}), replayable.
+    pub trace_id: String,
+    /// Hegelian convergence synthesis (the orchestration result).
+    pub synthesis: String,
+    /// P10b fills value_grade; empty until then (honest).
+    pub value_grade: String,
+}
+
 #[async_trait]
 pub trait MemoryAdapter: Send + Sync {
     async fn query(&self, query: &str, include_recessive: bool) -> Result<QueryResult, String>;
@@ -23,6 +36,13 @@ pub trait MemoryAdapter: Send + Sync {
     /// 状态驱动钩子（P10b T2）：Amygdala PreAssessment 输出复杂度（1=简单/2=中等/3=复杂），
     /// adapter 据此调整 `suggested_mode`。默认实现为空操作（Noop 等忽略）。
     fn set_complexity(&self, _level: u8) {}
+    /// P10a (ADR-0031): cognitive craft trigger — deterministic orchestration
+    /// before the LLM reasoning step (zero tokens). Default = unavailable
+    /// (Noop and other adapters ignore; GrpcMindAdapter implements). Callers
+    /// degrade silently on Err: craft is an enhancement, never a dependency.
+    async fn craft(&self, _query: &str, _job_id: &str) -> Result<CraftNote, String> {
+        Err("craft unavailable".to_string())
+    }
 }
 
 pub struct NoopMemoryAdapter;

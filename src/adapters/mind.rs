@@ -22,7 +22,8 @@ use uuid::Uuid;
 use crate::config::MindConfig;
 use crate::helix_mind_api::helix_mind_client::HelixMindClient;
 use crate::helix_mind_api::{
-    AutonomyLevel, BudgetTier, CognitiveMode, EnergyContext, HelixQueryRequest, RememberRequest,
+    AutonomyLevel, BudgetTier, CognitiveMode, EnergyContext, HelixCraftRequest, HelixQueryRequest,
+    RememberRequest,
 };
 use super::{MemoryAdapter, QueryResult};
 
@@ -104,6 +105,46 @@ impl MemoryAdapter for GrpcMindAdapter {
             .await
             .map_err(|e| e.to_string())?;
         Ok(())
+    }
+
+    /// P10a (ADR-0031): cognitive craft trigger. Deterministic orchestration
+    /// on the Mind side (helix_craft). Process+mode pairs and constraints
+    /// come from MindConfig (protocol defaults, DNA principle 11) — the
+    /// loop only asks "should I think", this adapter decides "how to think"
+    /// (按需驱动). Zero tokens (DeterministicAdapter default on Mind).
+    /// Degradation: any failure surfaces as Err, the caller skips craft
+    /// injection (enhancement, not a dependency).
+    async fn craft(&self, query: &str, job_id: &str) -> Result<super::CraftNote, String> {
+        let steps: Vec<crate::helix_mind_api::ProcessStep> = self
+            .config
+            .craft_steps
+            .iter()
+            .map(|(process, mode)| crate::helix_mind_api::ProcessStep {
+                process: process.clone(),
+                mode: mode.clone(),
+            })
+            .collect();
+        let request = tonic::Request::new(HelixCraftRequest {
+            query: query.to_string(),
+            steps,
+            global_constraints: self.config.craft_constraints.clone(),
+            job_id: job_id.to_string(),
+            energy_context: None,
+            autonomy_level: 0, // Agent
+            traceparent: String::new(),
+        });
+        let inner = self
+            .client
+            .clone()
+            .helix_craft(request)
+            .await
+            .map_err(|e| e.to_string())?
+            .into_inner();
+        Ok(super::CraftNote {
+            trace_id: inner.trace_id,
+            synthesis: inner.synthesis,
+            value_grade: inner.value_grade,
+        })
     }
 
     fn set_complexity(&self, level: u8) {

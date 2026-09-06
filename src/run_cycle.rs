@@ -9,7 +9,7 @@ use crate::reflex::ReflexArc;
 use crate::states::HelixState;
 use std::sync::Arc;
 use std::collections::{BTreeMap, HashMap};
-use tracing::{info, warn};
+use tracing::{info, trace, warn};
 
 /// State transition conditions
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -226,6 +226,11 @@ pub struct AgentContext {
     /// cycle must be verbatim rail citations (or NO_RAIL_CONTENT) — no
     /// synthesized paraphrase.
     pub rail_mode: bool,
+    /// P10a (ADR-0031): cognitive craft note from Mind's helix_craft —
+    /// deterministic zero-token orchestration folded into the Reasoning
+    /// prompt (think-first, then spend tokens). None = craft unavailable or
+    /// degraded this cycle (enhancement, never a dependency).
+    pub craft_note: Option<crate::adapters::CraftNote>,
 }
 
 impl AgentLoop {
@@ -542,6 +547,27 @@ impl AgentLoop {
                     Ok(result) => {
                         self.context.memory_nodes = result.nodes;
                         self.context.suggested_actions = result.suggested_actions;
+                        // P10a (ADR-0031): on-demand cognitive craft —
+                        // deterministic zero-token orchestration BEFORE the
+                        // LLM reasoning step. Triggered by physical ability
+                        // (GrpcMindAdapter implements craft; Noop returns
+                        // Err and the loop skips — enhancement, never a
+                        // dependency). Structured commands (!) skip thinking:
+                        // the plan already exists. Degradation is silent:
+                        // craft failure leaves craft_note = None.
+                        if !self.context.structured {
+                            let job_id = crate::contract::derive_job_id(&self.context.user_input);
+                            match self.memory.craft(&self.context.user_input, &job_id).await {
+                                Ok(note) => {
+                                    self.context.craft_note = Some(note);
+                                    info!("[MemoryRetrieval] craft note (0 tokens)");
+                                }
+                                Err(e) => {
+                                    self.context.craft_note = None;
+                                    trace!("[MemoryRetrieval] craft skipped: {}", e);
+                                }
+                            }
+                        }
                         if result.impasse_level > 2 {
                             Ok(TransitionCondition::Failure)
                         } else {
@@ -616,6 +642,16 @@ impl AgentLoop {
                         format!("{}
 \n[memory]\n{}", self.context.user_input, inject)
                     }
+                };
+                // P10a (ADR-0031): fold the cognitive craft note (zero-token
+                // deterministic orchestration from Mind) into the prompt —
+                // think first, then spend tokens. None = no note (degraded or
+                // unavailable); the note is bounded by construction (synthesis
+                // is fixed-shape), so no extra budget knob is needed.
+                let prompt = match self.context.craft_note.as_ref() {
+                    Some(note) => format!("{}
+\n[think-first (deterministic, 0 tokens)]\n{}", prompt, note.synthesis),
+                    None => prompt,
                 };
                 match self.reason.reason(&prompt, &self.run_config.reasoning_mode).await {
                     Ok(output) => {

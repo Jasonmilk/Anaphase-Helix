@@ -17,7 +17,8 @@ use anaphase::config::AnaphaseConfig;
 use anaphase::helix_mind_api::helix_mind_server::{HelixMind, HelixMindServer};
 use anaphase::helix_mind_api::{
     AdvancedQueryRequest, ForgetRequest, ForgetResponse,
-    HelixConsolidateRequest, HelixConsolidateResult, HelixQueryRequest, HelixQueryResult, Node,
+    HelixConsolidateRequest, HelixConsolidateResult, HelixCraftRequest, HelixCraftResult,
+    HelixQueryRequest, HelixQueryResult, Node,
     QueryRequest, QueryResponse, ReloadGeneLockRequest, ReloadGeneLockResponse, RememberRequest,
     RememberResponse, SuggestedAction, SyncHumanViewRequest, SyncHumanViewResponse,
     TriggerReincarnationRequest, TriggerReincarnationResponse,
@@ -171,6 +172,22 @@ impl HelixMind for MockMind {
         Ok(Response::new(SyncHumanViewResponse {
             success: true,
             conflicts: vec![],
+        }))
+    }
+    // P10a (ADR-0031): deterministic craft stub — echo a fixed synthesis
+    // so integration tests can assert the trigger path end to end.
+    async fn helix_craft(
+        &self,
+        request: Request<HelixCraftRequest>,
+    ) -> Result<Response<HelixCraftResult>, Status> {
+        let req = request.into_inner();
+        Ok(Response::new(HelixCraftResult {
+            trace_id: format!("craft#{}", req.job_id),
+            steps: vec![],
+            synthesis: "mock-converged".into(),
+            value_grade: "".into(),
+            tokens_consumed: 0,
+            traceparent: req.traceparent.clone(),
         }))
     }
 }

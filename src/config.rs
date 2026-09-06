@@ -371,6 +371,14 @@ pub struct MindConfig {
     pub probe_fallback: f64,
     /// Explore-semantics keywords (hit -> exploratory query).
     pub explore_keywords: Vec<String>,
+    /// P10a (ADR-0031): cognitive craft process+mode pairs (protocol
+    /// default — deterministic zero-token thinking before the LLM). Source
+    /// for the craft trigger literal (DNA principle 11). Consumed INSIDE
+    /// GrpcMindAdapter — the loop only asks "should I think", the Mind side
+    /// decides "how to think" (按需驱动, ADR-0031).
+    pub craft_steps: Vec<(String, String)>,
+    /// Craft global constraints (MSC schema), protocol default.
+    pub craft_constraints: String,
 }
 
 impl Default for MindConfig {
@@ -387,6 +395,11 @@ impl Default for MindConfig {
             skilled_len: 10,
             anchor_len: 40,
             probe_fallback: 0.5,
+            craft_steps: vec![
+                ("structural".into(), "skilled".into()),
+                ("critical".into(), "anchored".into()),
+            ],
+            craft_constraints: "deterministic only, no speculation".into(),
             explore_keywords: vec![
                 "探索".into(),
                 "研究".into(),

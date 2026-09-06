@@ -184,7 +184,7 @@ async fn duplex_session_full_protocol() {
     });
 
     // --- client half (mirrors Cellrix StdioTransport) ---
-    let (client_read, client_write) = tokio::io::split(client_side);
+    let (client_read, mut client_write) = tokio::io::split(client_side);
     let mut client_read = BufReader::new(client_read);
 
     // Handshake out.
