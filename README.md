@@ -34,8 +34,11 @@ via the CommonIntents protocol stack with zero hard coupling.
   → Manifest (first frame) → 1s snapshot push → ActionRequest/Response
   (`status` / `send_message` through the real run_cycle). Vendored protocol
   types in `src/ci144/` (serde field-for-field with Cellrix); protocol layer
-  stays business-free via an injected action callback. Live-verified against
-  the real binary (`cargo test --test ci144_live -- --ignored`)
+  stays business-free via an injected action callback. Accepts both the native
+  `--stdio` and the ecosystem launcher convention `--mode stdio` (Cellrix
+  `--exec` speaks one launch contract to every agent). Live-verified against
+  the real binary (`cargo test --test ci144_live -- --ignored`) and through
+  the real Cellrix cockpit (`manifest`/`snapshot`/`action` subcommands)
 - 🌐 **M1.5 Real Tentacle Connectivity** — `tests/m1_e2e_live.rs` drives the
   pipeline against a real `tentacle --transport grpc` + real fixture plugins
   (manifest+js, SHA-256 pinned); identity_labels / seen_entropy_bloom semantics

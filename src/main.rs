@@ -12,7 +12,11 @@ use std::sync::{Arc, Mutex};
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().collect();
-    let stdio_mode = args.iter().any(|a| a == "--stdio");
+    // CI-144 stdio entry: accept both `--stdio` (native flag) and the
+    // ecosystem launcher convention `--mode stdio` (Cellrix `--exec` appends
+    // this pair for every stdio agent — one launch contract, every agent).
+    let stdio_mode = args.iter().any(|a| a == "--stdio")
+        || args.windows(2).any(|w| w[0] == "--mode" && w[1] == "stdio");
 
     if stdio_mode {
         run_stdio_mode().await?;
