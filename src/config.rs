@@ -60,6 +60,12 @@ pub struct AnaphaseConfig {
     /// config.toml `[anaphase.run_cycle]`.
     #[serde(default)]
     pub run_cycle: RunCycleConfig,
+    /// Partner-mode mind-craft parameters (ADR-0022 O-4).
+    /// DNA principle 11 (ADR-0002): the adapter literals in
+    /// src/adapters/mind.rs now have a config source. Overridable via
+    /// config.toml `[anaphase.mind]`.
+    #[serde(default)]
+    pub mind: MindConfig,
 
     /// External human-authored knowledge rails (ADR-0018): read-only,
     /// version-frozen citation rails. Overridable via
@@ -193,6 +199,7 @@ impl Default for AnaphaseConfig {
             events_log_path: None,
             run_cycle: RunCycleConfig::default(),
             rails: RailsConfig::default(),
+            mind: MindConfig::default(),
         }
     }
 }
@@ -262,6 +269,7 @@ mod tests {
                     mode: Mode::Partner,
                 },
                 rails: RailsConfig::default(),
+                mind: MindConfig::default(),
             },
         }
     }
@@ -293,5 +301,76 @@ mod tests {
         unsafe { std::env::set_var("ANAPHASE_REASONING_ENDPOINT", "http://127.0.0.1:19999"); }
         let c = apply_env_overrides(base_config());
         assert_eq!(c.anaphase.reasoning_endpoint.as_deref(), Some("http://127.0.0.1:19999"));
+    }
+}
+
+/// Partner-mode mind-craft adapter parameters (ADR-0022 O-4).
+///
+/// DNA principle 11 (ADR-0002): every adapter literal now has a single
+/// source — this config. Defaults are the protocol defaults defined in
+/// ADR-0022 (was inline literals in `src/adapters/mind.rs`); overridable
+/// via config.toml `[anaphase.mind]`.
+///
+/// Deliberately excluded (derived / protocol state, not tunable):
+/// - heliotropism = 0.0 — P10a unimplemented neutral value (ADR-0022)
+/// - impasse_depth = 0 — cycle-start impasse (derived from "cycle begins")
+/// - complexity clamp 0..=3 — cognitive-mode state range (proto contract)
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(default)]
+pub struct MindConfig {
+    /// EnergyContext token budget for the cognitive cycle.
+    pub token_budget: u64,
+    /// EnergyContext latency budget (ms) for the retrieval.
+    pub latency_limit_ms: u64,
+    /// EnergyContext pulse (arousal, 0..1).
+    pub pulse: f64,
+    /// EnergyContext vigilance (0..1).
+    pub vigilance: f64,
+    /// EnergyContext familiarity (0..1).
+    pub familiarity: f64,
+    /// System load above which expensive exogenous search is suppressed.
+    pub high_load: f64,
+    /// Query char-count at or below which budget tier is Endogenous.
+    pub short_query: usize,
+    /// Query char-count at or above which budget tier is ExogenousRequired.
+    pub long_query: usize,
+    /// Query char-count at or below which mode falls back to Skilled.
+    pub skilled_len: usize,
+    /// Query char-count below which mode falls back to Anchor (>= skilled_len).
+    pub anchor_len: usize,
+    /// System-probe failure fallback (neutral load, 0..1).
+    pub probe_fallback: f64,
+    /// Explore-semantics keywords (hit -> exploratory query).
+    pub explore_keywords: Vec<String>,
+}
+
+impl Default for MindConfig {
+    fn default() -> Self {
+        Self {
+            token_budget: 1000,
+            latency_limit_ms: 500,
+            pulse: 0.3,
+            vigilance: 0.2,
+            familiarity: 0.5,
+            high_load: 0.8,
+            short_query: 4,
+            long_query: 60,
+            skilled_len: 10,
+            anchor_len: 40,
+            probe_fallback: 0.5,
+            explore_keywords: vec![
+                "探索".into(),
+                "研究".into(),
+                "发现".into(),
+                "创意".into(),
+                "头脑风暴".into(),
+                "未知".into(),
+                "可能性".into(),
+                "explore".into(),
+                "research".into(),
+                "brainstorm".into(),
+                "imagine".into(),
+            ],
+        }
     }
 }

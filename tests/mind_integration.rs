@@ -8,9 +8,9 @@
 
 use anaphase::adapters::mind::GrpcMindAdapter;
 use anaphase::adapters::{
-    resolve_memory_adapter, FearAdapter, MemoryAdapter, NoopFearAdapter, NoopReasoningAdapter,
-    NoopSafetyAdapter, NoopToolAdapter, NoopUiAdapter, ReasoningAdapter, SafetyAdapter,
-    ToolAdapter, UiAdapter,
+    resolve_memory_adapter, FearAdapter, MemoryAdapter, NoopFearAdapter, NoopMemoryAdapter,
+    NoopReasoningAdapter, NoopSafetyAdapter, NoopToolAdapter, NoopUiAdapter, ReasoningAdapter,
+    SafetyAdapter, ToolAdapter, UiAdapter,
 };
 use anaphase::run_cycle::AgentLoop;
 use anaphase::config::AnaphaseConfig;
@@ -233,7 +233,7 @@ async fn spawn_mock_mind_with_actions(actions: Vec<SuggestedAction>) -> (
 #[tokio::test]
 async fn normal_closed_loop_returns_nodes() {
     let (endpoint, _, _tx, _handle) = spawn_mock_mind().await;
-    let adapter = GrpcMindAdapter::new(&endpoint).await.expect("adapter connect");
+    let adapter = GrpcMindAdapter::new(&endpoint, Default::default()).await.expect("adapter connect");
     let result = adapter
         .query("帮我查一下昨天的会议记录", false)
         .await
@@ -244,7 +244,7 @@ async fn normal_closed_loop_returns_nodes() {
 #[tokio::test]
 async fn trace_passthrough_is_w3c_and_echoed() {
     let (endpoint, captured, _tx, _handle) = spawn_mock_mind().await;
-    let adapter = GrpcMindAdapter::new(&endpoint).await.unwrap();
+    let adapter = GrpcMindAdapter::new(&endpoint, Default::default()).await.unwrap();
     let _ = adapter.query("查询", false).await.unwrap();
 
     let reqs = captured.0.lock().unwrap();
@@ -262,7 +262,7 @@ async fn trace_passthrough_is_w3c_and_echoed() {
 #[tokio::test]
 async fn budget_tier_propagates_with_query_complexity() {
     let (endpoint, captured, _tx, _handle) = spawn_mock_mind().await;
-    let adapter = GrpcMindAdapter::new(&endpoint).await.unwrap();
+    let adapter = GrpcMindAdapter::new(&endpoint, Default::default()).await.unwrap();
 
     // 中等查询 → AUGMENTABLE (0)
     adapter.query("帮我查一下昨天的会议记录", false).await.unwrap();
@@ -310,7 +310,7 @@ async fn mind_offline_empty_endpoint_is_noop_not_panic() {
 #[tokio::test]
 async fn grpc_adapter_connect_failure_returns_err() {
     // GrpcMindAdapter 连不可达端口 → 返回 Err（而非 panic）
-    let result = GrpcMindAdapter::new("http://127.0.0.1:1").await;
+    let result = GrpcMindAdapter::new("http://127.0.0.1:1", Default::default()).await;
     assert!(result.is_err(), "连接失败必须返回 Err 而非 panic");
 }
 
@@ -318,7 +318,7 @@ async fn grpc_adapter_connect_failure_returns_err() {
 async fn suggested_mode_state_driven_overrides_length() {
     // P10b T2：set_complexity 状态驱动 suggested_mode（无视 query 长度），兜底保留
     let (endpoint, captured, _tx, _handle) = spawn_mock_mind().await;
-    let adapter = GrpcMindAdapter::new(&endpoint).await.unwrap();
+    let adapter = GrpcMindAdapter::new(&endpoint, Default::default()).await.unwrap();
 
     // 状态=复杂(3)：短 query 也走 IMAGINATION(2)
     adapter.set_complexity(3);
@@ -338,7 +338,7 @@ async fn suggested_mode_state_driven_overrides_length() {
 async fn mind_offline_query_returns_err_after_server_down() {
     // server 上线 → adapter 连接成功 → 优雅停机（shutdown）→ query 必须返回 Err（fail-open 钩子），不 panic
     let (endpoint, _captured, shutdown_tx, handle) = spawn_mock_mind().await;
-    let adapter = GrpcMindAdapter::new(&endpoint).await.unwrap();
+    let adapter = GrpcMindAdapter::new(&endpoint, Default::default()).await.unwrap();
     let _ = shutdown_tx.send(()); // 优雅停机：关闭 listener 与所有已接受连接
     let _ = handle.await;
 
@@ -356,7 +356,7 @@ async fn p11b_suggested_actions_flow_to_execution() {
         reason: "P11b mock：模拟 Mind 认知工艺产出动作建议".into(),
     }];
     let (endpoint, _captured, _tx, _handle) = spawn_mock_mind_with_actions(actions).await;
-    let adapter = Arc::new(GrpcMindAdapter::new(&endpoint).await.unwrap());
+    let adapter = Arc::new(GrpcMindAdapter::new(&endpoint, Default::default()).await.unwrap());
 
     // 1) adapter 层：Mind 返回的 suggested_actions 被消费
     let result = adapter.query("帮我查一下最新研究", false).await.unwrap();
@@ -375,5 +375,44 @@ async fn p11b_suggested_actions_flow_to_execution() {
         agent.context.suggested_actions,
         vec!["web_search"],
         "suggested_actions 应流转到 Execution（MemoryRetrieval → context）"
+    );
+}
+
+/// O-4 T3 (ADR-0022): Drive mode never contacts Mind — zero runtime branch.
+/// Drive is assembled with NoopMemoryAdapter, so even with a live Mind
+/// endpoint reachable, the cognitive-craft trigger chain must stay silent.
+#[tokio::test]
+async fn drive_mode_never_contacts_mind() {
+    let (endpoint, captured, _tx, _handle) = spawn_mock_mind().await;
+    // Sanity: the mock is reachable (Partner path would hit it).
+    let adapter = GrpcMindAdapter::new(&endpoint, Default::default())
+        .await
+        .unwrap();
+    adapter.query("探测", false).await.unwrap();
+    assert_eq!(captured.0.lock().unwrap().len(), 1, "mock reachable");
+
+    // Drive mode: NoopMemoryAdapter assembled directly — zero runtime branch,
+    // the mode gate is the assembly itself.
+    let reason: Arc<dyn ReasoningAdapter> = Arc::new(NoopReasoningAdapter);
+    let tool: Arc<dyn ToolAdapter> = Arc::new(NoopToolAdapter);
+    let safety: Arc<dyn SafetyAdapter> = Arc::new(NoopSafetyAdapter);
+    let ui: Arc<dyn UiAdapter> = Arc::new(NoopUiAdapter);
+    let fear: Arc<dyn FearAdapter> = Arc::new(NoopFearAdapter);
+    let reflex = ReflexArc { safety_rules: vec![] };
+    let mut agent = AgentLoop::new(
+        Arc::new(NoopMemoryAdapter),
+        reason,
+        tool,
+        safety,
+        ui,
+        fear,
+        reflex,
+    );
+    agent.run_cycle("帮我查一下最新研究").await.unwrap();
+
+    assert_eq!(
+        captured.0.lock().unwrap().len(),
+        1,
+        "Drive mode must never issue helix_query (count stays at sanity probe)"
     );
 }

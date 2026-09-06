@@ -44,7 +44,7 @@ impl MemoryAdapter for NoopMemoryAdapter {
 pub async fn resolve_memory_adapter(config: &crate::config::AnaphaseConfig) -> Arc<dyn MemoryAdapter> {
     match config.mind_endpoint.as_deref() {
         Some(ep) if !ep.is_empty() => {
-            match mind::GrpcMindAdapter::new(ep).await {
+            match mind::GrpcMindAdapter::new(ep, config.mind.clone()).await {
                 Ok(adapter) => Arc::new(adapter),
                 Err(e) => {
                     tracing::warn!(
