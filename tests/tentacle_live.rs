@@ -1,4 +1,4 @@
-// M1.5-T4 live end-to-end: real Tentacle gRPC server + real fixture plugins.
+// Tentacle live end-to-end: real Tentacle gRPC server + real fixture plugins.
 //
 // Unlike m1_e2e.rs (dual mock), this test spawns the REAL `tentacle` binary with
 // `--transport grpc --plugins-dir fixtures/` and drives the pipeline over the
@@ -159,7 +159,7 @@ async fn run_live_loop(llm_content: &str, job_id: &str, clock_now: u64) -> anaph
 
 #[tokio::test]
 #[ignore = "requires real tentacle binary + node (manual integration)"]
-async fn m1_5_live_met() {
+async fn tentacle_live_met() {
     // Real fixtures with default args -> 20-series numbers + rate 10/20 -> MET.
     let llm_content = r#"{"calls":[
         {"tool":"numbers","args":{},"expect":"numbers"},
@@ -173,7 +173,7 @@ async fn m1_5_live_met() {
 
 #[tokio::test]
 #[ignore = "requires real tentacle binary + node (manual integration)"]
-async fn m1_5_live_unmet() {
+async fn tentacle_live_unmet() {
     // Parameterized fixture: {"series":[1.0]} -> short series -> UNMET + retry_due.
     let llm_content = r#"{"calls":[
         {"tool":"numbers","args":{"series":[1.0]},"expect":"numbers"}
@@ -186,7 +186,7 @@ async fn m1_5_live_unmet() {
 
 #[tokio::test]
 #[ignore = "requires real tentacle binary + node (manual integration)"]
-async fn m1_5_live_run_cycle_structured_chain() {
+async fn tentacle_live_run_cycle() {
     // Candidate E (ADR-0005): run_cycle drives the FULL six-stage chain over
     // the REAL tentacle binary + real fixture plugins. The reasoning stub emits
     // the structured calls protocol directly (no mock LLM needed), then

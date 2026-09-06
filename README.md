@@ -53,7 +53,7 @@ via the CommonIntents protocol stack with zero hard coupling.
   `--exec` speaks one launch contract to every agent). Live-verified against
   the real binary (`cargo test --test ci144_live -- --ignored`) and through
   the real Cellrix cockpit (`manifest`/`snapshot`/`action` subcommands)
-- 🌐 **M1.5 Real Tentacle Connectivity** — `tests/m1_e2e_live.rs` drives the
+- 🌐 **M1.5 Real Tentacle Connectivity** — `tests/tentacle_live.rs` drives the
   pipeline against a real `tentacle --transport grpc` + real fixture plugins
   (manifest+js, SHA-256 pinned); identity_labels / seen_entropy_bloom semantics
   (ADR-0004); run_cycle Execution resolves real tool names (echo fallback)
@@ -154,8 +154,8 @@ anaphase-helix/
     ├── integration_test.rs # Noop adapter + reflex + cognitive cycle (16)
     ├── mind_integration.rs # Mock Mind gRPC closed loop (9)
     ├── mock_tentacle.rs    # M1-T0/T7: adapter roundtrip + 3 branches (4)
-    ├── m1_e2e.rs           # M1-T8: MET/UNMET/deterministic replay (3)
-    ├── m1_e2e_live.rs      # Real Tentacle e2e (3, #[ignore]) — incl. run_cycle chain
+    ├── pipeline_e2e.rs     # MET/UNMET/deterministic replay (3)
+    ├── tentacle_live.rs    # Real Tentacle e2e (3, #[ignore]) — incl. run_cycle chain
     ├── run_cycle_pipeline.rs # Candidate E: run_cycle ↔ pipeline full merge (8)
     ├── ci144_transport.rs  # CI-144 protocol suite: handshake/frame/projection/duplex (6)
     └── ci144_live.rs       # Real-binary CI-144 roundtrip (1, #[ignore])
@@ -202,7 +202,7 @@ Coverage:
 - **integration_test (16)**: Noop adapters, hard/soft reflex, dangerous-action block, cognitive cycle, M1.5-T6 real-tool resolution
 - **mind_integration (9)**: mock Mind gRPC closed loop, trace passthrough, budget_tier, P11b actions
 - **mock_tentacle (4)**: Tentacle v1 roundtrip, trace_id verbatim, failure branch, transport error
-- **m1_e2e (3)**: MET verdict, UNMET + retry_due + reopen scan, deterministic replay (byte-identical)
+- **pipeline_e2e (3)**: MET verdict, UNMET + retry_due + reopen scan, deterministic replay (byte-identical)
 - **run_cycle_pipeline (8)**: candidate-E full chain (MET/UNMET/no-plan/deterministic replay) +
   run_config-driven behavior (cycle cap, soft-reflex threshold, amygdala vector, mode, placeholder)
 - **ci144_transport (6)**: CIB/1.0 handshake (accept/reject), frame round-trip,
@@ -216,7 +216,7 @@ Coverage:
 - **replay_guard (4)**: candidate-D' partial — real entropy fingerprint on the wire (`bl-` + FNV-1a over
   `{tool}#{params}`, replay-stable), `resolve_pipeline` fail-open (empty/unreachable endpoint -> None),
   configured endpoint wires the pipeline (ADR-0007)
-- **m1_e2e_live (3, #[ignore])**: real Tentacle gRPC + real fixture plugins (manual integration)
+- **tentacle_live (3, #[ignore])**: real Tentacle gRPC + real fixture plugins (manual integration)
 
 ## Architecture
 

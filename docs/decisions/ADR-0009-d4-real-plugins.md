@@ -37,15 +37,15 @@ pub fn exec_ok(ok_flag: bool, echoed: bool) -> CheckReport {
 
 ### D2: 未知工具 = pipeline 错误，不是 UNMET
 
-Tentacle gRPC 对未注册工具返回 `Status::not_found` → transport 层 Err → pipeline `?` 传播 → `run()` 返回 Err。这符合 M1 single-pass 哲学（ADR-0003 decision 5）：**执行错误报错，不落 evidence、不重试**；UNMET verdict 仅用于"工具存在但判据不过"。边界写入测试（`m1_5_d4_live_unknown_tool_errors`）。
+Tentacle gRPC 对未注册工具返回 `Status::not_found` → transport 层 Err → pipeline `?` 传播 → `run()` 返回 Err。这符合 M1 single-pass 哲学（ADR-0003 decision 5）：**执行错误报错，不落 evidence、不重试**；UNMET verdict 仅用于"工具存在但判据不过"。边界写入测试（`plugin_live_unknown_tool`）。
 
 ### D3: live 验收模式（#[ignore] 手动联调）
 
-新增 `tests/m1_5_d4_live.rs`（3 用例，#[ignore]，与 m1_e2e_live 同模式）：
+新增 `tests/plugin_live.rs`（3 用例，#[ignore]，与 tentacle_live 同模式）：
 - 插件目录参数化：`TENTACLE_PLUGINS_DIR`（默认 `/tmp/d4-learn/stable`，MCP-Learner 学习产物）
-- `m1_5_d4_live_plugin_met`：真实插件 `mock-filesystem.list_files` + expect ok → MET（retry_due none）
-- `m1_5_d4_live_unknown_tool_errors`：未知工具 → pipeline Err（含 "not found"）
-- `m1_5_d4_live_run_cycle_real_plugin`：run_cycle 全链路（Reasoning→structured calls→Execution 真实 grpc→Reflection criteria→ledger）走真实插件 → Verdict::Met
+- `plugin_live_met`：真实插件 `mock-filesystem.list_files` + expect ok → MET（retry_due none）
+- `plugin_live_unknown_tool`：未知工具 → pipeline Err（含 "not found"）
+- `plugin_live_run_cycle`：run_cycle 全链路（Reasoning→structured calls→Execution 真实 grpc→Reflection criteria→ledger）走真实插件 → Verdict::Met
 
 **实测 3/3 全绿**（真实 tentacle 二进制 + node + 学习产物）。
 

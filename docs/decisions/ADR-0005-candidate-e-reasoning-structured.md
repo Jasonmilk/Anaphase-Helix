@@ -45,7 +45,7 @@
 
 ### 决策 5：测试与验证（E-T7）
 - `tests/run_cycle_pipeline.rs`（8 例，MockTentacle）：MET 全链路 / UNMET+retry_due / 无计划跳过 pipeline / 确定性回放（字节级一致）/ cycle_cap / soft_reflex_threshold / amygdala+mode / execution_placeholder
-- contract +6、ledger +1 单测；`m1_e2e_live` 新增 `m1_5_live_run_cycle_structured_chain`（真实 Tentacle 全链路，#[ignore]）
+- contract +6、ledger +1 单测；`tentacle_live` 新增 `tentacle_live_run_cycle`（真实 Tentacle 全链路，#[ignore]）
 - 既有 78 测试全绿保持（TriggerToolReasoning stub 输出升级为结构化协议）
 
 ## 影响

@@ -59,7 +59,7 @@ Cellrix）。事件流：Manifest 首帧 → 1s 节律 Snapshot 推流 → Actio
 | D'-2 | Tuck 深度集成：`SecurityGate` 接线点 + ledger `blocked` 记录 + 真实 TuckSecurityGate 连通 | ✅ ADR-0008 |
 | D'-4 | 真实场景插件（非 fixture，接入 MCP-Learner stable/ 工具）：`Expect::Ok` 结构判据 + live e2e（真实 Tentacle + 学习产物 3/3 全绿） | ✅ ADR-0009 |
 
-**关键成果**：`seen_entropy_bloom` 从 `""` 占位升级为真实确定性指纹（`bl-` + FNV-1a(`{tool}#{params}`)）；配置 `tentacle_endpoint` 后启动即走六 stage 流水线（fail-open，未配置/失败保持 echo fallback）；**D'-2 管控闭环咽喉落地**——pipeline 执行路径可被 Tuck 闸门拦截（`src/security.rs` SecurityGate trait + `with_security_gate` + ledger `Blocked` 记录，Reject/HITL 阻塞 call 且不进 Tentacle；真实连通测试经 dev-only tuck-core 验证 Low→Pass 执行 / Catastrophic→Reject / Critical→HitlRequired）；**候选 G-T2（ADR-0010）**——`AgentLoop::capture()` 共享快照投影（mode/state/episode/ledger），`/v1/agent/snapshot` 输出真实状态（消除 `token_consumed: 1234` 硬编码），HTTP 端点不触碰 agent 内部（极致解耦）；126 passed + 6 live（#[ignore]，含 m1_e2e_live 3 + m1_5_d4_live 3）。
+**关键成果**：`seen_entropy_bloom` 从 `""` 占位升级为真实确定性指纹（`bl-` + FNV-1a(`{tool}#{params}`)）；配置 `tentacle_endpoint` 后启动即走六 stage 流水线（fail-open，未配置/失败保持 echo fallback）；**D'-2 管控闭环咽喉落地**——pipeline 执行路径可被 Tuck 闸门拦截（`src/security.rs` SecurityGate trait + `with_security_gate` + ledger `Blocked` 记录，Reject/HITL 阻塞 call 且不进 Tentacle；真实连通测试经 dev-only tuck-core 验证 Low→Pass 执行 / Catastrophic→Reject / Critical→HitlRequired）；**候选 G-T2（ADR-0010）**——`AgentLoop::capture()` 共享快照投影（mode/state/episode/ledger），`/v1/agent/snapshot` 输出真实状态（消除 `token_consumed: 1234` 硬编码），HTTP 端点不触碰 agent 内部（极致解耦）；126 passed + 6 live（#[ignore]，含 tentacle_live 3 + plugin_live 3）。
 
 ### M1.5 / 候选 E / 候选 F 剩余项（已消项）
 

@@ -104,7 +104,7 @@ async fn run_d4_loop(llm_content: &str, job_id: &str, clock_now: u64) -> anaphas
 
 #[tokio::test]
 #[ignore = "requires real tentacle binary + node + learned plugins (manual integration)"]
-async fn m1_5_d4_live_plugin_met() {
+async fn plugin_live_met() {
     // Real learned plugin (mock-filesystem.list_files) -> structured ok -> MET.
     let llm_content = r#"{"calls":[
         {"tool":"mock-filesystem.list_files","args":{"directory":"/tmp"},"expect":"ok"}
@@ -117,7 +117,7 @@ async fn m1_5_d4_live_plugin_met() {
 
 #[tokio::test]
 #[ignore = "requires real tentacle binary + node + learned plugins (manual integration)"]
-async fn m1_5_d4_live_unknown_tool_errors() {
+async fn plugin_live_unknown_tool() {
     // Unknown tool name -> gRPC transport error -> pipeline Err (single-pass
     // philosophy, ADR-0003 decision 5: execution errors raise, nothing is
     // recorded, nothing is retried — this is NOT an UNMET verdict).
@@ -148,7 +148,7 @@ async fn m1_5_d4_live_unknown_tool_errors() {
 
 #[tokio::test]
 #[ignore = "requires real tentacle binary + node + learned plugins (manual integration)"]
-async fn m1_5_d4_live_run_cycle_real_plugin() {
+async fn plugin_live_run_cycle() {
     // run_cycle drives the FULL six-stage chain over the real tentacle binary
     // + the real learned plugin dir. Structured reasoning stub emits the calls
     // protocol directly; Execution hits the real gRPC wire; Reflection writes

@@ -36,3 +36,25 @@ README（205 + P10 live 段）｜ PLAN（gRPC + live）｜ ECOSYSTEM v1.52（Ana
 
 ### 状态
 🧬 已完成
+## 记录 26：命名纪律——阶段号测试名全量改能力名（2026-09-06）
+
+### 触发条件
+用户审查 p10_live.rs 命名后确立硬规则：**内部命名必须准确无歧义、按能力命名，经用户通过方可保留**；阶段代号（M1/M1.5/P10/D4）不得用作测试文件名。
+
+### 变更性质
+| 原名 | 新名 | 被测能力 |
+|---|---|---|
+| m1_e2e_live.rs | tentacle_live.rs | 真实 Tentacle 连通 + fixture 判据 |
+| m1_5_d4_live.rs | plugin_live.rs | MCP 学习产物真实插件执行 |
+| m1_e2e.rs | pipeline_e2e.rs | pipeline 双 mock 闭环 |
+
+函数同步去阶段前缀（m1_5_live_met→tentacle_live_met 等 9 处）；README/PLAN/ADR-0004/0005/0009 现存引用全量修正（archive 历史记录保留原名——当时事实）。
+
+### 兼容性
+零行为变化（纯改名）；`git mv` 保留历史。
+
+### 验收
+22 套件全绿 0 warning；live 三套真实联调全绿：tentacle_live 3/3 + plugin_live 3/3（真实 tentacle 二进制）+ mind_live 1/1（真实 Mind 二进制）。
+
+### 状态
+🧬 已完成

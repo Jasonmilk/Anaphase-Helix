@@ -1,8 +1,8 @@
 // M1-T8 end-to-end: deterministic pipeline closed loop (ADR-0003).
 //
 // Dual mock (LLM + Tentacle) with inlined fixtures. Two cases:
-//   m1_e2e_met    - all criteria pass -> MET verdict recorded
-//   m1_e2e_unmet  - a check fails      -> UNMET + retry_due recorded
+//   pipeline_e2e_met    - all criteria pass -> MET verdict recorded
+//   pipeline_e2e_unmet  - a check fails      -> UNMET + retry_due recorded
 // Acceptance criteria:
 //   1. both cases green (double mock + inlined fixtures)
 //   2. same input run twice -> ledger output byte-identical
@@ -97,7 +97,7 @@ async fn run_closed_loop(
 }
 
 #[tokio::test]
-async fn m1_e2e_met() {
+async fn pipeline_e2e_met() {
     let llm_content = r#"{"calls":[
         {"tool":"numbers","args":{},"expect":"numbers"},
         {"tool":"rate","args":{},"expect":"rate"}
@@ -120,7 +120,7 @@ async fn m1_e2e_met() {
 }
 
 #[tokio::test]
-async fn m1_e2e_unmet() {
+async fn pipeline_e2e_unmet() {
     let llm_content = r#"{"calls":[
         {"tool":"numbers","args":{},"expect":"numbers"}
     ]}"#;
@@ -146,7 +146,7 @@ async fn m1_e2e_unmet() {
 }
 
 #[tokio::test]
-async fn m1_e2e_deterministic_replay() {
+async fn pipeline_e2e_deterministic_replay() {
     // Acceptance criterion 2: same input run twice with same job_id + FakeClock
     // must produce byte-identical ledger output.
     let llm_content = r#"{"calls":[
