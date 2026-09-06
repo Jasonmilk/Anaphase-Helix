@@ -2,7 +2,13 @@
 
 > **DNA 方法论 v1.0** ｜ PLAN.md 是导航牌，不是历史档案（≤150 行）。完成记录进 GROWTH.md。
 
-## 当前阶段：O-1 落地 + Rails（ADR-0018）+ O-2 stage 事件总线（ADR-0019）+ P10a 认知工艺触发（ADR-0031）——下一步按生态节奏
+## 当前阶段：O-1 落地 + Rails + O-2 事件总线 + P10a 认知工艺触发 + P10d 预约制闹钟（ADR-0032）——下一步按生态节奏
+
+**P10d 预约制闹钟（ADR-0032，2026-09-06 完成）**：Mind 侧 ana_wakeup/ana_wakeup_ack RPC（Anaphase 客户端
+同步）+ MemoryAdapter wakeup/wakeup_ack/consolidate 默认方法（Noop 静默降级）+ GrpcMindAdapter 实现
+（jitter 窗口来自 RunCycleConfig 默认 60）+ run_cycle 入口 check_wakeup（每交互看表一次：白名单 action →
+consolidate 链 → ack done；未知 action → ack done 释放；失败 → ack done 记录；不可用 → 跳过）。202 tests 全绿
+（+4：触发执行/白名单外/无预约/降级）。
 
 **P10a 认知工艺触发（ADR-0031，2026-09-06 完成）**：Mind 侧 helix_craft RPC（Anaphase 客户端同步）——
 MemoryAdapter.craft() 默认方法（Noop 零改动静默降级）+ GrpcMindAdapter 调 helix_craft（工序集/约束来自
