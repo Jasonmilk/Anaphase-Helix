@@ -38,12 +38,13 @@ O-2/O-3（ADR-0019/0020）把事件环挂在 **pipeline 装配**上：`tentacle_
 trace_id = `derive_job_id(input)`（确定性派生，一次周期一条 trace——与
 stage 事件同源）。
 
-### D3: 时间戳分权（两个确定性需求，两个来源）
-- **cycle 级 ts = 墙钟**（`Utc::now` RFC3339）：黑匣子的审计真值是"何时发生"；
-- **stage/ledger ts = 注入 FakeClock**：可回放契约（字节级一致）属于
-  pipeline/ledger 层，已有测试锁定。
-  同一个环里两类 ts 并存，各自服务各自的不变性——不强行统一成一个来源，
-  因为"审计时间"与"回放时间"是两种不同的正确性。
+### D3: 单一时间源——复用 ledger Clock（审查修正）
+初版曾用墙钟（`Utc::now`）作 cycle 级 ts，违背**极致复用**（ledger 已有
+`Clock` trait + `unix_secs_to_rfc3339`）与**确定性优先**（黑匣子不可回放）。
+审查后修正：`AgentLoop` 持有注入 `Clock`（默认 `SystemClock`，测试注入
+`FakeClock`），cycle 级 ts = `unix_secs_to_rfc3339(clock.now())`——与
+stage/ledger **同一个时间源**。FakeClock 下黑匣子字节级可回放（新增测试
+`black_box_replays_byte_identical_under_fake_clock` 锁定）。
 
 ### D4: flush/恢复语义不变，挂载点换到 agent
 O-3 的增量 flush 与启动恢复逻辑不变，只是数据源从
@@ -71,8 +72,10 @@ O-3 的增量 flush 与启动恢复逻辑不变，只是数据源从
 
 ## 5. 验收
 
-- `cargo test` 全绿：180 → **181**（+1 `drive_mode_black_box_records_cycle_events_without_pipeline`：
-  Noop 装配跑 `run_cycle` → 环里 begin/state/end、stage=0、一条 trace）
+- `cargo test` 全绿：180 → **182**（+`drive_mode_black_box_records_cycle_events_without_pipeline`：
+  Noop 装配跑 `run_cycle` → 环里 begin/state/end、stage=0、一条 trace；
+  +`black_box_replays_byte_identical_under_fake_clock`：同 FakeClock 两次运行
+  黑匣子 JSONL 字节级一致）
 - 物理验证：无 tentacle 装配真实二进制 → `events.jsonl` 写入 7 条
   stage=0 cycle 事件（begin → 多 state → end），trace_id 确定性派生
-- 无回归：181 passed / 0 failed
+- 无回归：182 passed / 0 failed

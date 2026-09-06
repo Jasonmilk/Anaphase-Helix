@@ -136,6 +136,11 @@ pub struct AgentLoop {
     /// and adds stage 1..=6 events; stage 0 is reserved for cycle-level
     /// events. None = ring not injected (legacy behavior, tests untouched).
     pub events: Option<std::sync::Arc<std::sync::Mutex<crate::events::EventRing>>>,
+    /// Injected time source (ADR-0021, fixed): REUSES the ledger Clock trait
+    /// — one time source across cycle + stage + ledger (极致复用, no second
+    /// clock). Defaults to SystemClock; tests inject FakeClock for
+    /// byte-identical replay of the black box.
+    pub clock: std::sync::Arc<dyn crate::ledger::Clock>,
     /// Active experience boundary (ADR-0006). None = no episode in progress
     /// (legacy turn-by-turn behavior, fully backwards compatible).
     pub episode: Option<Episode>,
@@ -228,6 +233,7 @@ impl AgentLoop {
             mode: Mode::Partner,
             episode: None,
             events: None,
+            clock: std::sync::Arc::new(crate::ledger::SystemClock),
             rails: None,
             rails_config: crate::config::RailsConfig::default(),
         }
@@ -275,6 +281,13 @@ impl AgentLoop {
     /// in one stream. Without a pipeline this is still the Drive-mode black box.
     pub fn with_events(mut self, ring: std::sync::Arc<std::sync::Mutex<crate::events::EventRing>>) -> Self {
         self.events = Some(ring);
+        self
+    }
+
+    /// Inject a deterministic clock (ADR-0021): with FakeClock the black box
+    /// is byte-identical replayable, same as the ledger/stage replay contract.
+    pub fn with_clock(mut self, clock: std::sync::Arc<dyn crate::ledger::Clock>) -> Self {
+        self.clock = clock;
         self
     }
 
@@ -339,14 +352,14 @@ impl AgentLoop {
 
     /// Run one full cognitive cycle
     /// Cycle-level event (ADR-0021): stage 0 = cycle level, one trace per
-    /// period (job_id-derived, deterministic). ts is the wall clock (audit
-    /// truth for the black box); the ledger/stage replay contract stays with
-    /// the injected FakeClock — two different determinism needs, two sources.
+    /// period (job_id-derived, deterministic). ts comes from the SAME injected
+    /// Clock as the ledger/stage events (极致复用 — one time source, no second
+    /// clock): FakeClock makes the black box byte-identical replayable too.
     fn emit_cycle(&self, phase: &str, detail: &str) {
         if let Some(ring) = self.events.as_ref() {
             let mut guard = ring.lock().unwrap();
             guard.emit(
-                &chrono::Utc::now().to_rfc3339(),
+                &crate::ledger::unix_secs_to_rfc3339(self.clock.now()),
                 &crate::contract::derive_job_id(&self.context.user_input),
                 0,
                 phase,
@@ -892,6 +905,33 @@ mod tests {
         assert!(
             evs.iter().any(|e| e.phase == "state"),
             "state transitions are recorded"
+        );
+    }
+
+    #[tokio::test]
+    async fn black_box_replays_byte_identical_under_fake_clock() {
+        // ADR-0021 (fix): the black box REUSES the ledger Clock — under
+        // FakeClock two identical runs emit byte-identical ts (极致复用 +
+        // 确定性优先: one time source across cycle/stage/ledger).
+        let run = |clock: u64| {
+            let ring =
+                std::sync::Arc::new(std::sync::Mutex::new(crate::events::EventRing::new(64)));
+            let agent = base()
+                .with_mode(Mode::Drive)
+                .with_events(ring.clone())
+                .with_clock(std::sync::Arc::new(crate::ledger::FakeClock(clock)));
+            agent
+        };
+        let mut a = run(1000);
+        let mut b = run(1000);
+        let _ = a.run_cycle("!tool numbers --n 3").await.unwrap();
+        let _ = b.run_cycle("!tool numbers --n 3").await.unwrap();
+        let ea = a.events.as_ref().unwrap().lock().unwrap().to_jsonl();
+        let eb = b.events.as_ref().unwrap().lock().unwrap().to_jsonl();
+        assert_eq!(ea, eb, "same FakeClock -> byte-identical black box replay");
+        assert!(
+            ea.contains("1970-01-01T00:16:40Z"),
+            "FakeClock(1000) ts lands in the JSONL (deterministic)"
         );
     }
 

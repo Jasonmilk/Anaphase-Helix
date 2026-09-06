@@ -180,7 +180,8 @@ ADR-XXXX 占位全部替换为 ADR-0018。
   每次 run_cycle 也记录 cycle 轨迹（stage=0：begin/state/tool/end，trace=derive_job_id）；
   pipeline 装配复用同一环（stage 1..=6 同流同游标）；flush/恢复挂载点改 agent.events
 - **哲学落地**：白盒四层模式无关（驾驶=黑匣子，伙伴=黑匣子+六 stage）；
-  ts 分权（cycle=墙钟审计真值，stage/ledger=FakeClock 回放契约）
+  **审查修正**：初版 cycle ts 用墙钟 → 违背极致复用/确定性优先，改为复用 ledger
+  `Clock` trait（单一时间源，FakeClock 下黑匣子字节级可回放，+1 测试锁定）
 - **物理验证**：无 tentacle 真实二进制 → events.jsonl 7 条 stage=0 事件（确定性 trace）
 - **零新增**：无新 crate / 无新端点 / 一个字段 + 一个 builder + 五处 emit
 
