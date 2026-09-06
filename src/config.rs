@@ -55,6 +55,66 @@ pub struct AnaphaseConfig {
     /// config.toml `[anaphase.run_cycle]`.
     #[serde(default)]
     pub run_cycle: RunCycleConfig,
+
+    /// External human-authored knowledge rails (ADR-XXXX): read-only,
+    /// version-frozen citation rails. Overridable via
+    /// config.toml `[anaphase.rails]`.
+    #[serde(default)]
+    pub rails: RailsConfig,
+}
+
+/// Rails: external human knowledge rails (心智外铁轨, ADR-XXXX).
+/// Read-only citation asset — Helix may only select an existing edge,
+/// never synthesize one. All literals below carry documented defaults
+/// (DNA principle 11 / ADR-0002): conservative local budgets, tunable
+/// per deployment, never protocol values.
+#[derive(Debug, Clone, Deserialize)]
+pub struct RailsConfig {
+    /// Master switch. When no kb directory exists the index is empty and
+    /// the loop is unaffected (fail-open, zero cost).
+    #[serde(default = "default_rails_enabled")]
+    pub enabled: bool,
+    /// Rail root directory (relative to the project root) — points at one
+    /// concrete kb (`rails/<kb>/`, e.g. a statutes rail). Point it at a real
+    /// kb to replace the bundled demo. Convention: one kb per directory.
+    #[serde(default = "default_rails_kb_dir")]
+    pub kb_dir: String,
+    /// Entry-hit cap for one navigation (retrieval budget; default:
+    /// conservative local-LLM context budget, same policy family as
+    /// RunCycleConfig.cycle_cap).
+    #[serde(default = "default_rails_max_hits")]
+    pub max_hits: usize,
+    /// Total verbatim bytes injected per cycle (context budget; default:
+    /// conservative local-LLM window slice, tunable per model).
+    #[serde(default = "default_rails_max_inject")]
+    pub max_inject_bytes: usize,
+}
+
+fn default_rails_enabled() -> bool {
+    true
+}
+
+fn default_rails_kb_dir() -> String {
+    "knowledge_base/rails/demo".to_string()
+}
+
+fn default_rails_max_hits() -> usize {
+    3
+}
+
+fn default_rails_max_inject() -> usize {
+    4096
+}
+
+impl Default for RailsConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_rails_enabled(),
+            kb_dir: default_rails_kb_dir(),
+            max_hits: default_rails_max_hits(),
+            max_inject_bytes: default_rails_max_inject(),
+        }
+    }
 }
 
 /// run_cycle state-machine constants (candidate E, ADR-0005).
@@ -126,6 +186,7 @@ impl Default for AnaphaseConfig {
 
             session_notes_path: None,
             run_cycle: RunCycleConfig::default(),
+            rails: RailsConfig::default(),
         }
     }
 }
@@ -193,6 +254,7 @@ mod tests {
                     cycle_cap: 7,
                     mode: Mode::Partner,
                 },
+                rails: RailsConfig::default(),
             },
         }
     }

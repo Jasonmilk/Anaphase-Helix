@@ -97,6 +97,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    // Rails (ADR-XXXX): mount the external human knowledge rail — read-only
+    // citation asset. Missing/invalid kb dir degrades to None (fail-open,
+    // loop unaffected); a dangling link is an authoring error surfaced here.
+    agent.rails_config = config.anaphase.rails.clone();
+    if config.anaphase.rails.enabled {
+        let rails_root = std::path::Path::new(&config.anaphase.rails.kb_dir);
+        if rails_root.exists() {
+            match anaphase::rails::build_index(rails_root) {
+                Ok(index) => {
+                    agent = agent.with_rails(index);
+                    eprintln!("Rails mounted: {}", rails_root.display());
+                }
+                Err(e) => eprintln!("Warning: rail index failed: {e} (loop continues unmounted)"),
+            }
+        }
+    }
+
     // Candidate G-T2: shared snapshot projection (None = HTTP disabled).
     // The endpoint serves it; the loop refreshes it after each cycle.
     let mut shared_snapshot: Option<Arc<Mutex<Option<anaphase::run_cycle::AgentSnapshot>>>> = None;

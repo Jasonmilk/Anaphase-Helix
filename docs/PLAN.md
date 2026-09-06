@@ -2,7 +2,14 @@
 
 > **DNA 方法论 v1.0** ｜ PLAN.md 是导航牌，不是历史档案（≤150 行）。完成记录进 GROWTH.md。
 
-## 当前阶段：O-1 落地（结构化分诊 + 生态点亮感知）——下一步 O-2 stage 事件总线
+## 当前阶段：O-1 落地 + Rails 心智外铁轨（ADR-0018）——下一步 O-2 stage 事件总线
+
+**Rails 心智外铁轨（ADR-0018，2026-09-06 完成）**：人类知识 DAG（宪法/律法/SOP）只读引用
+铁轨——`knowledge_base/rails/<kb>/` markdown 原汁原味 + 确定性索引（标题树=节点、
+链接=边、SHA-256 版本冻结、断链即错）+ 铁轨导航（词项 + CJK bigram，无嵌入）+ 引用契约
+（原文引用 + visited check 验证器 + 引不到答 NO_RAIL_CONTENT）。接线 MemoryRetrieval
+（注入 + rail_mode），RailScope 类型级只读（无写变体）。169 tests 全绿（+9）+ 真实二进制
+挂载验证。与熟练模式（Helix-Mind 心智内软铁轨）同源——心智外硬铁轨，错不起就硬。
 
 **CI-144 传输层（ADR-0017，2026-09-06 完成）**：`--stdio` 从 JSON-lines 临时协议切换为
 CIB/1.0 MessagePack + 握手 + LE u32 帧（vendored 类型在 `src/ci144/`，serde 逐字段对齐

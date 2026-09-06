@@ -140,3 +140,31 @@ CIB/1.0 MessagePack（握手 + LE u32 帧），Anaphase `--stdio` 只会 JSON-li
 live 实测（`cargo test --test ci144_live -- --ignored`）真实二进制全链路：
 握手→Manifest→Snapshot→status→send_message→unknown→EOF 退出 ✅
 **状态**：✅ 完成（commit 见 git log）
+
+## 记录 16：Rails 心智外铁轨——人类知识 DAG 只读引用（2026-09-06，ADR-0018）
+**变异类型**：新器官——人类权威知识的确定性引用通道（驾驶/伙伴/生存三模式通用，只读）
+**背景**：驾驶模式查法典刚需——律文必须原文引用、零编造（行业实测 19% 引用幻觉率，
+律师因 AI 幻觉引用被法院制裁是真实失败模式）。通用 LLM 无铁轨不可控。
+**关键决策**：
+1. **rails = 人类资产**：knowledge_base/rails/<kb>/ markdown 原汁原味，SHA-256 版本冻结；
+   RailScope 只有 Read 变体（类型级无写侧）
+2. **mddag 轻量解析**：标题树=节点、链接=边、确定性 id（{doc}#{heading}，无 UUID）、
+   断链即构建错误——完整 lodestone 协议留 M2
+3. **确定性导航**：整句 + 词项 + CJK bigram（≥2 不同 bigram 才计分，防单 bigram 噪声）；
+   无嵌入（概率性+依赖，违背确定性/极致节能）；visited set 做 provenance
+4. **引用契约**：verify_reference 纯函数（节点存在 + visited + 原文子串）三判据；
+   引不到答 NO_RAIL_CONTENT（graceful refusal，零编造）
+5. **接线 MemoryRetrieval**：注入 + rail_mode；与心智记忆两条知识线物理分开
+   （心智会消化遗忘，铁轨不消化不遗忘）
+6. **与熟练模式同源**：心智内软铁轨（EMA 权重会进化）vs 心智外硬铁轨（冻结）；
+   硬度 = 错误的代价
+**物理验证（2026-09-06）**：
+- 同目录两次 build_index 字节级一致（确定性回放）✅
+- 断链 kb 构建报错（dangling link）✅
+- 导航"数据归属条款是什么"→ 命中"第 1 条 数据归属"（bigram 主题判定）✅
+- 验证器：原文+visited 过；未访问/改写/未知节点全拒 ✅
+- run_cycle e2e：rail 命中注入原文节点 + rail_mode 置位 ✅
+- 真实二进制：Rails mounted: knowledge_base/rails/demo ✅
+**发现并修复**：kb_dir 指向容器根导致跨文档链接断链（doc id 被子目录前缀污染）
+→ 修正为 kb_dir 指向具体 kb（one kb per directory）
+**状态**：✅ 完成（169 tests 全绿 = 160 基线 + 9 新增；commit 见 git log）

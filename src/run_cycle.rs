@@ -133,6 +133,13 @@ pub struct AgentLoop {
     /// Active experience boundary (ADR-0006). None = no episode in progress
     /// (legacy turn-by-turn behavior, fully backwards compatible).
     pub episode: Option<Episode>,
+    /// External human-authored knowledge rails (ADR-XXXX). None = no rail
+    /// mounted (fail-open, loop unaffected). Read-only citation asset —
+    /// Helix may only select an existing edge, never synthesize one.
+    pub rails: Option<crate::rails::Index>,
+    /// Rails runtime budgets (retrieval hits / injected bytes). Source for
+    /// the navigation literals (DNA principle 11 / ADR-0002).
+    pub rails_config: crate::config::RailsConfig,
 }
 
 /// Context data flowing through the cognitive cycle
@@ -161,6 +168,14 @@ pub struct AgentContext {
     /// Structured-command marker (O-1): set by Perception when the input
     /// starts with `!`; Reasoning skips the LLM for this cycle (0 tokens).
     pub structured: bool,
+    /// Rails hits (ADR-XXXX): verbatim nodes injected when the query lands
+    /// on an external human rail. Content is a human asset — Helix cites,
+    /// never rewrites it.
+    pub rail_nodes: Vec<crate::rails::Node>,
+    /// Citation-contract marker (ADR-XXXX): when true, the answer for this
+    /// cycle must be verbatim rail citations (or NO_RAIL_CONTENT) — no
+    /// synthesized paraphrase.
+    pub rail_mode: bool,
 }
 
 impl AgentLoop {
@@ -206,6 +221,8 @@ impl AgentLoop {
             pipeline: None,
             mode: Mode::Partner,
             episode: None,
+            rails: None,
+            rails_config: crate::config::RailsConfig::default(),
         }
     }
 
@@ -234,6 +251,13 @@ impl AgentLoop {
     /// Set the interaction mode (ADR-0006). Physical Mind participation is
     /// decided at assembly time (Noop vs gRPC memory adapter); this is the
     /// semantic record carried through the loop.
+    /// Mount an external knowledge rail (ADR-XXXX). Read-only: the caller
+    /// passes the deterministic index; no write path exists.
+    pub fn with_rails(mut self, index: crate::rails::Index) -> Self {
+        self.rails = Some(index);
+        self
+    }
+
     pub fn with_mode(mut self, mode: Mode) -> Self {
         self.mode = mode;
         self
@@ -360,6 +384,41 @@ impl AgentLoop {
             }
             HelixState::MemoryRetrieval => {
                 info!("[MemoryRetrieval] Querying memory: {}", self.context.user_input);
+                // Rails branch (ADR-XXXX): external human asset, read-only,
+                // deterministic. When the query lands on a rail, verbatim
+                // nodes are injected and the citation contract (rail_mode)
+                // is set — Helix may only cite, never synthesize. Runs
+                // before the mind memory query; the two knowledge lines are
+                // disjoint (human asset vs Helix experience).
+                if let Some(index) = self.rails.as_ref() {
+                    let nav = crate::rails::navigate(
+                        index,
+                        &self.context.user_input,
+                        self.rails_config.max_hits,
+                    );
+                    if !nav.hits.is_empty() {
+                        let mut nodes: Vec<crate::rails::Node> = Vec::new();
+                        let mut bytes = 0usize;
+                        for id in &nav.hits {
+                            if let Some(node) = index.nodes.get(id) {
+                                if bytes + node.content.len() > self.rails_config.max_inject_bytes {
+                                    break;
+                                }
+                                bytes += node.content.len();
+                                nodes.push(node.clone());
+                            }
+                        }
+                        if !nodes.is_empty() {
+                            self.context.rail_nodes = nodes;
+                            self.context.rail_mode = true;
+                            info!(
+                                "[MemoryRetrieval] rails hit ({} nodes, {} bytes)",
+                                self.context.rail_nodes.len(),
+                                bytes
+                            );
+                        }
+                    }
+                }
                 match self.memory.query(&self.context.user_input, false).await {
                     Ok(result) => {
                         self.context.memory_nodes = result.nodes;

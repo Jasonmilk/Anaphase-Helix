@@ -19,6 +19,7 @@ prost-types = "0.12"     # <-- MISSING: required by proto Timestamp
 async-trait = "0.1"
 serde = { version = "1", features = ["derive"] }
 rmp-serde = "1.1"   # CI-144 MessagePack frames (ADR-0017)
+sha2 = "0.10"     # rails version-frozen manifest (ADR-XXXX)
 serde_json = "1"
 toml = "0.8"
 

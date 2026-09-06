@@ -4,7 +4,7 @@
 ![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)
 ![Build](https://img.shields.io/badge/Build-Passing-brightgreen.svg)
 ![Style](https://img.shields.io/badge/Code%20Style-Google-black.svg)
-[![Tests](https://img.shields.io/badge/tests-160%2F160%20passed-green)](#)
+[![Tests](https://img.shields.io/badge/tests-169%2F169%20passed-green)](#)
 
 **The silicon-based operating system & physical brain for digital lifeforms.
 Perceive, reason, act, remember, and immunize — the body that houses the soul.**
@@ -29,6 +29,13 @@ via the CommonIntents protocol stack with zero hard coupling.
 - 🔬 **M1 Deterministic Pipeline** — Replayable single-pass closed loop:
   LLM calls → tt_job → gRPC Tentacle → evidence → criteria → JSONL ledger
   (byte-identical replay, zero hardcoding, ADR-0003)
+- 🛤️ **Rails** (ADR-0018) — external human-authored knowledge rails
+  (statutes / SOPs): deterministic mddag index (SHA-256 version-frozen,
+  dangling-link builds fail) + deterministic navigation (CJK bigrams, no
+  embeddings) + citation contract (`verify_reference`: verbatim quote +
+  visited provenance) + graceful refusal (`NO_RAIL_CONTENT`) — Helix may
+  only select an existing rail edge, never synthesize one. Read-only at the
+  type level (`RailScope::Read`). Demo kb: `knowledge_base/rails/demo/`
 - 🚗 **CI-144 Transport Layer** (ADR-0017) — `--stdio` speaks the ecosystem's
   common dialect: CIB/1.0 handshake → MessagePack frames (LE u32 length prefix)
   → Manifest (first frame) → 1s snapshot push → ActionRequest/Response
@@ -79,7 +86,7 @@ via the CommonIntents protocol stack with zero hard coupling.
   BTreeMap over HashMap, no endpoint leakage
 - 🛠️ **Safety-First Execution** — Audited tool calls & immune system interception
 - 🚀 **Zero-Dependency Boot** — Runs fully offline without any external services
-- ✅ **Full Test Coverage** — 160/160 passing (lib + integration suites incl. security gate + Tuck gate + D'-4 live + cockpit snapshot + bootstrap env + CI-144 transport) +
+- ✅ **Full Test Coverage** — 169/169 passing (lib + integration suites + rails) incl. security gate + Tuck gate + D'-4 live + cockpit snapshot + bootstrap env + CI-144 transport) +
   3 live e2e + 1 CI-144 live probe (#[ignore], real Tentacle / real binary)
 
 ## Project Structure
@@ -155,7 +162,7 @@ You will see a full cycle:
 
 ## Testing
 
-Run the full suite (**160/160 passing**):
+Run the full suite (**169/169 passing**):
 ```bash
 cargo test
 ```
