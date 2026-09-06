@@ -39,6 +39,9 @@ const PROBE_INTERVAL: Duration = Duration::from_millis(250);
 const TENTACLE_GRPC_DEFAULT_PORT: u16 = 50051;
 /// Helix-Mind API default listen port (protocol default, `api.listen_addr`).
 const MIND_GRPC_DEFAULT_PORT: u16 = 50051;
+/// Cellrix web panel default port (cellrix-web documented protocol default,
+/// ADR-0014; env `WEB_PORT` overrides).
+const WEB_PORT_DEFAULT: u16 = 8080;
 
 /// A missing component with a concrete build hint (G-5 prereq guide).
 struct Missing {
@@ -216,38 +219,78 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 5b. Start Mind (fail-open: missing binary/config -> no subconscious,
     //      warn — Anaphase still runs; Mind is an enhancement, never a
     //      dependency for the conscious loop).
-    let mut mind: Option<Child> = None;
-    if mind_bin.exists() {
+    // Option<Child> keeps the handle alive until up exits (process-group
+    // cleanup on Ctrl+C); liveness is probed, the handle itself is not read.
+    let mind: Option<Child> = if mind_bin.exists() {
         if !mind_cfg.exists() {
             std::fs::create_dir_all(&mind_cfg_dir)?;
             write_minimal_mind_config(&mind_cfg, &mind_cfg_dir, mind_port, &workspace_root)?;
             println!("  [i] Mind 默认配置已生成: {}（自定义可用 Helix-Mind/config.toml）", mind_cfg.display());
         }
-        mind = Some(Command::new(&mind_bin)
+        let child = Command::new(&mind_bin)
             .arg("-c")
             .arg(&mind_cfg)
             .arg("run")
             .stdout(Stdio::null())
             .stderr(Stdio::null())
-            .spawn()?);
+            .spawn()?;
         wait_for_port(mind_port, "mind grpc")?;
         println!("  [ok] Mind 就绪: gRPC :{mind_port}（潜意识层已接入）");
+        Some(child)
     } else {
         println!("  [warn] Mind 未找到 → Anaphase 运行在无潜意识模式（fail-open）");
+        None
+    };
+    // Process-global injection so every child (Anaphase daemon, cockpit
+    // stdio agent, web panel) inherits the subconscious endpoint — one
+    // wiring, no per-command env copies.
+    if mind.is_some() {
+        std::env::set_var("ANAPHASE_MIND_ENDPOINT", format!("http://127.0.0.1:{mind_port}"));
     }
 
     // 6. Start Anaphase with the endpoints injected via env.
     let endpoint = format!("http://127.0.0.1:{grpc_port}");
-    let mut cmd = Command::new(&anaphase_bin);
-    cmd.env("ANAPHASE_TENTACLE_ENDPOINT", &endpoint);
-    if mind.is_some() {
-        cmd.env("ANAPHASE_MIND_ENDPOINT", format!("http://127.0.0.1:{mind_port}"));
+    // Process-global like the Mind endpoint: the cockpit stdio agent and
+    // every child inherit the Tentacle endpoint without per-command copies.
+    std::env::set_var("ANAPHASE_TENTACLE_ENDPOINT", &endpoint);
+    // Codex contract: absolute path so the pipeline assembles from any cwd
+    // (the cockpit spawns child processes; relative would break outside the
+    // repo dir). Default = repo layout; env override still honoured.
+    if std::env::var("HELIX_CODEX").map_or(true, |v| v.is_empty()) {
+        let codex = cwd.join("knowledge_base/fixture-codex.json");
+        if codex.exists() {
+            std::env::set_var("HELIX_CODEX", codex);
+        }
     }
-    let mut anaphase = cmd.stdout(Stdio::null()).stderr(Stdio::null()).spawn()?;
+    let mut anaphase = Command::new(&anaphase_bin)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()?;
 
     // 7. Probe the snapshot endpoint (physical fact: HTTP is listening).
     wait_for_port(snapshot_port, "anaphase snapshot")?;
     println!("  [ok] Anaphase 就绪: snapshot :{snapshot_port}（模式: {}）", mode_label(anaphase_cfg.run_cycle.mode));
+
+    // 7b. Web panel (cellrix-web, fail-open: missing binary or busy port ->
+    //      warn, the stack still runs — the web is a window, not a wall).
+    let web_port = std::env::var("WEB_PORT").ok().and_then(|v| v.parse().ok()).unwrap_or(WEB_PORT_DEFAULT);
+    let web_bin = workspace_root.join("Cellrix/target/debug/cellrix-web");
+    if web_bin.exists() {
+        match Command::new(&web_bin)
+            .args(["--anaphase-endpoint", &format!("http://127.0.0.1:{snapshot_port}"), "--port", &web_port.to_string()])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+        {
+            Ok(_) => match wait_for_port(web_port, "cellrix web") {
+                Ok(()) => println!("  [ok] WebUI 就绪: http://127.0.0.1:{web_port}（白盒面板）"),
+                Err(e) => println!("  [warn] WebUI 端口 :{web_port} 未就绪（{e}；栈照常运行）"),
+            },
+            Err(e) => println!("  [warn] WebUI 启动失败: {e}（栈照常运行）"),
+        }
+    } else {
+        println!("  [warn] cellrix-web 未找到 → WebUI 跳过（cd Cellrix && cargo build -p cellrix-web）");
+    }
 
     // 8. Interactive menu (G-6) when stdin is a terminal; otherwise hold.
     let tty = std::io::stdin().is_terminal();
@@ -255,10 +298,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         menu_loop(
             &mut tentacle,
             &mut anaphase,
+            &anaphase_bin,
             &cellrix_cli,
-            &mock_agent,
             grpc_port,
             snapshot_port,
+            web_port,
             mode_label(anaphase_cfg.run_cycle.mode),
         )?;
     } else {
@@ -280,15 +324,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 fn menu_loop(
     tentacle: &mut Option<Child>,
     anaphase: &mut Child,
+    anaphase_bin: &Path,
     cellrix_cli: &Path,
-    mock_agent: &Path,
     grpc_port: u16,
     snapshot_port: u16,
+    web_port: u16,
     mode: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     loop {
         println!("\n──────────────────────────────────────────────");
-        println!("  状态: Tentacle:{grpc_port}  Anaphase:{snapshot_port}  模式: {mode}");
+        println!("  状态: Tentacle:{grpc_port}  Anaphase:{snapshot_port}  模式: {mode}  WebUI: http://127.0.0.1:{web_port}");
         println!("──────────────────────────────────────────────");
         println!("  1. 打开驾驶舱   (Enter 同此)");
         println!("  2. 查看状态");
@@ -302,11 +347,16 @@ fn menu_loop(
         std::io::stdin().read_line(&mut line)?;
         match parse_choice(&line) {
             Some(Choice::Cockpit) => {
-                if cellrix_cli.exists() && mock_agent.exists() {
-                    println!("  [ok] 拉起驾驶舱（退出驾驶舱后回到本菜单）...");
+                if cellrix_cli.exists() {
+                    // The cockpit's stdio agent IS Anaphase (`--mode stdio`,
+                    // CI-144 frames): the driver talks to the real Helix —
+                    // same assembly as the daemon (Mind + Tentacle + rails).
+                    // mock-agent stays available for demos via cellrix-cli.
+                    println!("  [ok] 拉起驾驶舱（Anaphase 本体；退出后回到本菜单）...");
+                    let exec = format!("{} --mode stdio", anaphase_bin.display());
                     let status = Command::new(cellrix_cli)
                         .args(["run", "--mode", "stdio", "--exec"])
-                        .arg(mock_agent)
+                        .arg(&exec)
                         .args(["--anaphase-endpoint", &format!("http://127.0.0.1:{snapshot_port}")])
                         .status()?;
                     println!("  驾驶舱已退出（{}）", status);

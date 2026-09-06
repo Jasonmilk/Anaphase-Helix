@@ -16,9 +16,9 @@ cap_http_enabled = true
 cap_http_port = 50061
 
 # New: OpenAI-compatible LLM reasoning config
-reasoning_endpoint = "https://api.deepseek.com/v1"
-reasoning_model = "deepseek-v4-flash"
-reasoning_api_key = "sk-405691898c6f421182238b20a0c9f534"
+reasoning_endpoint = ""
+reasoning_model = ""
+reasoning_api_key = ""
 reasoning_max_tokens = 2048
 
 # run_cycle state-machine constants (candidate E, ADR-0005; ADR-0006 mode;

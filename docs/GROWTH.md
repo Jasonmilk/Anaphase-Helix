@@ -77,3 +77,25 @@ README（up 全栈 + Mind prereq）｜ PLAN（全栈）｜ ECOSYSTEM v1.54（Ana
 
 ### 状态
 🧬 已完成
+## 记录 28：驾驶舱真身——stdio 全栈装配 + WebUI 一键接入（2026-09-06）
+
+### 触发条件
+用户配好 LLM 后启动 up：驾驶舱主面板是 mock-agent（演示），Anaphase 只是右下角只读投影；WebUI 没起。用户预期驾驶舱能直接与 Helix 对话。
+
+### 变更性质
+- **main.rs**：装配提取为共享 `build_agent(config)`——daemon 与 CI-144 stdio 驾驶舱复用同一装配（Mind gRPC + LLM 链 + Tentacle pipeline + rails + judge + mode + events ring）。之前 stdio 模式是精简 Noop（memory=Noop、无 pipeline）——驾驶舱对话没有潜意识也没有手，现在与 daemon 完全同体（极致复用，一个装配两个门面）
+- **up.rs**：
+  - cockpit 主 agent 换成 **Anaphase 本体**（`--exec "anaphase --mode stdio"`，CI-144 帧流，可发消息跑 run_cycle）；mock-agent 回归 demo 用途
+  - **WebUI 一键接入**：cellrix-web 后台启动（:8080，WEB_PORT 可覆盖），菜单状态行显示 URL；失败 fail-open（web 是窗不是墙）
+  - 端点注入改**进程级 set_var**（ANAPHASE_MIND_ENDPOINT / ANAPHASE_TENTACLE_ENDPOINT / HELIX_CODEX 绝对路径）——daemon、驾驶舱子进程、web 一律继承，不再逐命令复制
+- **main.rs**：codex 路径支持 `HELIX_CODEX` env 覆盖（12-factor；默认相对路径保持 repo cwd 行为）——修复从任意 cwd 启动时 pipeline 装配失败
+- **验证**：stdio 握手真实通过（MessagePack 帧 + Manifest 收达，agent_name=anaphase-helix，action=status）；带 HELIX_CODEX 后 codex warning 消失（pipeline 装配成立）；四端口冒烟（50051/50052/50061/8080）全开；测试 206 全绿
+
+### 兼容性
+零破坏：mock-agent 仍可手动用 cellrix-cli 拉起；env 覆盖向后兼容；stdio 装配升级是纯增益（原 Noop 无任何外部依赖可依赖）。
+
+### 验收
+README（驾驶舱=Anaphase 本体 + WebUI + env 注入）｜ PLAN（共享装配）｜ ECOSYSTEM v1.55
+
+### 状态
+🧬 已完成

@@ -36,150 +36,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
     let config = config::load_config()?;
 
-    // 记忆适配器：DNA 铁律 6 fail-open 降级（空→Noop；连接失败→warn+Noop；成功→GrpcMindAdapter）
-    let memory: Arc<dyn MemoryAdapter> = resolve_memory_adapter(&config.anaphase).await;
-
-    // Priority 1: Use HTTP LLM reasoning adapter first
-    let reason: Arc<dyn ReasoningAdapter> = if let Some(endpoint) = &config.anaphase.reasoning_endpoint {
-        if endpoint.is_empty() {
-            Arc::new(NoopReasoningAdapter)
-        } else {
-            // Simplified type name
-            Arc::new(HttpReasoningAdapter::new(&config.anaphase))
-        }
-    }
-    // Priority 2: Fallback to original FlowModus
-    else if let Some(endpoint) = &config.anaphase.flowmodus_endpoint {
-        if endpoint.is_empty() {
-            Arc::new(NoopReasoningAdapter)
-        } else if endpoint.starts_with("grpc://") {
-            match GrpcFlowModusAdapter::new(&endpoint[7..]).await {
-                Ok(adapter) => Arc::new(adapter),
-                Err(e) => {
-                    eprintln!("Warning: Failed to connect to FlowModus at {}: {}. Falling back to Noop reasoning.", endpoint, e);
-                    Arc::new(NoopReasoningAdapter)
-                }
-            }
-        } else {
-            Arc::new(FlowModusAdapter::new(endpoint))
-        }
-    } else {
-        Arc::new(NoopReasoningAdapter)
-    };
-
-    let tool: Arc<dyn ToolAdapter> = Arc::new(NoopToolAdapter);
-    let safety: Arc<dyn SafetyAdapter> = Arc::new(NoopSafetyAdapter);
-    let ui: Arc<dyn UiAdapter> = Arc::new(NoopUiAdapter);
-    let fear: Arc<dyn FearAdapter> = Arc::new(NoopFearAdapter);
-
-    let reflex = ReflexArc {
-        safety_rules: vec!["rm -rf /".to_string(), "shutdown".to_string()],
-    };
-
-    let mut agent = AgentLoop::new(memory, reason, tool, safety, ui, fear, reflex);
-    // O-1 (ADR-0016 D3): one physical probe at task start — "look at the
-    // pocket before leaving the house". Fail-open: dark components degrade,
-    // never block.
-    agent.context.ecosystem = anaphase::gloves::probe_ecosystem(&config.anaphase).await;
-    // candidate E (ADR-0005): run_cycle constants come from the config source
-    // (DNA principle 11 / ADR-0002), overridable via config.toml.
-    agent.run_config = config.anaphase.run_cycle.clone();
-    // O-5 (ADR-0023): cognitive-injection budget from config (protocol
-    // default 800 lives in config.rs, not here).
-    agent.memory_inject_chars = config.anaphase.memory_inject_chars;
-    // O-6 (ADR-0024): judge-point backend — explicit selection, rules by
-    // default; small_llm needs endpoint+model, else degrades to rules
-    // (fail-safe, surfaced as a startup warning).
-    let (judge, judge_warn) = anaphase::judge::resolve_judge(
-        config.anaphase.judge_backend,
-        config.anaphase.judge_endpoint.as_deref(),
-        config.anaphase.judge_model.as_deref(),
-        config.anaphase.mind.skilled_len,
-        config.anaphase.mind.anchor_len,
-    );
-    if let Some(w) = judge_warn {
-        eprintln!("[Judge] warning: {}", w);
-    }
-    agent.judge = judge;
-    // ADR-0006: the interaction mode is the semantic record carried through
-    // the loop; physical Mind participation is decided by resolve_memory_adapter
-    // (Noop vs gRPC) — Drive auto-achieves "no experience written" through
-    // the Noop adapter without any runtime branch.
-    agent.mode = config.anaphase.run_cycle.mode;
-
-    // ADR-0007 D'-3: wire the deterministic execution channel at startup.
-    // `tentacle_endpoint` configured -> the six-stage pipeline replaces the
-    // legacy echo fallback; empty/failed -> fail-open (None, legacy path).
-    let pipeline_config =
-        anaphase::pipeline::PipelineConfig::from_codex("knowledge_base/fixture-codex.json")
-            .map_err(|e| eprintln!("Warning: failed to load fixture-codex: {e}")) // warn + continue
-            .ok();
-    // O-2/O-3 (ADR-0019/0020/0021): the event ring is mode-agnostic — it is
-    // created once (cap from the codex contract, DNA principle 11: no literal
-    // fallback — a missing contract means no ring, fail-closed, never a
-    // cap=0 ring that silently drops the black box) and shared by the agent
-    // (cycle-level black box, stage 0) and the pipeline (stage 1..=6) when
-    // wired. Drive mode without a pipeline still records its black box.
-    let shared_events: Option<std::sync::Arc<std::sync::Mutex<anaphase::events::EventRing>>> =
-        pipeline_config.as_ref().map(|p| {
-            std::sync::Arc::new(std::sync::Mutex::new(anaphase::events::EventRing::new(
-                p.events_cap,
-            )))
-        });
-    if let Some(pcfg) = pipeline_config {
-        if let Some(mut pipeline) =
-            anaphase::pipeline::resolve_pipeline(config.anaphase.tentacle_endpoint.clone(), pcfg)
-                .await
-        {
-            // ADR-0021: the pipeline shares the mode-agnostic ring (one
-            // stream, one ?after cursor). Its own ring is replaced by the
-            // shared one BEFORE the restore, so history lands in the single
-            // ring. Restore is fail-open: missing/corrupt log -> fresh trail.
-            let events_path = config
-                .anaphase
-                .events_log_path
-                .clone()
-                .unwrap_or_else(|| "events.jsonl".to_string());
-            let cap = shared_events.as_ref().unwrap().lock().unwrap().cap();
-            match std::fs::read_to_string(&events_path) {
-                Ok(content) => match anaphase::events::EventRing::from_jsonl(&content, cap) {
-                    Ok(restored) => {
-                        let n = restored.events().len();
-                        *pipeline.events.lock().unwrap() = restored;
-                        eprintln!("Events trail restored from {} ({} events)", events_path, n);
-                    }
-                    Err(e) => eprintln!("Warning: event trail unreadable ({events_path}): {e} (fresh trail)"),
-                },
-                Err(_) => eprintln!("Events trail: no existing log at {} (fresh trail)", events_path),
-            }
-            pipeline.events = shared_events.clone().unwrap();
-            agent = agent.with_pipeline(pipeline);
-            eprintln!("Pipeline wired to Tentacle endpoint (deterministic execution channel active)");
-        }
-    }
-    // ADR-0021: inject the shared ring regardless of pipeline assembly —
-    // every cycle records begin/state/end (+ tool) events, Drive included.
-    // No contract (codex missing) -> no ring (fail-closed), warned above.
-    if let Some(ring) = shared_events.clone() {
-        agent = agent.with_events(ring);
-    }
-
-    // Rails (ADR-0018): mount the external human knowledge rail — read-only
-    // citation asset. Missing/invalid kb dir degrades to None (fail-open,
-    // loop unaffected); a dangling link is an authoring error surfaced here.
-    agent.rails_config = config.anaphase.rails.clone();
-    if config.anaphase.rails.enabled {
-        let rails_root = std::path::Path::new(&config.anaphase.rails.kb_dir);
-        if rails_root.exists() {
-            match anaphase::rails::build_index(rails_root) {
-                Ok(index) => {
-                    agent = agent.with_rails(index);
-                    eprintln!("Rails mounted: {}", rails_root.display());
-                }
-                Err(e) => eprintln!("Warning: rail index failed: {e} (loop continues unmounted)"),
-            }
-        }
-    }
+    let built = build_agent(&config).await;
+    let mut agent = built.agent;
+    let shared_events = built.events;
 
     // Candidate G-T2: shared snapshot projection (None = HTTP disabled).
     // The endpoint serves it; the loop refreshes it after each cycle.
@@ -325,31 +184,180 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-async fn run_stdio_mode() -> Result<(), Box<dyn std::error::Error>> {
-    // Load config and initialize agent components for real reasoning.
-    let config = config::load_config()?;
+/// Shared full assembly for both entry points (daemon + CI-144 stdio
+/// cockpit). One assembly, two faces: memory (Mind gRPC, fail-open),
+/// reasoning (LLM chain, fail-open Noop), deterministic pipeline wired to
+/// Tentacle, shared event ring, rails, judge, mode. Extreme reuse: the
+/// cockpit gets exactly the same Helix as the daemon — same subconscious,
+/// same hand, same black box.
+struct BuiltAgent {
+    agent: AgentLoop,
+    events: Option<std::sync::Arc<std::sync::Mutex<anaphase::events::EventRing>>>,
+}
 
-    let reason: Arc<dyn ReasoningAdapter> = if let Some(endpoint) = &config.anaphase.reasoning_endpoint {
-        if endpoint.is_empty() {
-            Arc::new(NoopReasoningAdapter)
-        } else {
-            Arc::new(HttpReasoningAdapter::new(&config.anaphase))
+async fn build_agent(config: &config::Config) -> BuiltAgent {
+        // 记忆适配器：DNA 铁律 6 fail-open 降级（空→Noop；连接失败→warn+Noop；成功→GrpcMindAdapter）
+        let memory: Arc<dyn MemoryAdapter> = resolve_memory_adapter(&config.anaphase).await;
+
+        // Priority 1: Use HTTP LLM reasoning adapter first
+        let reason: Arc<dyn ReasoningAdapter> = if let Some(endpoint) = &config.anaphase.reasoning_endpoint {
+            if endpoint.is_empty() {
+                Arc::new(NoopReasoningAdapter)
+            } else {
+                // Simplified type name
+                Arc::new(HttpReasoningAdapter::new(&config.anaphase))
+            }
         }
-    } else {
-        Arc::new(NoopReasoningAdapter)
-    };
+        // Priority 2: Fallback to original FlowModus
+        else if let Some(endpoint) = &config.anaphase.flowmodus_endpoint {
+            if endpoint.is_empty() {
+                Arc::new(NoopReasoningAdapter)
+            } else if endpoint.starts_with("grpc://") {
+                match GrpcFlowModusAdapter::new(&endpoint[7..]).await {
+                    Ok(adapter) => Arc::new(adapter),
+                    Err(e) => {
+                        eprintln!("Warning: Failed to connect to FlowModus at {}: {}. Falling back to Noop reasoning.", endpoint, e);
+                        Arc::new(NoopReasoningAdapter)
+                    }
+                }
+            } else {
+                Arc::new(FlowModusAdapter::new(endpoint))
+            }
+        } else {
+            Arc::new(NoopReasoningAdapter)
+        };
 
-    let memory: Arc<dyn MemoryAdapter> = Arc::new(NoopMemoryAdapter);
-    let tool: Arc<dyn ToolAdapter> = Arc::new(NoopToolAdapter);
-    let safety: Arc<dyn SafetyAdapter> = Arc::new(NoopSafetyAdapter);
-    let ui: Arc<dyn UiAdapter> = Arc::new(NoopUiAdapter);
-    let fear: Arc<dyn FearAdapter> = Arc::new(NoopFearAdapter);
-    let reflex = ReflexArc { safety_rules: vec![] };
-    let agent = std::sync::Arc::new(tokio::sync::Mutex::new(AgentLoop::new(
-        memory, reason, tool, safety, ui, fear, reflex,
-    )));
+        let tool: Arc<dyn ToolAdapter> = Arc::new(NoopToolAdapter);
+        let safety: Arc<dyn SafetyAdapter> = Arc::new(NoopSafetyAdapter);
+        let ui: Arc<dyn UiAdapter> = Arc::new(NoopUiAdapter);
+        let fear: Arc<dyn FearAdapter> = Arc::new(NoopFearAdapter);
 
-    eprintln!("Anaphase CI-144 transport mode active (ADR-0017)");
+        let reflex = ReflexArc {
+            safety_rules: vec!["rm -rf /".to_string(), "shutdown".to_string()],
+        };
+
+        let mut agent = AgentLoop::new(memory, reason, tool, safety, ui, fear, reflex);
+        // O-1 (ADR-0016 D3): one physical probe at task start — "look at the
+        // pocket before leaving the house". Fail-open: dark components degrade,
+        // never block.
+        agent.context.ecosystem = anaphase::gloves::probe_ecosystem(&config.anaphase).await;
+        // candidate E (ADR-0005): run_cycle constants come from the config source
+        // (DNA principle 11 / ADR-0002), overridable via config.toml.
+        agent.run_config = config.anaphase.run_cycle.clone();
+        // O-5 (ADR-0023): cognitive-injection budget from config (protocol
+        // default 800 lives in config.rs, not here).
+        agent.memory_inject_chars = config.anaphase.memory_inject_chars;
+        // O-6 (ADR-0024): judge-point backend — explicit selection, rules by
+        // default; small_llm needs endpoint+model, else degrades to rules
+        // (fail-safe, surfaced as a startup warning).
+        let (judge, judge_warn) = anaphase::judge::resolve_judge(
+            config.anaphase.judge_backend,
+            config.anaphase.judge_endpoint.as_deref(),
+            config.anaphase.judge_model.as_deref(),
+            config.anaphase.mind.skilled_len,
+            config.anaphase.mind.anchor_len,
+        );
+        if let Some(w) = judge_warn {
+            eprintln!("[Judge] warning: {}", w);
+        }
+        agent.judge = judge;
+        // ADR-0006: the interaction mode is the semantic record carried through
+        // the loop; physical Mind participation is decided by resolve_memory_adapter
+        // (Noop vs gRPC) — Drive auto-achieves "no experience written" through
+        // the Noop adapter without any runtime branch.
+        agent.mode = config.anaphase.run_cycle.mode;
+
+        // ADR-0007 D'-3: wire the deterministic execution channel at startup.
+        // `tentacle_endpoint` configured -> the six-stage pipeline replaces the
+        // legacy echo fallback; empty/failed -> fail-open (None, legacy path).
+        // Codex path: env override (12-factor) > repo-relative default
+        // (cwd = anaphase-helix). Zero-hardcoding: the default literal is
+        // the documented repo layout, overridable for any working dir.
+        let codex_path = std::env::var("HELIX_CODEX")
+            .unwrap_or_else(|_| "knowledge_base/fixture-codex.json".to_string());
+        let pipeline_config =
+            anaphase::pipeline::PipelineConfig::from_codex(&codex_path)
+                .map_err(|e| eprintln!("Warning: failed to load fixture-codex: {e}")) // warn + continue
+                .ok();
+        // O-2/O-3 (ADR-0019/0020/0021): the event ring is mode-agnostic — it is
+        // created once (cap from the codex contract, DNA principle 11: no literal
+        // fallback — a missing contract means no ring, fail-closed, never a
+        // cap=0 ring that silently drops the black box) and shared by the agent
+        // (cycle-level black box, stage 0) and the pipeline (stage 1..=6) when
+        // wired. Drive mode without a pipeline still records its black box.
+        let shared_events: Option<std::sync::Arc<std::sync::Mutex<anaphase::events::EventRing>>> =
+            pipeline_config.as_ref().map(|p| {
+                std::sync::Arc::new(std::sync::Mutex::new(anaphase::events::EventRing::new(
+                    p.events_cap,
+                )))
+            });
+        if let Some(pcfg) = pipeline_config {
+            if let Some(mut pipeline) =
+                anaphase::pipeline::resolve_pipeline(config.anaphase.tentacle_endpoint.clone(), pcfg)
+                    .await
+            {
+                // ADR-0021: the pipeline shares the mode-agnostic ring (one
+                // stream, one ?after cursor). Its own ring is replaced by the
+                // shared one BEFORE the restore, so history lands in the single
+                // ring. Restore is fail-open: missing/corrupt log -> fresh trail.
+                let events_path = config
+                    .anaphase
+                    .events_log_path
+                    .clone()
+                    .unwrap_or_else(|| "events.jsonl".to_string());
+                let cap = shared_events.as_ref().unwrap().lock().unwrap().cap();
+                match std::fs::read_to_string(&events_path) {
+                    Ok(content) => match anaphase::events::EventRing::from_jsonl(&content, cap) {
+                        Ok(restored) => {
+                            let n = restored.events().len();
+                            *pipeline.events.lock().unwrap() = restored;
+                            eprintln!("Events trail restored from {} ({} events)", events_path, n);
+                        }
+                        Err(e) => eprintln!("Warning: event trail unreadable ({events_path}): {e} (fresh trail)"),
+                    },
+                    Err(_) => eprintln!("Events trail: no existing log at {} (fresh trail)", events_path),
+                }
+                pipeline.events = shared_events.clone().unwrap();
+                agent = agent.with_pipeline(pipeline);
+                eprintln!("Pipeline wired to Tentacle endpoint (deterministic execution channel active)");
+            }
+        }
+        // ADR-0021: inject the shared ring regardless of pipeline assembly —
+        // every cycle records begin/state/end (+ tool) events, Drive included.
+        // No contract (codex missing) -> no ring (fail-closed), warned above.
+        if let Some(ring) = shared_events.clone() {
+            agent = agent.with_events(ring);
+        }
+
+        // Rails (ADR-0018): mount the external human knowledge rail — read-only
+        // citation asset. Missing/invalid kb dir degrades to None (fail-open,
+        // loop unaffected); a dangling link is an authoring error surfaced here.
+        agent.rails_config = config.anaphase.rails.clone();
+        if config.anaphase.rails.enabled {
+            let rails_root = std::path::Path::new(&config.anaphase.rails.kb_dir);
+            if rails_root.exists() {
+                match anaphase::rails::build_index(rails_root) {
+                    Ok(index) => {
+                        agent = agent.with_rails(index);
+                        eprintln!("Rails mounted: {}", rails_root.display());
+                    }
+                    Err(e) => eprintln!("Warning: rail index failed: {e} (loop continues unmounted)"),
+                }
+            }
+        }
+    BuiltAgent { agent, events: shared_events }
+}
+
+
+async fn run_stdio_mode() -> Result<(), Box<dyn std::error::Error>> {
+    // Shared full assembly (same as the daemon): Mind gRPC memory (fail-open),
+    // LLM reasoning, Tentacle pipeline, rails, judge, mode — the cockpit
+    // talks to the exact same Helix as the HTTP daemon.
+    let config = config::load_config()?;
+    let built = build_agent(&config).await;
+    let agent = std::sync::Arc::new(tokio::sync::Mutex::new(built.agent));
+
+    eprintln!("Anaphase CI-144 transport mode active (ADR-0017): full stack assembled (mind+tentacle+pipeline+rails)");
 
     // Snapshot provider: project the live agent state on each push tick.
     let snap_agent = std::sync::Arc::clone(&agent);
