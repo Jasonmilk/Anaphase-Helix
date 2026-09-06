@@ -173,6 +173,17 @@ live 实测（`cargo test --test ci144_live -- --ignored`）真实二进制全�
 ADR-XXXX 占位全部替换为 ADR-0018。
 **状态**：✅ 完成（169 tests 全绿 = 160 基线 + 9 新增；commit 见 git log）
 
+## 记录 19：ADR-0021 模式无关事件环——驾驶模式黑匣子（2026-09-06）
+
+- **健康快照**：181 passed / 0 failed（180 + 1 drive black box 测试）
+- **新能力**：事件环从 pipeline 提升 AgentLoop 级——无 tentacle 装配（驾驶/Noop）
+  每次 run_cycle 也记录 cycle 轨迹（stage=0：begin/state/tool/end，trace=derive_job_id）；
+  pipeline 装配复用同一环（stage 1..=6 同流同游标）；flush/恢复挂载点改 agent.events
+- **哲学落地**：白盒四层模式无关（驾驶=黑匣子，伙伴=黑匣子+六 stage）；
+  ts 分权（cycle=墙钟审计真值，stage/ledger=FakeClock 回放契约）
+- **物理验证**：无 tentacle 真实二进制 → events.jsonl 7 条 stage=0 事件（确定性 trace）
+- **零新增**：无新 crate / 无新端点 / 一个字段 + 一个 builder + 五处 emit
+
 ## 记录 18：O-3 事件轨迹持久化——跨重启可回放（2026-09-06，ADR-0020）
 
 - **健康快照**：180 passed / 0 failed（176 + 4 from_jsonl 单元）

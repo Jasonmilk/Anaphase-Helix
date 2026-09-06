@@ -130,6 +130,12 @@ pub struct AgentLoop {
     /// is decided at assembly time (Noop vs gRPC memory adapter); this field
     /// is the semantic record and the config source (no hardcoding).
     pub mode: Mode,
+    /// Mode-agnostic event ring (ADR-0021): every cycle emits begin/state/end
+    /// events regardless of assembly — a Drive-mode black box even when no
+    /// pipeline is wired. The pipeline (when present) shares this same ring
+    /// and adds stage 1..=6 events; stage 0 is reserved for cycle-level
+    /// events. None = ring not injected (legacy behavior, tests untouched).
+    pub events: Option<std::sync::Arc<std::sync::Mutex<crate::events::EventRing>>>,
     /// Active experience boundary (ADR-0006). None = no episode in progress
     /// (legacy turn-by-turn behavior, fully backwards compatible).
     pub episode: Option<Episode>,
@@ -221,6 +227,7 @@ impl AgentLoop {
             pipeline: None,
             mode: Mode::Partner,
             episode: None,
+            events: None,
             rails: None,
             rails_config: crate::config::RailsConfig::default(),
         }
@@ -260,6 +267,14 @@ impl AgentLoop {
 
     pub fn with_mode(mut self, mode: Mode) -> Self {
         self.mode = mode;
+        self
+    }
+
+    /// Inject the shared event ring (ADR-0021): the same ring the pipeline
+    /// uses (when wired), so the `?after=` cursor spans cycle + stage events
+    /// in one stream. Without a pipeline this is still the Drive-mode black box.
+    pub fn with_events(mut self, ring: std::sync::Arc<std::sync::Mutex<crate::events::EventRing>>) -> Self {
+        self.events = Some(ring);
         self
     }
 
@@ -323,8 +338,34 @@ impl AgentLoop {
     }
 
     /// Run one full cognitive cycle
+    /// Cycle-level event (ADR-0021): stage 0 = cycle level, one trace per
+    /// period (job_id-derived, deterministic). ts is the wall clock (audit
+    /// truth for the black box); the ledger/stage replay contract stays with
+    /// the injected FakeClock — two different determinism needs, two sources.
+    fn emit_cycle(&self, phase: &str, detail: &str) {
+        if let Some(ring) = self.events.as_ref() {
+            let mut guard = ring.lock().unwrap();
+            guard.emit(
+                &chrono::Utc::now().to_rfc3339(),
+                &crate::contract::derive_job_id(&self.context.user_input),
+                0,
+                phase,
+                detail,
+            );
+        }
+    }
+
     pub async fn run_cycle(&mut self, user_input: &str) -> Result<CycleOutcome, String> {
         self.context.user_input = user_input.to_string();
+        // Black box (ADR-0021): a cycle begins regardless of assembly.
+        self.emit_cycle(
+            "begin",
+            &format!(
+                "{{\"input\":{},\"mode\":\"{:?}\"}}",
+                serde_json::to_string(user_input).unwrap_or_default(),
+                self.mode
+            ),
+        );
         // Advance the experience turn index (ADR-0006): each completed period
         // is one turn within the active episode.
         if let Some(ep) = self.episode.as_mut() {
@@ -342,6 +383,13 @@ impl AgentLoop {
 
             if let Some(next_state) = self.transitions.get(&(self.current_state.clone(), condition.clone())) {
                 info!("State transition: {:?} --{:?}--> {:?}", self.current_state, condition, next_state);
+                self.emit_cycle(
+                    "state",
+                    &format!(
+                        "{{\"from\":\"{:?}\",\"condition\":\"{:?}\",\"to\":\"{:?}\"}}",
+                        self.current_state, condition, next_state
+                    ),
+                );
                 self.current_state = next_state.clone();
             } else {
                 warn!("No transition rule found: ({:?}, {:?}), returning to Perception", self.current_state, condition);
@@ -353,6 +401,13 @@ impl AgentLoop {
                 outcome.done = true;
                 outcome.success = condition == TransitionCondition::Success;
                 outcome.impasse = condition == TransitionCondition::Impass;
+                self.emit_cycle(
+                    "end",
+                    &format!(
+                        "{{\"done\":{},\"success\":{},\"impasse\":{}}}",
+                        outcome.done, outcome.success, outcome.impasse
+                    ),
+                );
                 break;
             }
         }
@@ -597,10 +652,26 @@ impl AgentLoop {
                                 match self.tool.execute(command, &[action_str.clone()]).await {
                                     Ok(result) => {
                                         info!("[Execution] Execution result: {}", result);
+                                        self.emit_cycle(
+                                            "tool",
+                                            &format!(
+                                                "{{\"tool\":{},\"ok\":true,\"result\":{}}}",
+                                                serde_json::to_string(command).unwrap_or_default(),
+                                                serde_json::to_string(&result).unwrap_or_default()
+                                            ),
+                                        );
                                         Ok(TransitionCondition::Success)
                                     }
                                     Err(e) => {
                                         warn!("[Execution] Execution failed: {}", e);
+                                        self.emit_cycle(
+                                            "tool",
+                                            &format!(
+                                                "{{\"tool\":{},\"ok\":false,\"error\":{}}}",
+                                                serde_json::to_string(command).unwrap_or_default(),
+                                                serde_json::to_string(&e).unwrap_or_default()
+                                            ),
+                                        );
                                         Ok(TransitionCondition::Failure)
                                     }
                                 }
@@ -797,6 +868,31 @@ mod tests {
         assert_eq!(snap.mode, Mode::Drive);
         assert!(snap.episode.is_none());
         assert!(snap.ledger.is_empty());
+    }
+
+    #[tokio::test]
+    async fn drive_mode_black_box_records_cycle_events_without_pipeline() {
+        // ADR-0021: the ring is mode-agnostic — a Drive-mode agent with NO
+        // pipeline (legacy echo assembly) still records its black box.
+        let ring = std::sync::Arc::new(std::sync::Mutex::new(crate::events::EventRing::new(64)));
+        let mut agent = base().with_mode(Mode::Drive).with_events(ring.clone());
+        let out = agent.run_cycle("!tool numbers --n 3").await.unwrap();
+        assert!(out.done);
+
+        let guard = ring.lock().unwrap();
+        let evs = guard.events();
+        assert!(evs.len() >= 3, "begin + state(s) + end recorded");
+        assert_eq!(evs[0].phase, "begin", "first event opens the cycle");
+        assert_eq!(evs[0].stage, 0, "cycle-level events are stage 0");
+        assert_eq!(evs[evs.len() - 1].phase, "end", "last event closes the cycle");
+        assert!(
+            evs.iter().all(|e| &e.trace_id == &evs[0].trace_id),
+            "one deterministic trace per cycle"
+        );
+        assert!(
+            evs.iter().any(|e| e.phase == "state"),
+            "state transitions are recorded"
+        );
     }
 
     #[tokio::test]

@@ -31,7 +31,7 @@ Cellrix）。事件流：Manifest 首帧 → 1s 节律 Snapshot 推流 → Actio
 |---|---|---|---|
 | O-1 | 想 stage 接 Mind 契约：感知（口袋/资源/生态点亮）→ 设置 budget_tier（ADR-0010）→ 触发 helixQuery → 消费 effective_mode/suggested_actions 编排执行 | ✅ 已完成：结构化输入零 LLM（`!tool` 分诊）+ 生态点亮探测 + 感知点（ecc1924，152 tests 全绿） | ADR-0016 D1/D2.5/D3 |
 | O-2 | stage 事件总线：六 stage 边界发确定性事件（stage_begin/stage_end/verdict） | ✅ 已完成（ADR-0019：事件环 + ?after=seq 增量拉取 + /v1/agent/events 端点；176 tests 全绿，9c0e60c 起） | ADR-0016 D5 |
-| O-3 | stage 事件轨迹持久化：跨重启可回放的过程白盒（`EventRing::from_jsonl` + 实时逐轮追加） | ✅ 已完成（ADR-0020：默认 events.jsonl，seq 接续 + 坏行失败关闭 + cap 强制；180 tests 全绿） | O-2 |
+| O-3 | stage 事件轨迹持久化：跨重启可回放的过程白盒（`EventRing::from_jsonl` + 实时逐轮追加）+ 模式无关黑匣子（ADR-0021：事件环提升 AgentLoop 级，驾驶模式无 pipeline 也记录 cycle 轨迹） | ✅ 已完成（ADR-0020/0021：默认 events.jsonl，seq 接续 + 坏行失败关闭 + cap 强制；181 tests 全绿） | O-2 |
 | O-4 | 认知工艺触发接线验证（伙伴模式）：想 stage 触发 Mind → Mind 走四拍/五工序 → Anaphase 按建议编排 | 触发链路真实连通；驾驶模式不触发；Anaphase 零工序实现（回归 ADR-0021 边界） | O-1/O-2 |
 | O-5 | 按需加载落点：请求只带本轮所需（窗口 L0 按轮取 + 磁石点开才读，原 O-3 定义） | Memory-Efficient 模式（25 轮上下文近零增长） | 候选 G 快照 |
 | ⏳ | 并行调度 + 上下文窗口感知 | 等待 FlowModus | FlowModus 未完成 |

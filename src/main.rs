@@ -87,21 +87,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         anaphase::pipeline::PipelineConfig::from_codex("knowledge_base/fixture-codex.json")
             .map_err(|e| eprintln!("Warning: failed to load fixture-codex: {e}")) // warn + continue
             .ok();
-    // O-2 (ADR-0019): shared stage-event ring projection for the HTTP
-    // endpoint (incremental pull via `?after=seq`). None = no pipeline wired.
-    let mut shared_events: Option<std::sync::Arc<std::sync::Mutex<anaphase::events::EventRing>>> =
-        None;
+    // O-2/O-3 (ADR-0019/0020/0021): the event ring is mode-agnostic — it is
+    // created once (cap from the codex contract) and shared by the agent
+    // (cycle-level black box, stage 0) and the pipeline (stage 1..=6) when
+    // wired. Drive mode without a pipeline still records its black box.
+    let events_cap = pipeline_config
+        .as_ref()
+        .map(|p| p.events_cap)
+        .unwrap_or(0);
+    let shared_events: Option<std::sync::Arc<std::sync::Mutex<anaphase::events::EventRing>>> =
+        Some(std::sync::Arc::new(std::sync::Mutex::new(anaphase::events::EventRing::new(
+            events_cap,
+        ))));
     if let Some(pcfg) = pipeline_config {
-        // Extract before resolve_pipeline consumes pcfg (O-3 restore needs cap).
-        let events_cap = pcfg.events_cap;
-        if let Some(pipeline) =
+        if let Some(mut pipeline) =
             anaphase::pipeline::resolve_pipeline(config.anaphase.tentacle_endpoint.clone(), pcfg)
                 .await
         {
-            // O-3: restore the cross-restart event trail BEFORE the pipeline
-            // moves into the agent (same pattern as session_notes — default
-            // "events.jsonl"). Fail-open: a missing or corrupted log starts
-            // a fresh trail, never a crash.
+            // ADR-0021: the pipeline shares the mode-agnostic ring (one
+            // stream, one ?after cursor). Its own ring is replaced by the
+            // shared one BEFORE the restore, so history lands in the single
+            // ring. Restore is fail-open: missing/corrupt log -> fresh trail.
             let events_path = config
                 .anaphase
                 .events_log_path
@@ -121,11 +127,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 },
                 Err(_) => eprintln!("Events trail: no existing log at {} (fresh trail)", events_path),
             }
-            shared_events = Some(pipeline.events.clone());
+            pipeline.events = shared_events.clone().unwrap();
             agent = agent.with_pipeline(pipeline);
             eprintln!("Pipeline wired to Tentacle endpoint (deterministic execution channel active)");
         }
     }
+    // ADR-0021: inject the shared ring regardless of pipeline assembly —
+    // every cycle records begin/state/end (+ tool) events, Drive included.
+    agent = agent.with_events(shared_events.clone().unwrap());
 
     // Rails (ADR-0018): mount the external human knowledge rail — read-only
     // citation asset. Missing/invalid kb dir degrades to None (fail-open,
@@ -238,11 +247,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut flushed_seq = 0u64;
     for _ in 0..agent.run_config.cycle_cap {
         let out = agent.run_cycle(user_input).await?;
-        if let Some(pipeline) = agent.pipeline.as_ref() {
-            let ring = pipeline.events.lock().unwrap();
-            let fresh: Vec<anaphase::events::StageEvent> = ring.after(flushed_seq);
+        if let Some(ring) = agent.events.as_ref() {
+            let guard = ring.lock().unwrap();
+            let fresh: Vec<anaphase::events::StageEvent> = guard.after(flushed_seq);
             if !fresh.is_empty() {
-                flushed_seq = ring.last_seq();
+                flushed_seq = guard.last_seq();
                 let mut buf = String::new();
                 for e in &fresh {
                     buf.push_str(&serde_json::to_string(e).unwrap_or_default());
