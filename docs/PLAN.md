@@ -4,6 +4,12 @@
 
 ## 当前阶段：O-1 落地（结构化分诊 + 生态点亮感知）——下一步 O-2 stage 事件总线
 
+**CI-144 传输层（ADR-0017，2026-09-06 完成）**：`--stdio` 从 JSON-lines 临时协议切换为
+CIB/1.0 MessagePack + 握手 + LE u32 帧（vendored 类型在 `src/ci144/`，serde 逐字段对齐
+Cellrix）。事件流：Manifest 首帧 → 1s 节律 Snapshot 推流 → ActionRequest 响应
+（`status`/`send_message` 注入回调，协议层业务无关）。160 tests 全绿（+6）+ live 实测
+（真实二进制全链路）。驾驶舱闭环咽喉打通——Cellrix TUI 对真实 Anaphase 可闭环。
+
 **编排哲学（ADR-0016，2026-09-06，修订版）**：确定性优先分诊（0 tokens > 少/小 LLM > 多/大 LLM）+ 认知工艺触发点（四拍/五工序归 Mind，Anaphase 只触发）+ 按需感知 = 设置 budget_tier（ADR-0010）+ 三层递进边界（执行层分诊→System 0 门控→五工序）+ 依赖边界（并行/窗口感知→FlowModus；前缀稳定→Callosum）+ 轨迹三层。详见 `docs/decisions/ADR-0016-orchestration-philosophy.md`。
 
 ### 候选 O 系列（编排哲学落地，按依赖序）

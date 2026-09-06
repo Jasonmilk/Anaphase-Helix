@@ -1,5 +1,3 @@
-use std::io::{self, BufRead, Write};
-use serde_json::json;
 
 use anaphase::adapters::*;
 use anaphase::adapters::flowmodus::{FlowModusAdapter, GrpcFlowModusAdapter};
@@ -183,15 +181,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn run_stdio_mode() -> Result<(), Box<dyn std::error::Error>> {
-    // Load config and initialize agent components for real reasoning
+    // Load config and initialize agent components for real reasoning.
     let config = config::load_config()?;
 
-    // Initialize reasoning adapter (follow config priority)
     let reason: Arc<dyn ReasoningAdapter> = if let Some(endpoint) = &config.anaphase.reasoning_endpoint {
         if endpoint.is_empty() {
             Arc::new(NoopReasoningAdapter)
         } else {
-            // Simplified type name
             Arc::new(HttpReasoningAdapter::new(&config.anaphase))
         }
     } else {
@@ -204,111 +200,124 @@ async fn run_stdio_mode() -> Result<(), Box<dyn std::error::Error>> {
     let ui: Arc<dyn UiAdapter> = Arc::new(NoopUiAdapter);
     let fear: Arc<dyn FearAdapter> = Arc::new(NoopFearAdapter);
     let reflex = ReflexArc { safety_rules: vec![] };
-    let mut agent = AgentLoop::new(memory, reason, tool, safety, ui, fear, reflex);
+    let agent = std::sync::Arc::new(tokio::sync::Mutex::new(AgentLoop::new(
+        memory, reason, tool, safety, ui, fear, reflex,
+    )));
 
-    // STDIO IO start
-    let stdin = io::stdin();
-    let mut stdout = io::stdout();
+    eprintln!("Anaphase CI-144 transport mode active (ADR-0017)");
 
-    eprintln!("Anaphase STDIO CAP protocol mode active");
-
-    for line in stdin.lock().lines() {
-        let line = line?;
-        if line.trim().is_empty() {
-            continue;
+    // Snapshot provider: project the live agent state on each push tick.
+    let snap_agent = std::sync::Arc::clone(&agent);
+    let snapshot = move || {
+        let guard = snap_agent.try_lock();
+        match guard {
+            Ok(a) => {
+                let snap = a.capture();
+                let clock = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs();
+                anaphase::ci144::project_snapshot(&snap, clock)
+            }
+            Err(_) => anaphase::ci144::project_snapshot(
+                &agent_offline_snapshot(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs(),
+            ),
         }
+    };
 
-        let cmd: serde_json::Value = match serde_json::from_str(&line) {
-            Ok(v) => v,
-            Err(e) => {
-                let error_resp = json!({
-                    "status": "error",
-                    "error": format!("Invalid JSON: {}", e)
-                });
-                writeln!(stdout, "{}", serde_json::to_string(&error_resp)?)?;
-                stdout.flush()?;
-                continue;
-            }
-        };
-
-        let cmd_type = cmd["type"].as_str().unwrap_or("");
-
-        match cmd_type {
-            "connect" | "get_snapshot" => {
-                let snapshot = json!({
-                    "status": "Active",
-                    "metrics": {
-                        "token_consumed": 1234,
-                        "active_tasks": 0,
-                        "memory_nodes": 0
+    // Action handler: protocol layer stays business-free; real actions
+    // (send_message -> one cognitive period) live here, in the launcher.
+    let act_agent = std::sync::Arc::clone(&agent);
+    let handle_action = move |req: &anaphase::ci144::ActionRequest| {
+        let act = std::sync::Arc::clone(&act_agent);
+        // Clone owned inputs before the async block: the future must not
+        // borrow the request reference (lifetime must outlive Fn).
+        let action_id = req.action_id.clone();
+        let message = req.parameters["message"].as_str().unwrap_or("").to_string();
+        async move {
+        use anaphase::ci144::ActionResponse;
+        match action_id.as_str() {
+            "send_message" => {
+                let guard = act.try_lock();
+                match guard {
+                    Ok(mut a) => {
+                        let cap = a.run_config.cycle_cap;
+                        for _ in 0..cap {
+                            match a.run_cycle(&message).await {
+                                Ok(out) if out.done => break,
+                                Ok(_) => continue,
+                                Err(e) => {
+                                    return ActionResponse::Failure {
+                                        error: format!("cycle failed: {e}"),
+                                        recoverable: true,
+                                    };
+                                }
+                            }
+                        }
+                        let text = a.context.reasoning_output.clone();
+                        ActionResponse::Success { message: text }
+                    }
+                    Err(_) => ActionResponse::Failure {
+                        error: "agent busy".to_string(),
+                        recoverable: true,
                     },
-                    "semantic_tree": [
-                        {
-                            "id": "1",
-                            "node_type": "state_tree",
-                            "label": "Cognitive Loop",
-                            "content": "Perception -> PreAssessment -> MemoryRetrieval -> Reasoning -> ReflexCheck -> Execution -> Reflection"
-                        },
-                        {
-                            "id": "2",
-                            "node_type": "text_panel",
-                            "label": "Status",
-                            "content": "Anaphase running in STDIO mode. Ready for commands."
-                        }
-                    ]
-                });
-                writeln!(stdout, "{}", serde_json::to_string(&snapshot)?)?;
-                stdout.flush()?;
-            }
-            "action" => {
-                let action_id = cmd["action"].as_str().unwrap_or("");
-                if action_id == "send_message" {
-                    let message = cmd["params"]["message"].as_str().unwrap_or("");
-                    // Call real agent reasoning cycle (single-period primitive;
-                    // the caller owns the looping policy, cap from config).
-                    for _ in 0..agent.run_config.cycle_cap {
-                        let out = agent.run_cycle(message).await?;
-                        if out.done {
-                            break;
-                        }
-                    }
-                    {
-                        let response_text = agent.context.reasoning_output.clone();
-                        let resp = json!({
-                            "status": "ok",
-                            "type": "message_response",
-                            "content": response_text
-                        });
-                        writeln!(stdout, "{}", serde_json::to_string(&resp)?)?;
-                    }
-                    stdout.flush()?;
-                } else {
-                    let response = json!({
-                        "status": "ok",
-                        "action": action_id,
-                        "message": format!("Action '{}' acknowledged", action_id)
-                    });
-                    writeln!(stdout, "{}", serde_json::to_string(&response)?)?;
-                    stdout.flush()?;
                 }
             }
-            "exit" => {
-                let response = json!({"status": "goodbye"});
-                writeln!(stdout, "{}", serde_json::to_string(&response)?)?;
-                stdout.flush()?;
-                break;
+            "status" => {
+                let guard = act.try_lock();
+                match guard {
+                    Ok(a) => {
+                        let snap = a.capture();
+                        ActionResponse::Success {
+                            message: format!(
+                                "mode={:?} state={:?} episode_step={} ledger={}",
+                                snap.mode,
+                                snap.state,
+                                snap.episode.as_ref().map(|e| e.step).unwrap_or(0),
+                                snap.ledger.len(),
+                            ),
+                        }
+                    }
+                    Err(_) => ActionResponse::Failure {
+                        error: "agent busy".to_string(),
+                        recoverable: true,
+                    },
+                }
             }
-            _ => {
-                let error_resp = json!({
-                    "status": "error",
-                    "error": format!("Unknown command type: {}", cmd_type)
-                });
-                writeln!(stdout, "{}", serde_json::to_string(&error_resp)?)?;
-                stdout.flush()?;
-            }
+            other => ActionResponse::Failure {
+                error: format!("unknown action: {other}"),
+                recoverable: true,
+            },
         }
-    }
+        }
+    };
 
-    eprintln!("Anaphase STDIO mode exiting");
+    anaphase::ci144::server::run_stdio(
+        snapshot,
+        handle_action,
+        anaphase::ci144::SNAPSHOT_PUSH_INTERVAL,
+    )
+    .await
+    .map_err(|e| std::io::Error::other(e))?;
+    eprintln!("Anaphase CI-144 mode exiting");
     Ok(())
 }
+
+/// Offline placeholder snapshot for the projection when the agent mutex is
+/// momentarily contended (never blocks the push tick; physical fact: the
+/// projection degrades to "unknown", it never lies).
+fn agent_offline_snapshot() -> anaphase::run_cycle::AgentSnapshot {
+    use anaphase::run_cycle::AgentSnapshot;
+    AgentSnapshot {
+        mode: crate::config::Mode::Partner,
+        state: anaphase::states::HelixState::Perception,
+        episode: None,
+        ledger: vec![],
+        ecosystem: vec![],
+    }
+}
+

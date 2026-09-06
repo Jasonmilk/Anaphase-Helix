@@ -4,7 +4,7 @@
 ![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)
 ![Build](https://img.shields.io/badge/Build-Passing-brightgreen.svg)
 ![Style](https://img.shields.io/badge/Code%20Style-Google-black.svg)
-[![Tests](https://img.shields.io/badge/tests-129%2F129%20passed-green)](#)
+[![Tests](https://img.shields.io/badge/tests-160%2F160%20passed-green)](#)
 
 **The silicon-based operating system & physical brain for digital lifeforms.
 Perceive, reason, act, remember, and immunize — the body that houses the soul.**
@@ -29,6 +29,13 @@ via the CommonIntents protocol stack with zero hard coupling.
 - 🔬 **M1 Deterministic Pipeline** — Replayable single-pass closed loop:
   LLM calls → tt_job → gRPC Tentacle → evidence → criteria → JSONL ledger
   (byte-identical replay, zero hardcoding, ADR-0003)
+- 🚗 **CI-144 Transport Layer** (ADR-0017) — `--stdio` speaks the ecosystem's
+  common dialect: CIB/1.0 handshake → MessagePack frames (LE u32 length prefix)
+  → Manifest (first frame) → 1s snapshot push → ActionRequest/Response
+  (`status` / `send_message` through the real run_cycle). Vendored protocol
+  types in `src/ci144/` (serde field-for-field with Cellrix); protocol layer
+  stays business-free via an injected action callback. Live-verified against
+  the real binary (`cargo test --test ci144_live -- --ignored`)
 - 🌐 **M1.5 Real Tentacle Connectivity** — `tests/m1_e2e_live.rs` drives the
   pipeline against a real `tentacle --transport grpc` + real fixture plugins
   (manifest+js, SHA-256 pinned); identity_labels / seen_entropy_bloom semantics
@@ -69,8 +76,8 @@ via the CommonIntents protocol stack with zero hard coupling.
   BTreeMap over HashMap, no endpoint leakage
 - 🛠️ **Safety-First Execution** — Audited tool calls & immune system interception
 - 🚀 **Zero-Dependency Boot** — Runs fully offline without any external services
-- ✅ **Full Test Coverage** — 154/154 passing (lib + integration suites incl. security gate + Tuck gate + D'-4 live + cockpit snapshot + bootstrap env) +
-  3 live e2e (#[ignore], real Tentacle)
+- ✅ **Full Test Coverage** — 160/160 passing (lib + integration suites incl. security gate + Tuck gate + D'-4 live + cockpit snapshot + bootstrap env + CI-144 transport) +
+  3 live e2e + 1 CI-144 live probe (#[ignore], real Tentacle / real binary)
 
 ## Project Structure
 
@@ -101,6 +108,7 @@ anaphase-helix/
 │   ├── criteria/           # Six pure deterministic checkers (M1)
 │   ├── ledger/             # Append-only JSONL verdict ledger + Clock (M1)
 │   ├── pipeline/           # Six-stage deterministic pipeline (M1)
+│   ├── ci144/              # CI-144 transport: vendored protocol types + server loop (ADR-0017)
 │   └── hitl.rs / lifecycle.rs / task_dag.rs / gloves.rs
 └── tests/
     ├── common/mod.rs       # Shared MockTentacle + StructuredReasoning stub
@@ -109,7 +117,9 @@ anaphase-helix/
     ├── mock_tentacle.rs    # M1-T0/T7: adapter roundtrip + 3 branches (4)
     ├── m1_e2e.rs           # M1-T8: MET/UNMET/deterministic replay (3)
     ├── m1_e2e_live.rs      # Real Tentacle e2e (3, #[ignore]) — incl. run_cycle chain
-    └── run_cycle_pipeline.rs # Candidate E: run_cycle ↔ pipeline full merge (8)
+    ├── run_cycle_pipeline.rs # Candidate E: run_cycle ↔ pipeline full merge (8)
+    ├── ci144_transport.rs  # CI-144 protocol suite: handshake/frame/projection/duplex (6)
+    └── ci144_live.rs       # Real-binary CI-144 roundtrip (1, #[ignore])
 ```
 
 ## Quick Start
@@ -142,7 +152,7 @@ You will see a full cycle:
 
 ## Testing
 
-Run the full suite (**140/140 passing**):
+Run the full suite (**160/160 passing**):
 ```bash
 cargo test
 ```
@@ -156,6 +166,11 @@ Coverage:
 - **m1_e2e (3)**: MET verdict, UNMET + retry_due + reopen scan, deterministic replay (byte-identical)
 - **run_cycle_pipeline (8)**: candidate-E full chain (MET/UNMET/no-plan/deterministic replay) +
   run_config-driven behavior (cycle cap, soft-reflex threshold, amygdala vector, mode, placeholder)
+- **ci144_transport (6)**: CIB/1.0 handshake (accept/reject), frame round-trip,
+  AgentSnapshot→SemanticSnapshot projection shape, vendored serde shape,
+  full duplex session (Manifest → push → status/send_message/unknown actions)
+- **ci144_live (1, #[ignore])**: real `anaphase --stdio` binary — handshake →
+  Manifest → snapshot push → actions → clean EOF exit
 - **episode_lifecycle (10)**: candidate-F experience boundary (deterministic episode id via shared
   FNV-1a, begin/end lifecycle, auto-close of previous episode, L3 provenance on reflection notes,
   verbatim legacy writes, mode serde roundtrip + config load)
