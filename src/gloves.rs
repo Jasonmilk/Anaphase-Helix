@@ -138,7 +138,6 @@ pub async fn probe_ecosystem(cfg: &crate::config::AnaphaseConfig) -> EcosystemGl
         ("mind", cfg.mind_endpoint.as_deref()),
         ("tuck", cfg.tuck_endpoint.as_deref()),
         ("flowmodus", cfg.flowmodus_endpoint.as_deref()),
-        ("callosum", cfg.callosum_endpoint.as_deref()),
     ] {
         match ep {
             Some(e) if !e.is_empty() => g.register(name, GloveTier::Standard, probe_endpoint(e)),
@@ -270,7 +269,6 @@ mod tests {
             ("mind", cfg.mind_endpoint.as_deref()),
             ("tuck", cfg.tuck_endpoint.as_deref()),
             ("flowmodus", cfg.flowmodus_endpoint.as_deref()),
-            ("callosum", cfg.callosum_endpoint.as_deref()),
         ] {
             match ep {
                 Some(e) if !e.is_empty() => g.register(name, GloveTier::Standard, probe_endpoint(e)),

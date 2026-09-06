@@ -33,7 +33,6 @@ pub struct AnaphaseConfig {
     pub flowmodus_endpoint: Option<String>,
     pub tentacle_endpoint: Option<String>,
     pub tuck_endpoint: Option<String>,
-    pub callosum_endpoint: Option<String>,
     pub cellrix_endpoint: Option<String>,
     /// Enable HTTP CAP server for remote debugging
     pub cap_http_enabled: bool,
@@ -207,7 +206,6 @@ impl Default for AnaphaseConfig {
             flowmodus_endpoint: None,
             tentacle_endpoint: None,
             tuck_endpoint: None,
-            callosum_endpoint: None,
             cellrix_endpoint: None,
             cap_http_enabled: false,
             cap_http_port: 50061,
@@ -277,7 +275,6 @@ mod tests {
                 flowmodus_endpoint: None,
                 tentacle_endpoint: None,
                 tuck_endpoint: None,
-                callosum_endpoint: None,
                 cellrix_endpoint: None,
                 cap_http_enabled: true,
                 cap_http_port: 50061,
