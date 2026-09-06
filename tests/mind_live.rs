@@ -1,15 +1,15 @@
-// P10 live end-to-end: REAL Helix-Mind binary + REAL Anaphase client.
+// Mind live end-to-end: REAL Helix-Mind binary + REAL Anaphase client.
 //
-// Proves the physical contract between the two codebases (ADR-0031 P10a +
-// ADR-0032 P10d): the vendored proto is byte-compatible with what the Mind
-// server actually serves, and craft / ana_wakeup / helix_consolidate round
-// trip over the real wire.
+// Proves the physical contract between the two codebases (ADR-0031 craft +
+// ADR-0032 wake-up): the vendored proto is byte-compatible with what the
+// Mind server actually serves, and craft / ana_wakeup / helix_consolidate
+// round trip over the real wire.
 //
 // Requirements (manual run, hence #[ignore]):
 //   1. Mind binary built:  cargo build -p helix-mind-cli  (in ../Helix-Mind)
 //      (binary name is helix-mind-cli)
 //   2. Run from anaphase-helix:
-//        cargo test --test p10_live -- --ignored --nocapture
+//        cargo test --test mind_live -- --ignored --nocapture
 //   Override the binary path with MIND_BIN if the default relative path
 //   (../Helix-Mind/target/debug/helix-mind) is not correct.
 //

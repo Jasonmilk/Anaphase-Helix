@@ -25,7 +25,7 @@ P10d 接线完成后收尾核对：发现 gRPC 级闭环测试缺失（MockMind 
 
 ### 变更性质
 - **mind_integration +3**：craft_via_grpc（确定性 trace）/ wakeup+ack_via_grpc（due alarm 走真实 wire + ack 到达 mock）/ consolidate_via_grpc（睡眠复盘链）
-- **p10_live.rs 新增（#[ignore] 手动联调）**：起真实 helix-mind-cli 二进制（临时 config + 临时库 + 随机端口）→ GrpcMindAdapter 真实客户端 → craft/wakeup/consolidate 全链路**物理验证通过**
+- **mind_live.rs 新增（#[ignore] 手动联调）**：起真实 helix-mind-cli 二进制（临时 config + 临时库 + 随机端口）→ GrpcMindAdapter 真实客户端 → craft/wakeup/consolidate 全链路**物理验证通过**
 - **测试**：202→205（+3 gRPC 级）+ 1 live（ignored），22 套件全绿 0 warning
 
 ### 兼容性

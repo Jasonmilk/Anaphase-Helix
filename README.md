@@ -57,12 +57,12 @@ via the CommonIntents protocol stack with zero hard coupling.
   pipeline against a real `tentacle --transport grpc` + real fixture plugins
   (manifest+js, SHA-256 pinned); identity_labels / seen_entropy_bloom semantics
   (ADR-0004); run_cycle Execution resolves real tool names (echo fallback)
-- 🌙 **P10 Cognitive Craft + Wake-up, live-verified** — `tests/p10_live.rs`
+- 🌙 **P10 Cognitive Craft + Wake-up, live-verified** — `tests/mind_live.rs`
   drives the REAL `helix-mind-cli` binary over the real wire: `craft`
   (deterministic trace_id, 0-token synthesis), `ana_wakeup` agenda poll and
   `helix_consolidate hibernate` (ADR-0031/0032). Requires a built Mind binary:
   `cargo build -p helix-mind-cli` (../Helix-Mind), then
-  `cargo test --test p10_live -- --ignored`
+  `cargo test --test mind_live -- --ignored`
 - 🧩 **Candidate E: run_cycle ↔ pipeline merge** (ADR-0005) — structured
   Reasoning output protocol (`{"calls":[...],"impasse":bool}`) replaces
   `contains("tool_call")` string matching; the six pipeline stages land in the
