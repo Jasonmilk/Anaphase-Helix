@@ -307,6 +307,28 @@ pub fn project_snapshot(
                 slot_binding: None,
                 focused: false,
             },
+            SemanticNode {
+                id: "send_message".to_string(),
+                node_type: NodeType::ActionButton,
+                label: "Send message".to_string(),
+                // needs_input: the cockpit UI opens a text input for this
+                // action (declarative — the UI needs no manifest knowledge).
+                content: serde_json::json!({
+                    "action_id": "send_message",
+                    "needs_input": true,
+                    "placeholder": "message to Helix...",
+                }),
+                slot_binding: None,
+                focused: false,
+            },
+            SemanticNode {
+                id: "status-action".to_string(),
+                node_type: NodeType::ActionButton,
+                label: "Status".to_string(),
+                content: serde_json::json!({ "action_id": "status" }),
+                slot_binding: None,
+                focused: false,
+            },
         ]
         .into_iter()
         .chain(ecosystem_nodes)

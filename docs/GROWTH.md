@@ -99,3 +99,24 @@ README（驾驶舱=Anaphase 本体 + WebUI + env 注入）｜ PLAN（共享装�
 
 ### 状态
 🧬 已完成
+## 记录 29：驾驶舱真对话——send_message 输入 + 真实 LLM 回复（2026-09-06）
+
+### 触发条件
+用户配好 LLM 后驾驶舱仍无法对话：无输入框（UI 只渲染 ActionButton 空参数触发、Anaphase 投影无 action 节点、manifest 只暴露 status）。
+
+### 变更性质
+- **ci144/server.rs**：manifest 暴露 `send_message`（参数声明 `message: string`）
+- **ci144/mod.rs**：project_snapshot 的 semantic_tree 增加 ActionButton（`send_message` 带 `needs_input: true`、`status`）——声明式协议扩展，UI 无需 manifest 知识
+- **config.rs**：`ANAPHASE_CONFIG` env 覆盖 config 路径（12-factor）——驾驶舱子进程任意 cwd 加载同一 config（此前相对路径 → Cellrix cwd 下 Noop 无 LLM，真实对话失败根因）
+- **Cellrix（协作仓）**：AppState 输入三字段 + handler 输入模式 + 输入行渲染（回复展示）
+- **真实对话验证**：send_message 帧 → run_cycle → deepseek API 真实调用 → "我是 DeepSeek 的 AI 助手..."（非 mock 非 Noop）
+- **测试**：Anaphase 206 + Cellrix 321（+2 输入字段测试），全生态 1420
+
+### 兼容性
+零破坏：needs_input 可选；ANAPHASE_CONFIG 可选（默认相对路径不变）。
+
+### 验收
+README（对话 + ANAPHASE_CONFIG）｜ PLAN｜ ECOSYSTEM v1.56
+
+### 状态
+🧬 已完成

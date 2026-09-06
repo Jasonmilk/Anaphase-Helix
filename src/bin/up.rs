@@ -262,6 +262,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             std::env::set_var("HELIX_CODEX", codex);
         }
     }
+    // Config: absolute path so every child (cockpit stdio agent) loads the
+    // same LLM/mode/rails config from any working dir.
+    if std::env::var("ANAPHASE_CONFIG").map_or(true, |v| v.is_empty()) {
+        let cfg = cwd.join("config.toml");
+        if cfg.exists() {
+            std::env::set_var("ANAPHASE_CONFIG", cfg);
+        }
+    }
     let mut anaphase = Command::new(&anaphase_bin)
         .stdout(Stdio::null())
         .stderr(Stdio::null())

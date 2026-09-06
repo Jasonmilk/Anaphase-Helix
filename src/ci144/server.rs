@@ -19,13 +19,22 @@ pub fn make_manifest() -> CapabilityManifest {
     CapabilityManifest {
         agent_name: "anaphase-helix".to_string(),
         version: env!("CARGO_PKG_VERSION").to_string(),
-        actions: vec![Action {
-            id: "status".to_string(),
-            label: "Query current cognitive status".to_string(),
-            security_class: SecurityClass::Normal,
-            lease_ms: None,
-            parameters: serde_json::json!({}),
-        }],
+        actions: vec![
+            Action {
+                id: "status".to_string(),
+                label: "Query current cognitive status".to_string(),
+                security_class: SecurityClass::Normal,
+                lease_ms: None,
+                parameters: serde_json::json!({}),
+            },
+            Action {
+                id: "send_message".to_string(),
+                label: "Send a message to Helix (one cognitive period)".to_string(),
+                security_class: SecurityClass::Normal,
+                lease_ms: None,
+                parameters: serde_json::json!({ "message": { "type": "string" } }),
+            },
+        ],
         layout_hints: Some(LayoutHints {
             preferred_panels: vec!["cockpit".to_string()],
             grid: None,

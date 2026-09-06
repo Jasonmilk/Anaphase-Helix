@@ -261,7 +261,12 @@ impl Default for AnaphaseConfig {
 
 /// Load configuration from config.toml or return defaults (Noop mode)
 pub fn load_config() -> Result<Config, Box<dyn std::error::Error>> {
-    match std::fs::read_to_string("config.toml") {
+    // Config path: env override (12-factor) > repo-relative default (cwd =
+    // anaphase-helix). `up` injects the absolute path so child processes
+    // (cockpit stdio agent) load the same config from any working dir.
+    let path = std::env::var("ANAPHASE_CONFIG")
+        .unwrap_or_else(|_| "config.toml".to_string());
+    match std::fs::read_to_string(&path) {
         Ok(content) => {
             let config: Config = toml::from_str(&content)?;
             Ok(apply_env_overrides(config))
