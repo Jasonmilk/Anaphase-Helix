@@ -908,7 +908,7 @@ mod tests {
 
     #[async_trait::async_trait]
     impl crate::adapters::ReasoningAdapter for CountingReasoning {
-        async fn reason(&self, input: &str, mode: &str) -> Result<String, String> {
+        async fn reason(&self, input: &str, _mode: &str) -> Result<String, String> {
             self.0.fetch_add(1, Ordering::Relaxed);
             Ok(format!("{{\"calls\":[],\"impasse\":false}} // {}", input))
         }

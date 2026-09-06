@@ -16,7 +16,7 @@ use anaphase::run_cycle::AgentLoop;
 use anaphase::config::AnaphaseConfig;
 use anaphase::helix_mind_api::helix_mind_server::{HelixMind, HelixMindServer};
 use anaphase::helix_mind_api::{
-    ActivationEntry, AdvancedQueryRequest, Edge, ForgetRequest, ForgetResponse,
+    AdvancedQueryRequest, ForgetRequest, ForgetResponse,
     HelixConsolidateRequest, HelixConsolidateResult, HelixQueryRequest, HelixQueryResult, Node,
     QueryRequest, QueryResponse, ReloadGeneLockRequest, ReloadGeneLockResponse, RememberRequest,
     RememberResponse, SuggestedAction, SyncHumanViewRequest, SyncHumanViewResponse,

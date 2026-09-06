@@ -114,7 +114,6 @@ pub fn compress_briefing(history: &[String]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::Duration;
 
     fn temp_notes() -> (SessionNotes, PathBuf) {
         let dir = std::env::temp_dir().join(format!(

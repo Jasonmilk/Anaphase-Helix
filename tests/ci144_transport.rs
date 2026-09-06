@@ -12,10 +12,10 @@ use anaphase::adapters::{
     NoopToolAdapter, NoopUiAdapter, ReasoningAdapter,
 };
 use anaphase::ci144::{
-    ActionRequest, ActionResponse, AgentEvent, SemanticSnapshot, encode_frame, project_snapshot,
+    ActionRequest, ActionResponse, AgentEvent, encode_frame, project_snapshot,
     server, handshake_response,
 };
-use anaphase::config::{AnaphaseConfig, Mode};
+use anaphase::config::Mode;
 use anaphase::reflex::ReflexArc;
 use anaphase::run_cycle::AgentLoop;
 use std::sync::Arc;
@@ -93,7 +93,7 @@ fn tag_of(event: &AgentEvent) -> &'static str {
 
 #[test]
 fn projection_maps_mode_state_and_metrics() {
-    let mut agent = make_agent();
+    let agent = make_agent();
     let snap = agent.capture();
     let proj = project_snapshot(&snap, 1700000000);
 
@@ -184,7 +184,7 @@ async fn duplex_session_full_protocol() {
     });
 
     // --- client half (mirrors Cellrix StdioTransport) ---
-    let (mut client_read, mut client_write) = tokio::io::split(client_side);
+    let (client_read, client_write) = tokio::io::split(client_side);
     let mut client_read = BufReader::new(client_read);
 
     // Handshake out.
@@ -293,7 +293,7 @@ async fn write_request<W: AsyncWriteExt + Unpin>(
 /// MessagePack bytes we emit must decode with the exact tags Cellrix uses.
 #[test]
 fn vendored_serde_shape_snapshot() {
-    let mut agent = make_agent();
+    let agent = make_agent();
     let proj = project_snapshot(&agent.capture(), 42);
     let snap_event = AgentEvent::Snapshot(proj);
     let bytes = encode_frame(&snap_event).unwrap();
