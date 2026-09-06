@@ -167,4 +167,8 @@ live 实测（`cargo test --test ci144_live -- --ignored`）真实二进制全�
 - 真实二进制：Rails mounted: knowledge_base/rails/demo ✅
 **发现并修复**：kb_dir 指向容器根导致跨文档链接断链（doc id 被子目录前缀污染）
 → 修正为 kb_dir 指向具体 kb（one kb per directory）
+**输出契约层（ADR-0018 后续，同日完成）**：rail 命中时 Reasoning 短路 LLM——回答 =
+`assemble_rail_answer` 确定性拼装（0 tokens，无 LLM，无编造空间，验证器天然满足因为
+回答就是铁轨原文）；e2e 断言 LLM 调用数=0 + 回答含节点 id + 原文逐字引用。代码注释
+ADR-XXXX 占位全部替换为 ADR-0018。
 **状态**：✅ 完成（169 tests 全绿 = 160 基线 + 9 新增；commit 见 git log）

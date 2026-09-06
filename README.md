@@ -34,8 +34,10 @@ via the CommonIntents protocol stack with zero hard coupling.
   dangling-link builds fail) + deterministic navigation (CJK bigrams, no
   embeddings) + citation contract (`verify_reference`: verbatim quote +
   visited provenance) + graceful refusal (`NO_RAIL_CONTENT`) — Helix may
-  only select an existing rail edge, never synthesize one. Read-only at the
-  type level (`RailScope::Read`). Demo kb: `knowledge_base/rails/demo/`
+  only select an existing rail edge, never synthesize one. Rail hits short-
+  circuit Reasoning (0 tokens): the answer is assembled verbatim from the
+  injected nodes + node ids — no LLM, no synthesis possible. Read-only at
+  the type level (`RailScope::Read`). Demo kb: `knowledge_base/rails/demo/`
 - 🚗 **CI-144 Transport Layer** (ADR-0017) — `--stdio` speaks the ecosystem's
   common dialect: CIB/1.0 handshake → MessagePack frames (LE u32 length prefix)
   → Manifest (first frame) → 1s snapshot push → ActionRequest/Response

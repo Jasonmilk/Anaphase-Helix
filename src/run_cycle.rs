@@ -133,7 +133,7 @@ pub struct AgentLoop {
     /// Active experience boundary (ADR-0006). None = no episode in progress
     /// (legacy turn-by-turn behavior, fully backwards compatible).
     pub episode: Option<Episode>,
-    /// External human-authored knowledge rails (ADR-XXXX). None = no rail
+    /// External human-authored knowledge rails (ADR-0018). None = no rail
     /// mounted (fail-open, loop unaffected). Read-only citation asset —
     /// Helix may only select an existing edge, never synthesize one.
     pub rails: Option<crate::rails::Index>,
@@ -168,11 +168,11 @@ pub struct AgentContext {
     /// Structured-command marker (O-1): set by Perception when the input
     /// starts with `!`; Reasoning skips the LLM for this cycle (0 tokens).
     pub structured: bool,
-    /// Rails hits (ADR-XXXX): verbatim nodes injected when the query lands
+    /// Rails hits (ADR-0018): verbatim nodes injected when the query lands
     /// on an external human rail. Content is a human asset — Helix cites,
     /// never rewrites it.
     pub rail_nodes: Vec<crate::rails::Node>,
-    /// Citation-contract marker (ADR-XXXX): when true, the answer for this
+    /// Citation-contract marker (ADR-0018): when true, the answer for this
     /// cycle must be verbatim rail citations (or NO_RAIL_CONTENT) — no
     /// synthesized paraphrase.
     pub rail_mode: bool,
@@ -251,7 +251,7 @@ impl AgentLoop {
     /// Set the interaction mode (ADR-0006). Physical Mind participation is
     /// decided at assembly time (Noop vs gRPC memory adapter); this is the
     /// semantic record carried through the loop.
-    /// Mount an external knowledge rail (ADR-XXXX). Read-only: the caller
+    /// Mount an external knowledge rail (ADR-0018). Read-only: the caller
     /// passes the deterministic index; no write path exists.
     pub fn with_rails(mut self, index: crate::rails::Index) -> Self {
         self.rails = Some(index);
@@ -384,7 +384,7 @@ impl AgentLoop {
             }
             HelixState::MemoryRetrieval => {
                 info!("[MemoryRetrieval] Querying memory: {}", self.context.user_input);
-                // Rails branch (ADR-XXXX): external human asset, read-only,
+                // Rails branch (ADR-0018): external human asset, read-only,
                 // deterministic. When the query lands on a rail, verbatim
                 // nodes are injected and the citation contract (rail_mode)
                 // is set — Helix may only cite, never synthesize. Runs
@@ -456,6 +456,22 @@ impl AgentLoop {
                     "[Reasoning] ecosystem: {:?}",
                     self.context.ecosystem.list()
                 );
+                // Rails citation contract (ADR-0018): when the query landed on
+                // a rail, the answer is assembled verbatim from the injected
+                // nodes — 0 tokens, no LLM, no synthesis possible by
+                // construction. Helix selects an existing rail edge (a node);
+                // it never generates one. The verifier (verify_reference) is
+                // trivially satisfied because the answer IS the rail text.
+                if self.context.rail_mode && !self.context.rail_nodes.is_empty() {
+                    let answer = crate::rails::assemble_rail_answer(
+                        &self.context.rail_nodes,
+                        &self.rails_config.kb_dir,
+                    );
+                    self.context.reasoning_output = answer;
+                    self.context.calls.clear();
+                    info!("[Reasoning] rail citation answer (0 tokens, LLM bypassed)");
+                    return Ok(TransitionCondition::NoToolNeeded);
+                }
                 info!("[Reasoning] Left-brain reasoning...");
                 match self.reason.reason(&self.context.user_input, &self.run_config.reasoning_mode).await {
                     Ok(output) => {

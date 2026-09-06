@@ -1,6 +1,6 @@
 //! Rails: external human-authored knowledge rails (心智外铁轨).
 //!
-//! Read-only, version-frozen, deterministic citation rails (ADR-XXXX).
+//! Read-only, version-frozen, deterministic citation rails (ADR-0018).
 //! Helix may only select an existing edge — it never synthesizes one:
 //!   - `build_index` parses a `rails/<kb>/` markdown DAG into a
 //!     deterministic node index (sorted traversal, no UUID; nodes carry
@@ -27,6 +27,21 @@ use std::path::{Path, PathBuf};
 /// Deterministic graceful refusal: the rail has no such content.
 /// Answer is this constant, never a generated sentence (citation contract).
 pub const NO_RAIL_CONTENT: &str = "rails: no matching content (refused to synthesize)";
+
+/// Deterministic citation answer (ADR-0018): assembled verbatim from the
+/// injected rail nodes — 0 tokens, no LLM, no synthesis possible by
+/// construction. Helix only selects an existing rail edge (a node), never
+/// generates one. Each entry carries the node id so the citation is
+/// machine-checkable against the index.
+pub fn assemble_rail_answer(nodes: &[Node], kb: &str) -> String {
+    let mut out = String::from("[rail citation · ");
+    out.push_str(kb);
+    out.push_str("]\n");
+    for node in nodes {
+        out.push_str(&format!("- {} ({}):\n> {}\n", node.heading, node.id, node.content));
+    }
+    out
+}
 
 /// Capability scope for rails access. Type-level read-only: there is no
 /// write variant — Helix can read (cite) a rail, never rewrite it.

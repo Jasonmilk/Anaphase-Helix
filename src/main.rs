@@ -97,7 +97,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    // Rails (ADR-XXXX): mount the external human knowledge rail — read-only
+    // Rails (ADR-0018): mount the external human knowledge rail — read-only
     // citation asset. Missing/invalid kb dir degrades to None (fail-open,
     // loop unaffected); a dangling link is an authoring error surfaced here.
     agent.rails_config = config.anaphase.rails.clone();

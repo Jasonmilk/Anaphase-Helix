@@ -56,14 +56,14 @@ pub struct AnaphaseConfig {
     #[serde(default)]
     pub run_cycle: RunCycleConfig,
 
-    /// External human-authored knowledge rails (ADR-XXXX): read-only,
+    /// External human-authored knowledge rails (ADR-0018): read-only,
     /// version-frozen citation rails. Overridable via
     /// config.toml `[anaphase.rails]`.
     #[serde(default)]
     pub rails: RailsConfig,
 }
 
-/// Rails: external human knowledge rails (心智外铁轨, ADR-XXXX).
+/// Rails: external human knowledge rails (心智外铁轨, ADR-0018).
 /// Read-only citation asset — Helix may only select an existing edge,
 /// never synthesize one. All literals below carry documented defaults
 /// (DNA principle 11 / ADR-0002): conservative local budgets, tunable

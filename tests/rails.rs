@@ -1,5 +1,5 @@
 //! Rails: external human knowledge rail — index / navigation / citation
-//! contract / read-only scope (ADR-XXXX).
+//! contract / read-only scope (ADR-0018).
 //!
 //! Acceptance criteria (deterministic):
 //! 1. Same kb dir builds a byte-identical index (replayable).
@@ -170,8 +170,18 @@ async fn run_cycle_lands_rail_nodes_and_sets_rail_mode() {
     use anaphase::adapters::*;
     use anaphase::run_cycle::AgentLoop;
 
+    use async_trait::async_trait;
+    struct CountingReasoning(std::sync::Arc<std::sync::atomic::AtomicUsize>);
+    #[async_trait]
+    impl anaphase::adapters::ReasoningAdapter for CountingReasoning {
+        async fn reason(&self, _input: &str, _mode: &str) -> Result<String, String> {
+            self.0.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            Ok("unused LLM output".to_string())
+        }
+    }
+    let calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let memory = std::sync::Arc::new(NoopMemoryAdapter);
-    let reason = std::sync::Arc::new(NoopReasoningAdapter);
+    let reason = std::sync::Arc::new(CountingReasoning(calls.clone()));
     let tool = std::sync::Arc::new(NoopToolAdapter);
     let safety = std::sync::Arc::new(NoopSafetyAdapter);
     let ui = std::sync::Arc::new(NoopUiAdapter);
@@ -199,5 +209,28 @@ async fn run_cycle_lands_rail_nodes_and_sets_rail_mode() {
         first.content.contains("数据归其产生者所有"),
         "injected content is verbatim rail text: {}",
         first.content
+    );
+    // Output contract (ADR-0018): the final answer is assembled verbatim
+    // from the rail — the LLM was bypassed (0 tokens) and the answer carries
+    // the node id + the exact rail text. No synthesis possible by design.
+    assert_eq!(
+        calls.load(std::sync::atomic::Ordering::Relaxed),
+        0,
+        "rail citation answer must bypass the LLM entirely (0 tokens)"
+    );
+    let answer = &agent.context.reasoning_output;
+    assert!(
+        answer.contains(first.id.as_str()),
+        "answer carries the node id: {}",
+        answer
+    );
+    assert!(
+        answer.contains("数据归其产生者所有"),
+        "answer quotes the rail verbatim (no paraphrase): {}",
+        answer
+    );
+    assert!(
+        !answer.contains("unused LLM output"),
+        "answer must not contain any LLM-generated text"
     );
 }
