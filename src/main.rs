@@ -23,6 +23,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
+    // O-5 (ADR-0023): demo-task source — CLI `--input` wins, then config
+    // `smoke_input`, then this protocol default (no literal at the call site;
+    // DNA principle 11). Demo task: exercises the six-stage pipeline with a
+    // deterministic arithmetic job.
+    const DEFAULT_SMOKE_INPUT: &str = "Calculate 2 to the power of 10";
+    let cli_input = args
+        .windows(2)
+        .find(|w| w[0] == "--input")
+        .map(|w| w[1].clone());
+
     tracing_subscriber::fmt::init();
     let config = config::load_config()?;
 
@@ -74,6 +84,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // candidate E (ADR-0005): run_cycle constants come from the config source
     // (DNA principle 11 / ADR-0002), overridable via config.toml.
     agent.run_config = config.anaphase.run_cycle.clone();
+    // O-5 (ADR-0023): cognitive-injection budget from config (protocol
+    // default 800 lives in config.rs, not here).
+    agent.memory_inject_chars = config.anaphase.memory_inject_chars;
     // ADR-0006: the interaction mode is the semantic record carried through
     // the loop; physical Mind participation is decided by resolve_memory_adapter
     // (Noop vs gRPC) — Drive auto-achieves "no experience written" through
@@ -232,7 +245,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Press Ctrl+C to shutdown the service");
 
-    let user_input = "Calculate 2 to the power of 10";
+    let user_input = cli_input
+        .or_else(|| config.anaphase.smoke_input.clone())
+        .unwrap_or_else(|| DEFAULT_SMOKE_INPUT.to_string());
     println!("User: {}", user_input);
     // O-1 (ADR-0016 D1): run_cycle is a single-period primitive — the caller
     // owns the looping policy. Cap from config (DNA principle 11: the 7 is a
@@ -247,7 +262,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or_else(|| "events.jsonl".to_string());
     let mut flushed_seq = 0u64;
     for _ in 0..agent.run_config.cycle_cap {
-        let out = agent.run_cycle(user_input).await?;
+        let out = agent.run_cycle(&user_input).await?;
         if let Some(ring) = agent.events.as_ref() {
             let guard = ring.lock().unwrap();
             let fresh: Vec<anaphase::events::StageEvent> = guard.after(flushed_seq);
@@ -285,7 +300,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // P10c T1：纪元结束 → 认知脱水（压缩当前纪元历史为简报，供下一纪元加载）
     let history = vec![
-        format!("user: {}", user_input),
+        format!("user: {}", &user_input),
         format!("assistant: {}", agent.context.reasoning_output),
         format!("reflection: {}", agent.context.reflection_notes),
     ];

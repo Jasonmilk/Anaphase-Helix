@@ -151,6 +151,41 @@ pub struct AgentLoop {
     /// Rails runtime budgets (retrieval hits / injected bytes). Source for
     /// the navigation literals (DNA principle 11 / ADR-0002).
     pub rails_config: crate::config::RailsConfig,
+    /// Cognitive-injection budget (O-5, ADR-0023): memory nodes folded into
+    /// the Reasoning prompt, capped at this many chars — "the request carries
+    /// only what this round needs". 0 = no injection (pure stateless).
+    /// Source: config `[anaphase] memory_inject_chars` (protocol default
+    /// const below, ADR-0023); main overrides from config.
+    pub memory_inject_chars: usize,
+}
+
+/// Fold memory nodes into a bounded injection string (O-5, ADR-0023).
+///
+/// Deterministic fold: nodes joined with a separator, then truncated to
+/// `budget` chars with an explicit fold marker — the LLM request carries a
+/// fixed-size cognitive slice regardless of how many rounds have passed
+/// (25-round context grows ~zero). Budget 0 -> empty (no injection).
+fn fold_memory_nodes(nodes: &[String], budget: usize) -> String {
+    if budget == 0 || nodes.is_empty() {
+        return String::new();
+    }
+    const SEP: &str = "\n---\n";
+    const FOLD_MARKER: &str = "\n...[folded: more memory available on demand]";
+    let mut acc = String::new();
+    let mut first = true;
+    for n in nodes {
+        if !first {
+            acc.push_str(SEP);
+        }
+        first = false;
+        acc.push_str(n);
+    }
+    if acc.chars().count() <= budget {
+        return acc;
+    }
+    let mut out: String = acc.chars().take(budget).collect();
+    out.push_str(FOLD_MARKER);
+    out
 }
 
 /// Context data flowing through the cognitive cycle
@@ -200,6 +235,9 @@ impl AgentLoop {
         fear: Arc<dyn FearAdapter>,
         reflex: ReflexArc,
     ) -> Self {
+        // O-5 (ADR-0023): protocol default for the cognitive-injection budget.
+        // Overridden by main from config `[anaphase] memory_inject_chars`.
+        const DEFAULT_INJECT_CHARS: usize = 800;
         // Build declarative state transition table
         let mut transitions = HashMap::new();
         transitions.insert((HelixState::Perception, TransitionCondition::Success), HelixState::PreAssessment);
@@ -236,6 +274,7 @@ impl AgentLoop {
             clock: std::sync::Arc::new(crate::ledger::SystemClock),
             rails: None,
             rails_config: crate::config::RailsConfig::default(),
+            memory_inject_chars: DEFAULT_INJECT_CHARS,
         }
     }
 
@@ -548,7 +587,25 @@ impl AgentLoop {
                     return Ok(TransitionCondition::NoToolNeeded);
                 }
                 info!("[Reasoning] Left-brain reasoning...");
-                match self.reason.reason(&self.context.user_input, &self.run_config.reasoning_mode).await {
+                // O-5 (ADR-0023): on-demand injection — the request carries
+                // only what this round needs. Memory nodes (retrieved in
+                // MemoryRetrieval, previously never consumed by the LLM) are
+                // folded into the prompt up to the budget; 0 = stateless.
+                let prompt = if self.memory_inject_chars == 0 {
+                    self.context.user_input.clone()
+                } else {
+                    let inject = fold_memory_nodes(
+                        &self.context.memory_nodes,
+                        self.memory_inject_chars,
+                    );
+                    if inject.is_empty() {
+                        self.context.user_input.clone()
+                    } else {
+                        format!("{}
+\n[memory]\n{}", self.context.user_input, inject)
+                    }
+                };
+                match self.reason.reason(&prompt, &self.run_config.reasoning_mode).await {
                     Ok(output) => {
                         // candidate E (ADR-0005): structured output protocol
                         // replaces the legacy contains("tool_call") matching.
@@ -860,6 +917,40 @@ mod tests {
         }
     }
 
+    /// Prompt-spying reasoning adapter (O-5): records every prompt the LLM
+    /// path receives, so injection (or its absence) is asserted verbatim.
+    struct SpyReasoning(Arc<std::sync::Mutex<Vec<String>>>);
+
+    #[async_trait::async_trait]
+    impl crate::adapters::ReasoningAdapter for SpyReasoning {
+        async fn reason(&self, input: &str, _mode: &str) -> Result<String, String> {
+            self.0.lock().unwrap().push(input.to_string());
+            Ok("{\"calls\":[],\"impasse\":false}".to_string())
+        }
+    }
+
+    /// Fixed-memory adapter (O-5): returns the same two nodes every round,
+    /// so round-to-round injection size is measured in isolation.
+    struct SpyMemory(Arc<Vec<String>>);
+
+    #[async_trait::async_trait]
+    impl crate::adapters::MemoryAdapter for SpyMemory {
+        async fn query(
+            &self,
+            _q: &str,
+            _include_recessive: bool,
+        ) -> Result<crate::adapters::QueryResult, String> {
+            Ok(crate::adapters::QueryResult {
+                nodes: (*self.0).clone(),
+                impasse_level: 0,
+                suggested_actions: vec![],
+            })
+        }
+        async fn remember(&self, _c: &str) -> Result<(), String> {
+            Ok(())
+        }
+    }
+
     fn base() -> AgentLoop {
         AgentLoop::new(
             Arc::new(NoopMemoryAdapter),
@@ -1030,4 +1121,99 @@ mod tests {
         let ep = agent.episode.expect("episode active");
         assert_eq!(ep.step, 2, "one turn per period");
     }
+
+    // ── O-5 (ADR-0023): on-demand cognitive injection ──────────────────
+
+    #[test]
+    fn fold_memory_nodes_empty_and_zero_budget() {
+        assert_eq!(fold_memory_nodes(&[], 800), "");
+        assert_eq!(fold_memory_nodes(&["a".into()], 0), "");
+    }
+
+    #[test]
+    fn fold_memory_nodes_within_budget_is_verbatim() {
+        let nodes = vec!["alpha".into(), "beta".into()];
+        let folded = fold_memory_nodes(&nodes, 100);
+        assert!(folded.contains("alpha"));
+        assert!(folded.contains("beta"));
+        assert!(!folded.contains("[folded"));
+    }
+
+    #[test]
+    fn fold_memory_nodes_over_budget_truncates_with_marker() {
+        let long = "x".repeat(400);
+        let folded = fold_memory_nodes(&[long], 200);
+        assert!(folded.contains("[folded"), "fold marker must appear");
+        // the budget slice itself is exactly `budget` chars of node content
+        let body: Vec<char> = folded.chars().collect();
+        assert_eq!(body[..200].iter().filter(|c| **c == 'x').count(), 200);
+    }
+
+    #[tokio::test]
+    async fn memory_nodes_are_injected_into_reasoning_prompt() {
+        // O-5 core: MemoryRetrieval results finally reach the LLM (they were
+        // retrieved but never consumed before — the broken link is fixed).
+        let nodes = Arc::new(vec![
+            "master taught: prefer deterministic tools over guessing".to_string(),
+            "last time the gap was expectation vs actual feedback".to_string(),
+        ]);
+        let prompts = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let mut agent = base();
+        agent.memory = Arc::new(SpyMemory(nodes));
+        agent.reason = Arc::new(SpyReasoning(prompts.clone()));
+        agent.run_cycle("help me with the tool plan").await.unwrap();
+        let captured = prompts.lock().unwrap();
+        assert_eq!(captured.len(), 1);
+        assert!(
+            captured[0].contains("[memory]"),
+            "memory section must be injected: {}",
+            captured[0]
+        );
+        assert!(captured[0].contains("deterministic tools"));
+    }
+
+    #[tokio::test]
+    async fn zero_budget_keeps_stateless_prompt() {
+        // 0 = pure stateless (legacy behaviour): no [memory] section at all.
+        let nodes = Arc::new(vec!["secret memory".to_string()]);
+        let prompts = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let mut agent = base();
+        agent.memory_inject_chars = 0;
+        agent.memory = Arc::new(SpyMemory(nodes));
+        agent.reason = Arc::new(SpyReasoning(prompts.clone()));
+        agent.run_cycle("hello").await.unwrap();
+        let captured = prompts.lock().unwrap();
+        assert!(!captured[0].contains("[memory]"), "budget 0 must not inject");
+    }
+
+    #[tokio::test]
+    async fn twenty_five_rounds_context_stays_bounded() {
+        // Memory-Efficient mode: injection size is budget-capped and does not
+        // grow with round count — 25 rounds of the same task keep the LLM
+        // context ~constant (O-5 acceptance).
+        let nodes = Arc::new(vec![
+            "n1 ".repeat(150),
+            "n2 ".repeat(150),
+        ]);
+        let prompts = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let mut agent = base();
+        agent.memory_inject_chars = 800;
+        agent.memory = Arc::new(SpyMemory(nodes));
+        agent.reason = Arc::new(SpyReasoning(prompts.clone()));
+        for _ in 0..25 {
+            agent.run_cycle("steady task").await.unwrap();
+        }
+        let captured = prompts.lock().unwrap();
+        assert_eq!(captured.len(), 25, "one LLM call per round");
+        for prompt in captured.iter() {
+            let mem_start = prompt.find("[memory]").map(|i| i + 9).unwrap_or(prompt.len());
+            let section = &prompt[mem_start..];
+            assert!(
+                section.chars().count() <= 800 + 64,
+                "injected section must stay within budget: {}",
+                section.chars().count()
+            );
+        }
+    }
+
 }

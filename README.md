@@ -4,7 +4,7 @@
 ![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)
 ![Build](https://img.shields.io/badge/Build-Passing-brightgreen.svg)
 ![Style](https://img.shields.io/badge/Code%20Style-Google-black.svg)
-[![Tests](https://img.shields.io/badge/tests-183%2F183%20passed-green)](#)
+[![Tests](https://img.shields.io/badge/tests-189%2F189%20passed-green)](#)
 
 **The silicon-based operating system & physical brain for digital lifeforms.
 Perceive, reason, act, remember, and immunize — the body that houses the soul.**
@@ -93,12 +93,17 @@ via the CommonIntents protocol stack with zero hard coupling.
   BTreeMap over HashMap, no endpoint leakage
 - 🛠️ **Safety-First Execution** — Audited tool calls & immune system interception
 - 🚀 **Zero-Dependency Boot** — Runs fully offline without any external services
+- 🧠 **O-5: On-Demand Cognitive Injection** (ADR-0023) — the broken link is
+  fixed: memory nodes retrieved in MemoryRetrieval are folded into the
+  Reasoning prompt (budget-capped `memory_inject_chars`, 25-round context
+  grows ~zero; fold marker = "more memory on demand"); demo input is
+  source-ized via `--input` / `[anaphase] smoke_input` (zero-hardcoding)
 - 🧠 **O-4: Cognitive-Craft Trigger Verified** (ADR-0022) — the partner-mode
   chain `MemoryRetrieval → helix_query → suggested_actions → orchestration` is
   proven at the gRPC wire layer against the mock Mind; Drive mode never
   contacts Mind (assembly-gated, zero runtime branch); all 12 adapter literals
   moved to `MindConfig` (`[anaphase.mind]`, DNA principle 11 zero-hardcoding)
-- ✅ **Full Test Coverage** — 183/183 passing (lib + integration suites + rails + stage events + mind trigger) incl. security gate + Tuck gate + D'-4 live + cockpit snapshot + bootstrap env + CI-144 transport) +
+- ✅ **Full Test Coverage** — 189/189 passing (lib + integration suites + rails + stage events + mind trigger + memory injection) incl. security gate + Tuck gate + D'-4 live + cockpit snapshot + bootstrap env + CI-144 transport) +
   3 live e2e + 1 CI-144 live probe (#[ignore], real Tentacle / real binary)
 
 ## Project Structure
@@ -174,7 +179,7 @@ You will see a full cycle:
 
 ## Testing
 
-Run the full suite (**183/183 passing**):
+Run the full suite (**189/189 passing**):
 ```bash
 cargo test
 ```

@@ -234,3 +234,18 @@ ADR-XXXX 占位全部替换为 ADR-0018。
 - 全量 183 passed / 0 failed ✅
 - 0 硬编码：mind.rs 无字面量残留（grep 核对）✅
 **状态**：✅ 完成（commit 见 git log；ECOSYSTEM v1.39 同步）
+
+## 记录 21：O-5 按需认知注入——记忆折叠进推理请求（2026-09-06，ADR-0023）
+**健康快照**：✅ 完成（189 tests 全绿 = 183 + 6 注入/折叠/近零增长）
+**物理事实**：
+- 探查确认记忆检索断裂：memory_nodes 存 context 但从未注入 LLM（检索白做）
+- 对话窗口无数据源（HTTP 仅 snapshot/events 端点）——窗口 L0 诚实标注待 UI
+  会话层接入，不伪造缓冲
+- main.rs 硬编码演示输入（0 硬编码违规）→ `--input` / `smoke_input` / 协议
+  默认 const 三级来源
+**验证**：
+- 注入：prompt 含 `[memory]` + 节点原文（断裂修复）✅
+- 折叠：超预算截断 + 显式标记 ✅；预算 0 = 纯无状态（legacy 兼容）✅
+- 25 轮：注入段每轮 ≤ 预算恒定（Memory-Efficient 验收）✅
+- 冒烟：`--input "hello test"` 生效 ✅；全量 189 passed / 0 failed ✅
+**状态**：✅ 完成（commit 见 git log；ECOSYSTEM v1.40 同步）

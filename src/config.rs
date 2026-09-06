@@ -53,6 +53,16 @@ pub struct AnaphaseConfig {
     /// (trail persistence on, cross-restart replay; same pattern as
     /// session_notes_path). Set an explicit path to relocate.
     pub events_log_path: Option<String>,
+    /// O-5 (ADR-0023): cognitive-injection budget — memory nodes folded into
+    /// the Reasoning prompt, capped at this many chars. 0 = no injection
+    /// (pure stateless). Protocol default 800 (ADR-0023).
+    #[serde(default)]
+    pub memory_inject_chars: usize,
+    /// Demo/smoke input for the local run loop (O-5, ADR-0023): CLI `--input`
+    /// wins, then this config, then the protocol-default demo task. This is
+    /// the demo task source — no literal in main.rs.
+    #[serde(default)]
+    pub smoke_input: Option<String>,
 
     /// run_cycle state-machine constants (candidate E, ADR-0005).
     /// DNA principle 11 (ADR-0002): the five historical literals in
@@ -197,6 +207,8 @@ impl Default for AnaphaseConfig {
 
             session_notes_path: None,
             events_log_path: None,
+            memory_inject_chars: 800, // protocol default (ADR-0023)
+            smoke_input: None,
             run_cycle: RunCycleConfig::default(),
             rails: RailsConfig::default(),
             mind: MindConfig::default(),
@@ -260,6 +272,8 @@ mod tests {
                 reasoning_max_tokens: None,
                 session_notes_path: None,
                 events_log_path: None,
+                memory_inject_chars: 800,
+                smoke_input: None,
                 run_cycle: RunCycleConfig {
                     amygdala_default_vector: (0.7, 0.3, 0.2),
                     reasoning_mode: "left_brain".into(),
