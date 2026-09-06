@@ -16,7 +16,7 @@ use anaphase::run_cycle::AgentLoop;
 use anaphase::config::AnaphaseConfig;
 use anaphase::helix_mind_api::helix_mind_server::{HelixMind, HelixMindServer};
 use anaphase::helix_mind_api::{
-    AdvancedQueryRequest, ForgetRequest, ForgetResponse,
+    AdvancedQueryRequest, AlarmDue, ForgetRequest, ForgetResponse,
     HelixConsolidateRequest, HelixConsolidateResult, HelixCraftRequest, HelixCraftResult,
     HelixQueryRequest, HelixQueryResult, Node,
     QueryRequest, QueryResponse, ReloadGeneLockRequest, ReloadGeneLockResponse, RememberRequest,
@@ -277,6 +277,37 @@ async fn spawn_mock_mind_with_actions(actions: Vec<SuggestedAction>) -> (
     (format!("http://{}", addr), captured, shutdown_tx, handle)
 }
 
+/// P10d (ADR-0032)：spawn 一个返回指定 due alarms 的 mock Mind，暴露 ack 记录句柄。
+async fn spawn_mock_mind_with_alarms(alarms: Vec<AlarmDue>) -> (
+    String,
+    Captured,
+    Arc<Mutex<Vec<(String, String)>>>,
+    tokio::sync::oneshot::Sender<()>,
+    tokio::task::JoinHandle<()>,
+) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let captured = Captured::default();
+    let acked: Arc<Mutex<Vec<(String, String)>>> = Arc::new(Mutex::new(vec![]));
+    let svc = HelixMindServer::new(MockMind {
+        captured: captured.clone(),
+        suggested_actions: vec![],
+        due_alarms: alarms,
+        acked: acked.clone(),
+    });
+    let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
+    let handle = tokio::spawn(async move {
+        tonic::transport::Server::builder()
+            .add_service(svc)
+            .serve_with_incoming_shutdown(TcpListenerStream::new(listener), async {
+                let _ = shutdown_rx.await;
+            })
+            .await
+            .unwrap();
+    });
+    (format!("http://{}", addr), captured, acked, shutdown_tx, handle)
+}
+
 #[tokio::test]
 async fn normal_closed_loop_returns_nodes() {
     let (endpoint, _, _tx, _handle) = spawn_mock_mind().await;
@@ -462,4 +493,58 @@ async fn drive_mode_never_contacts_mind() {
         1,
         "Drive mode must never issue helix_query (count stays at sanity probe)"
     );
+}
+
+// ── P10a / P10d gRPC 级闭环（真实 GrpcMindAdapter → MockMind server）──
+
+#[tokio::test]
+async fn craft_via_grpc_returns_deterministic_synthesis() {
+    let (addr, _captured, _tx, handle) = spawn_mock_mind().await;
+    let adapter = GrpcMindAdapter::new(&addr, anaphase::config::MindConfig::default())
+        .await
+        .unwrap();
+
+    let note = adapter.craft("评估风险", "job-1").await.unwrap();
+    assert_eq!(note.trace_id, "craft#job-1", "deterministic trace");
+    assert!(!note.synthesis.is_empty(), "synthesis from mock");
+    handle.abort();
+}
+
+#[tokio::test]
+async fn wakeup_via_grpc_lists_due_alarms_then_ack_done() {
+    let (addr, _captured, acked, _tx, handle) = spawn_mock_mind_with_alarms(vec![AlarmDue {
+        job_id: "job-alarm-1".into(),
+        action: "hibernate".into(),
+        due_at: "2026-09-06T08:00:00+00:00".into(),
+        mode: "jittered".into(),
+        claim_id: "claim#job-alarm-1".into(),
+    }])
+    .await;
+    let adapter = GrpcMindAdapter::new(&addr, anaphase::config::MindConfig::default())
+        .await
+        .unwrap();
+
+    let alarms = adapter.wakeup(60).await.unwrap();
+    assert_eq!(alarms.len(), 1);
+    assert_eq!(alarms[0].action, "hibernate");
+    assert_eq!(alarms[0].claim_id, "claim#job-alarm-1");
+
+    adapter.wakeup_ack(&alarms[0].claim_id, "done").await.unwrap();
+    assert_eq!(
+        acked.lock().unwrap().clone(),
+        vec![("claim#job-alarm-1".to_string(), "done".to_string())],
+        "ack reached the mock server"
+    );
+    handle.abort();
+}
+
+#[tokio::test]
+async fn consolidate_via_grpc_runs_sleep_review_chain() {
+    let (addr, _captured, _tx, handle) = spawn_mock_mind().await;
+    let adapter = GrpcMindAdapter::new(&addr, anaphase::config::MindConfig::default())
+        .await
+        .unwrap();
+
+    adapter.consolidate("hibernate").await.unwrap();
+    handle.abort();
 }

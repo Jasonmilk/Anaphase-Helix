@@ -4,7 +4,7 @@
 ![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)
 ![Build](https://img.shields.io/badge/Build-Passing-brightgreen.svg)
 ![Style](https://img.shields.io/badge/Code%20Style-Google-black.svg)
-[![Tests](https://img.shields.io/badge/tests-202%2F202%20passed-green)](#)
+[![Tests](https://img.shields.io/badge/tests-205%2F205%20passed-green)](#)
 
 **The silicon-based operating system & physical brain for digital lifeforms.
 Perceive, reason, act, remember, and immunize — the body that houses the soul.**
@@ -57,6 +57,12 @@ via the CommonIntents protocol stack with zero hard coupling.
   pipeline against a real `tentacle --transport grpc` + real fixture plugins
   (manifest+js, SHA-256 pinned); identity_labels / seen_entropy_bloom semantics
   (ADR-0004); run_cycle Execution resolves real tool names (echo fallback)
+- 🌙 **P10 Cognitive Craft + Wake-up, live-verified** — `tests/p10_live.rs`
+  drives the REAL `helix-mind-cli` binary over the real wire: `craft`
+  (deterministic trace_id, 0-token synthesis), `ana_wakeup` agenda poll and
+  `helix_consolidate hibernate` (ADR-0031/0032). Requires a built Mind binary:
+  `cargo build -p helix-mind-cli` (../Helix-Mind), then
+  `cargo test --test p10_live -- --ignored`
 - 🧩 **Candidate E: run_cycle ↔ pipeline merge** (ADR-0005) — structured
   Reasoning output protocol (`{"calls":[...],"impasse":bool}`) replaces
   `contains("tool_call")` string matching; the six pipeline stages land in the
@@ -109,7 +115,7 @@ via the CommonIntents protocol stack with zero hard coupling.
   proven at the gRPC wire layer against the mock Mind; Drive mode never
   contacts Mind (assembly-gated, zero runtime branch); all 12 adapter literals
   moved to `MindConfig` (`[anaphase.mind]`, DNA principle 11 zero-hardcoding)
-- ✅ **Full Test Coverage** — 202/202 passing (lib + integration suites + rails + stage events + mind trigger + wakeup trigger + memory injection + judge backends) incl. security gate + Tuck gate + D'-4 live + cockpit snapshot + bootstrap env + CI-144 transport) +
+- ✅ **Full Test Coverage** — 205/205 passing (lib + integration suites + rails + stage events + mind trigger + wakeup trigger + memory injection + judge backends) incl. security gate + Tuck gate + D'-4 live + cockpit snapshot + bootstrap env + CI-144 transport + P10 live) +
   3 live e2e + 1 CI-144 live probe (#[ignore], real Tentacle / real binary)
 
 ## Project Structure
@@ -185,7 +191,7 @@ You will see a full cycle:
 
 ## Testing
 
-Run the full suite (**202/202 passing**):
+Run the full suite (**205/205 passing**):
 ```bash
 cargo test
 ```

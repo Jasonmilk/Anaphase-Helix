@@ -18,3 +18,21 @@ PLAN（P10d 段）｜ README（202 tests）｜ ECOSYSTEM v1.51（Anaphase 202，
 
 ### 状态
 🧬 已完成
+## 记录 25：P10 收尾——gRPC 级闭环 + live 物理验证（2026-09-06）
+
+### 触发条件
+P10d 接线完成后收尾核对：发现 gRPC 级闭环测试缺失（MockMind 有 stub 无测试），补上真实通道验证。
+
+### 变更性质
+- **mind_integration +3**：craft_via_grpc（确定性 trace）/ wakeup+ack_via_grpc（due alarm 走真实 wire + ack 到达 mock）/ consolidate_via_grpc（睡眠复盘链）
+- **p10_live.rs 新增（#[ignore] 手动联调）**：起真实 helix-mind-cli 二进制（临时 config + 临时库 + 随机端口）→ GrpcMindAdapter 真实客户端 → craft/wakeup/consolidate 全链路**物理验证通过**
+- **测试**：202→205（+3 gRPC 级）+ 1 live（ignored），22 套件全绿 0 warning
+
+### 兼容性
+零破坏；live 测试不进入常规套件（需 Mind 二进制，文档写明运行方式）。
+
+### 验收
+README（205 + P10 live 段）｜ PLAN（gRPC + live）｜ ECOSYSTEM v1.52（Anaphase 205，全生态 1417）
+
+### 状态
+🧬 已完成
