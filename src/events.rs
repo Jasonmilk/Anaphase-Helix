@@ -83,6 +83,11 @@ impl EventRing {
         self.dropped
     }
 
+    /// Capacity (the codex-contract source; read-only, no mutation).
+    pub fn cap(&self) -> usize {
+        self.cap
+    }
+
     /// Last sequence number (0 = empty) — the cursor a consumer would keep.
     pub fn last_seq(&self) -> u64 {
         self.seq

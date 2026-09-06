@@ -88,17 +88,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .map_err(|e| eprintln!("Warning: failed to load fixture-codex: {e}")) // warn + continue
             .ok();
     // O-2/O-3 (ADR-0019/0020/0021): the event ring is mode-agnostic — it is
-    // created once (cap from the codex contract) and shared by the agent
+    // created once (cap from the codex contract, DNA principle 11: no literal
+    // fallback — a missing contract means no ring, fail-closed, never a
+    // cap=0 ring that silently drops the black box) and shared by the agent
     // (cycle-level black box, stage 0) and the pipeline (stage 1..=6) when
     // wired. Drive mode without a pipeline still records its black box.
-    let events_cap = pipeline_config
-        .as_ref()
-        .map(|p| p.events_cap)
-        .unwrap_or(0);
     let shared_events: Option<std::sync::Arc<std::sync::Mutex<anaphase::events::EventRing>>> =
-        Some(std::sync::Arc::new(std::sync::Mutex::new(anaphase::events::EventRing::new(
-            events_cap,
-        ))));
+        pipeline_config.as_ref().map(|p| {
+            std::sync::Arc::new(std::sync::Mutex::new(anaphase::events::EventRing::new(
+                p.events_cap,
+            )))
+        });
     if let Some(pcfg) = pipeline_config {
         if let Some(mut pipeline) =
             anaphase::pipeline::resolve_pipeline(config.anaphase.tentacle_endpoint.clone(), pcfg)
@@ -113,11 +113,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .events_log_path
                 .clone()
                 .unwrap_or_else(|| "events.jsonl".to_string());
+            let cap = shared_events.as_ref().unwrap().lock().unwrap().cap();
             match std::fs::read_to_string(&events_path) {
-                Ok(content) => match anaphase::events::EventRing::from_jsonl(
-                    &content,
-                    events_cap,
-                ) {
+                Ok(content) => match anaphase::events::EventRing::from_jsonl(&content, cap) {
                     Ok(restored) => {
                         let n = restored.events().len();
                         *pipeline.events.lock().unwrap() = restored;
@@ -134,7 +132,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     // ADR-0021: inject the shared ring regardless of pipeline assembly —
     // every cycle records begin/state/end (+ tool) events, Drive included.
-    agent = agent.with_events(shared_events.clone().unwrap());
+    // No contract (codex missing) -> no ring (fail-closed), warned above.
+    if let Some(ring) = shared_events.clone() {
+        agent = agent.with_events(ring);
+    }
 
     // Rails (ADR-0018): mount the external human knowledge rail — read-only
     // citation asset. Missing/invalid kb dir degrades to None (fail-open,
