@@ -37,6 +37,8 @@ const PROBE_INTERVAL: Duration = Duration::from_millis(250);
 /// Tentacle gRPC default port when the endpoint is empty (ADR-0004: the
 /// M1.5 transport default, documented in Tentacle `--grpc-port` help).
 const TENTACLE_GRPC_DEFAULT_PORT: u16 = 50051;
+/// Helix-Mind API default listen port (protocol default, `api.listen_addr`).
+const MIND_GRPC_DEFAULT_PORT: u16 = 50051;
 
 /// A missing component with a concrete build hint (G-5 prereq guide).
 struct Missing {
@@ -48,6 +50,7 @@ struct Missing {
 /// Pure function — every path is a physical fact, no guessing.
 fn check_prereqs(
     tentacle: &Path,
+    mind: &Path,
     anaphase: &Path,
     cellrix_cli: &Path,
     mock_agent: &Path,
@@ -55,6 +58,9 @@ fn check_prereqs(
     let mut missing = Vec::new();
     if !tentacle.exists() {
         missing.push(Missing { what: "Tentacle", hint: "cd helix-tentacle && cargo build" });
+    }
+    if !mind.exists() {
+        missing.push(Missing { what: "Mind", hint: "cd Helix-Mind && cargo build -p helix-mind-cli" });
     }
     if !anaphase.exists() {
         missing.push(Missing { what: "Anaphase", hint: "cargo build   (in anaphase-helix)" });
@@ -128,6 +134,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let fixtures_dir = std::env::var("HELIX_FIXTURES_DIR").ok().filter(|v| !v.is_empty())
         .map(PathBuf::from)
         .unwrap_or_else(|| workspace_root.join("helix-tentacle/fixtures"));
+    let mind_bin = std::env::var("HELIX_MIND_BIN").ok().filter(|v| !v.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| workspace_root.join("Helix-Mind/target/debug/helix-mind-cli"));
     let anaphase_bin = cwd.join("target/debug/anaphase");
     let cellrix_cli = workspace_root.join("Cellrix/target/debug/cellrix-cli");
     let mock_agent = workspace_root.join("Cellrix/target/debug/mock-agent");
@@ -143,9 +152,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or(TENTACLE_GRPC_DEFAULT_PORT);
     let snapshot_port = anaphase_cfg.cap_http_port;
 
+    // 3b. Derive Mind config + port. A configured Helix-Mind/config.toml
+    //      wins; otherwise `up` writes a minimal default once into
+    //      .helix/mind/ (persistent memory location, gene_lock from the
+    //      repo example — never invented content). Port parsed from the
+    //      config, or the protocol default; if it collides with the
+    //      Tentacle gRPC port, shift by one (config-derived, documented).
+    let mind_cfg_dir = workspace_root.join(".helix/mind");
+    let mind_cfg = std::env::var("HELIX_MIND_CONFIG").ok().filter(|v| !v.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| {
+            let repo_cfg = workspace_root.join("Helix-Mind/config.toml");
+            if repo_cfg.exists() { Some(repo_cfg) } else { None }
+        })
+        .unwrap_or_else(|| mind_cfg_dir.join("config.toml"));
+    let mut mind_port = parse_listen_port(&mind_cfg)
+        .unwrap_or(MIND_GRPC_DEFAULT_PORT);
+    if mind_port == grpc_port {
+        mind_port = grpc_port + 1;
+        println!("  [i] Mind 默认端口 {grpc_port} 与 Tentacle 冲突 → Mind 使用 :{mind_port}");
+    }
+
     // 4. Prereq guide (G-5): every missing binary names its build command.
     println!("\n[前置检查]");
-    let missing = check_prereqs(&tentacle_bin, &anaphase_bin, &cellrix_cli, &mock_agent);
+    let missing = check_prereqs(&tentacle_bin, &mind_bin, &anaphase_bin, &cellrix_cli, &mock_agent);
     let mut blocked = false;
     for m in &missing {
         let fatal = m.what == "Anaphase"; // no Anaphase => nothing to run
@@ -183,13 +213,37 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("  [warn] Tentacle 未找到 → Anaphase 离线执行（Noop）");
     }
 
-    // 6. Start Anaphase with the endpoint injected via env.
+    // 5b. Start Mind (fail-open: missing binary/config -> no subconscious,
+    //      warn — Anaphase still runs; Mind is an enhancement, never a
+    //      dependency for the conscious loop).
+    let mut mind: Option<Child> = None;
+    if mind_bin.exists() {
+        if !mind_cfg.exists() {
+            std::fs::create_dir_all(&mind_cfg_dir)?;
+            write_minimal_mind_config(&mind_cfg, &mind_cfg_dir, mind_port, &workspace_root)?;
+            println!("  [i] Mind 默认配置已生成: {}（自定义可用 Helix-Mind/config.toml）", mind_cfg.display());
+        }
+        mind = Some(Command::new(&mind_bin)
+            .arg("-c")
+            .arg(&mind_cfg)
+            .arg("run")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()?);
+        wait_for_port(mind_port, "mind grpc")?;
+        println!("  [ok] Mind 就绪: gRPC :{mind_port}（潜意识层已接入）");
+    } else {
+        println!("  [warn] Mind 未找到 → Anaphase 运行在无潜意识模式（fail-open）");
+    }
+
+    // 6. Start Anaphase with the endpoints injected via env.
     let endpoint = format!("http://127.0.0.1:{grpc_port}");
-    let mut anaphase = Command::new(&anaphase_bin)
-        .env("ANAPHASE_TENTACLE_ENDPOINT", &endpoint)
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()?;
+    let mut cmd = Command::new(&anaphase_bin);
+    cmd.env("ANAPHASE_TENTACLE_ENDPOINT", &endpoint);
+    if mind.is_some() {
+        cmd.env("ANAPHASE_MIND_ENDPOINT", format!("http://127.0.0.1:{mind_port}"));
+    }
+    let mut anaphase = cmd.stdout(Stdio::null()).stderr(Stdio::null()).spawn()?;
 
     // 7. Probe the snapshot endpoint (physical fact: HTTP is listening).
     wait_for_port(snapshot_port, "anaphase snapshot")?;
@@ -511,7 +565,7 @@ mod tests {
             std::fs::write(&p, b"x").unwrap();
             p
         };
-        let missing = check_prereqs(&f("t"), &f("a"), &f("c"), &f("m"));
+        let missing = check_prereqs(&f("t"), &f("m"), &f("a"), &f("c"), &f("m"));
         assert!(missing.is_empty());
     }
 
@@ -524,7 +578,7 @@ mod tests {
             std::fs::write(&p, b"x").unwrap();
             p
         };
-        let missing = check_prereqs(&f("t"), &dir.join("absent-anaphase"), &f("c"), &f("m"));
+        let missing = check_prereqs(&f("t"), &f("m"), &dir.join("absent-anaphase"), &f("c"), &f("m"));
         assert_eq!(missing.len(), 1);
         assert_eq!(missing[0].what, "Anaphase");
     }
@@ -535,11 +589,55 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let missing = check_prereqs(
             &dir.join("t"),
+            &dir.join("m"),
             &dir.join("a"),
             &dir.join("c"),
             &dir.join("m"),
         );
-        assert_eq!(missing.len(), 4);
+        assert_eq!(missing.len(), 5);
         assert!(missing.iter().all(|m| m.hint.contains("cargo build")));
     }
+}
+
+/// Parse `[api] listen_addr = "127.0.0.1:PORT"` from a Mind config file.
+/// Missing file/section -> None (caller falls back to the protocol default).
+fn parse_listen_port(cfg_path: &Path) -> Option<u16> {
+    let text = std::fs::read_to_string(cfg_path).ok()?;
+    for line in text.lines() {
+        let line = line.trim();
+        if line.starts_with("listen_addr") {
+            let addr = line.split('=').nth(1)?.trim().trim_matches('"');
+            let port = addr.rsplit(':').next()?;
+            return port.trim_end_matches('/').parse().ok();
+        }
+    }
+    None
+}
+
+/// Write a minimal Mind config into .helix/mind/ (serde defaults fill the
+/// rest). Gene lock comes from the repo example — default content, never
+/// invented. Zero-hardcoding: every path derives from the caller args.
+fn write_minimal_mind_config(
+    cfg_path: &Path,
+    dir: &Path,
+    port: u16,
+    workspace_root: &Path,
+) -> std::io::Result<()> {
+    let sqlite = dir.join("helix_mind.db");
+    let gene_lock = dir.join("gene_lock.md");
+    let repo_example = workspace_root.join("Helix-Mind/gene_lock.md.example");
+    let content = format!(
+        "[storage]\nsqlite_path = \"{}\"\nparquet_dir = \"{}\"\ndeep_cold_dir = \"{}\"\nhuman_view_dir = \"{}\"\n\n[gene_lock]\nfile_path = \"{}\"\n\n[api]\nlisten_addr = \"127.0.0.1:{}\"\ntransport = \"tcp\"\n",
+        sqlite.display(),
+        dir.join("parquet").display(),
+        dir.join("deep_cold").display(),
+        dir.join("human_views").display(),
+        gene_lock.display(),
+        port
+    );
+    std::fs::write(cfg_path, content)?;
+    if repo_example.exists() {
+        std::fs::copy(repo_example, &gene_lock)?;
+    }
+    Ok(())
 }

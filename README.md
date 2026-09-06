@@ -4,7 +4,7 @@
 ![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)
 ![Build](https://img.shields.io/badge/Build-Passing-brightgreen.svg)
 ![Style](https://img.shields.io/badge/Code%20Style-Google-black.svg)
-[![Tests](https://img.shields.io/badge/tests-205%2F205%20passed-green)](#)
+[![Tests](https://img.shields.io/badge/tests-206%2F206%20passed-green)](#)
 
 **The silicon-based operating system & physical brain for digital lifeforms.
 Perceive, reason, act, remember, and immunize — the body that houses the soul.**
@@ -115,7 +115,7 @@ via the CommonIntents protocol stack with zero hard coupling.
   proven at the gRPC wire layer against the mock Mind; Drive mode never
   contacts Mind (assembly-gated, zero runtime branch); all 12 adapter literals
   moved to `MindConfig` (`[anaphase.mind]`, DNA principle 11 zero-hardcoding)
-- ✅ **Full Test Coverage** — 205/205 passing (lib + integration suites + rails + stage events + mind trigger + wakeup trigger + memory injection + judge backends) incl. security gate + Tuck gate + D'-4 live + cockpit snapshot + bootstrap env + CI-144 transport + P10 live) +
+- ✅ **Full Test Coverage** — 206/206 passing (lib + integration suites + rails + stage events + mind trigger + wakeup trigger + memory injection + judge backends) incl. security gate + Tuck gate + D'-4 live + cockpit snapshot + bootstrap env + CI-144 transport + P10 live) +
   3 live e2e + 1 CI-144 live probe (#[ignore], real Tentacle / real binary)
 
 ## Project Structure
@@ -163,15 +163,16 @@ anaphase-helix/
 
 ## Quick Start
 
-**One command, full stack** (candidate G-4 ADR-0011 + G-5 ADR-0012 + G-6 ADR-0013 + G-7 ADR-0015) — Tentacle (gRPC + fixture plugins) → Anaphase (endpoint injected via env, `config.toml` untouched) → readiness probes → **interactive menu** (tty): 1 open cockpit (Enter) / 2 status / 3 config hints / **4 configure LLM (guided base_url/model/api_key, key hidden, auto-backup config.toml.bak)** / 5 exit (q). One command, then choices only — no commands to remember. Non-tty (scripts/CI) degrades to plain hold-until-Ctrl+C.
+**One command, full stack** (candidate G-4 ADR-0011 + G-5 ADR-0012 + G-6 ADR-0013 + G-7 ADR-0015) — Tentacle (gRPC + fixture plugins) → **Mind (subconscious: `helix-mind-cli`, minimal default config auto-written to `.helix/mind/` once, gene_lock from the repo example; port auto-shifted on collision)** → Anaphase (endpoints injected via env, `config.toml` untouched) → readiness probes → **interactive menu** (tty): 1 open cockpit (Enter) / 2 status / 3 config hints / **4 configure LLM (guided base_url/model/api_key, key hidden, auto-backup config.toml.bak)** / 5 exit (q). One command, then choices only — no commands to remember. Non-tty (scripts/CI) degrades to plain hold-until-Ctrl+C.
 
 ```bash
-cargo run --bin up               # backend: tentacle + anaphase, probes both ready
+cargo run --bin up               # full stack: tentacle + mind + anaphase, probes all ready
 cargo run --bin up -- --cockpit  # + Cellrix cockpit TUI in the foreground
 ```
 
 Prereqs (build once, then `up` just works):
 - `helix-tentacle`: `cargo build` → `target/debug/tentacle`
+- `Helix-Mind`: `cargo build -p helix-mind-cli` → `target/debug/helix-mind-cli` (fail-open: missing Mind → Anaphase runs without subconscious, never blocks)
 - `Cellrix`: `cargo build` → `target/debug/cellrix-cli` + `target/debug/mock-agent`
 
 All knobs optional: `HELIX_TENTACLE` (binary path), `HELIX_FIXTURES_DIR`,
@@ -191,7 +192,7 @@ You will see a full cycle:
 
 ## Testing
 
-Run the full suite (**205/205 passing**):
+Run the full suite (**206/206 passing**):
 ```bash
 cargo test
 ```

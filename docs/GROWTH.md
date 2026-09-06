@@ -58,3 +58,22 @@ README（205 + P10 live 段）｜ PLAN（gRPC + live）｜ ECOSYSTEM v1.52（Ana
 
 ### 状态
 🧬 已完成
+## 记录 27：up 全栈——潜意识层接入 + 真实见面冒烟（2026-09-06）
+
+### 触发条件
+用户问"测试是否全栈跑通、想和 Helix 见面"→ 发现 up 只启 Tentacle+Anaphase，缺 Mind（潜意识层），全栈差核心一环。
+
+### 变更性质
+- **config.rs**：env 覆盖加 `ANAPHASE_MIND_ENDPOINT`（12-factor 同款，+1 单测）
+- **up.rs**：Mind 一键接入——`HELIX_MIND_BIN`/`HELIX_MIND_CONFIG` env 覆盖 > Helix-Mind/config.toml > `.helix/mind/` 最小默认配置（gene_lock 来自仓库 example，永不臆造）；端口从 config 解析、与 Tentacle 冲突自动 +1（零硬编码）；Mind 缺失 fail-open（无潜意识不阻塞意识层）；preqreq 检查 + 测试同步（+Mind）
+- **真实冒烟验证**：三进程全起（Tentacle :50051 + Mind :50052 + Anaphase :50061 partner）→ snapshot 显示 tentacle/mind **Available**（物理探活）→ events 白盒完整记录 run_cycle 状态机迁移（Perception→PreAssessment→MemoryRetrieval→Reasoning，trace_id 确定性派生）
+- **测试**：205→206（+mind env override），22 套件全绿
+
+### 兼容性
+零破坏：Mind 缺失 fail-open；新 env 可选；up 菜单/非 tty 行为不变。
+
+### 验收
+README（up 全栈 + Mind prereq）｜ PLAN（全栈）｜ ECOSYSTEM v1.54（Anaphase 206，全生态 1418）
+
+### 状态
+🧬 已完成

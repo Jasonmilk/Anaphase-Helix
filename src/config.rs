@@ -291,6 +291,11 @@ fn apply_env_overrides(mut config: Config) -> Config {
             config.anaphase.reasoning_endpoint = Some(v);
         }
     }
+    if let Ok(v) = std::env::var("ANAPHASE_MIND_ENDPOINT") {
+        if !v.is_empty() {
+            config.anaphase.mind_endpoint = Some(v);
+        }
+    }
     config
 }
 
@@ -355,6 +360,14 @@ mod tests {
         unsafe { std::env::set_var("ANAPHASE_TENTACLE_ENDPOINT", ""); }
         let c = apply_env_overrides(base_config());
         assert_eq!(c.anaphase.tentacle_endpoint, None);
+    }
+
+    #[test]
+    fn mind_env_override_applies() {
+        let _g = ENV_LOCK.lock().unwrap();
+        unsafe { std::env::set_var("ANAPHASE_MIND_ENDPOINT", "http://127.0.0.1:50052"); }
+        let c = apply_env_overrides(base_config());
+        assert_eq!(c.anaphase.mind_endpoint.as_deref(), Some("http://127.0.0.1:50052"));
     }
 
     #[test]
