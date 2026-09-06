@@ -4,7 +4,7 @@
 ![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)
 ![Build](https://img.shields.io/badge/Build-Passing-brightgreen.svg)
 ![Style](https://img.shields.io/badge/Code%20Style-Google-black.svg)
-[![Tests](https://img.shields.io/badge/tests-195%2F195%20passed-green)](#)
+[![Tests](https://img.shields.io/badge/tests-198%2F198%20passed-green)](#)
 
 **The silicon-based operating system & physical brain for digital lifeforms.
 Perceive, reason, act, remember, and immunize — the body that houses the soul.**
@@ -109,7 +109,7 @@ via the CommonIntents protocol stack with zero hard coupling.
   proven at the gRPC wire layer against the mock Mind; Drive mode never
   contacts Mind (assembly-gated, zero runtime branch); all 12 adapter literals
   moved to `MindConfig` (`[anaphase.mind]`, DNA principle 11 zero-hardcoding)
-- ✅ **Full Test Coverage** — 195/195 passing (lib + integration suites + rails + stage events + mind trigger + memory injection + judge backends) incl. security gate + Tuck gate + D'-4 live + cockpit snapshot + bootstrap env + CI-144 transport) +
+- ✅ **Full Test Coverage** — 198/198 passing (lib + integration suites + rails + stage events + mind trigger + memory injection + judge backends) incl. security gate + Tuck gate + D'-4 live + cockpit snapshot + bootstrap env + CI-144 transport) +
   3 live e2e + 1 CI-144 live probe (#[ignore], real Tentacle / real binary)
 
 ## Project Structure
@@ -185,7 +185,7 @@ You will see a full cycle:
 
 ## Testing
 
-Run the full suite (**195/195 passing**):
+Run the full suite (**198/198 passing**):
 ```bash
 cargo test
 ```

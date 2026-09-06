@@ -2,7 +2,13 @@
 
 > **DNA 方法论 v1.0** ｜ PLAN.md 是导航牌，不是历史档案（≤150 行）。完成记录进 GROWTH.md。
 
-## 当前阶段：O-1 落地 + Rails（ADR-0018）+ O-2 stage 事件总线（ADR-0019）——下一步按生态节奏
+## 当前阶段：O-1 落地 + Rails（ADR-0018）+ O-2 stage 事件总线（ADR-0019）+ P10a 认知工艺触发（ADR-0031）——下一步按生态节奏
+
+**P10a 认知工艺触发（ADR-0031，2026-09-06 完成）**：Mind 侧 helix_craft RPC（Anaphase 客户端同步）——
+MemoryAdapter.craft() 默认方法（Noop 零改动静默降级）+ GrpcMindAdapter 调 helix_craft（工序集/约束来自
+MindConfig 协议默认，循环只问"要不要想"、adapter 决定"怎么想"）+ run_cycle MemoryRetrieval 对非结构化输入
+按需触发（确定性 job_id）→ Reasoning 以 [think-first] 折入 synthesis（0 token 思考先于 LLM tokens）。
+198 tests 全绿（+3：craft 触发/结构化跳过/Noop 降级）+ MockMind craft stub。
 
 **O-2 stage 事件总线（ADR-0019，2026-09-06 完成）**：过程白盒第四层——append-only
 事件环（事件=过程，ledger=事实，evidence=支撑）+ 六 stage 边界插桩（begin/end/verdict）
