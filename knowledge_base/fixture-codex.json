@@ -10,5 +10,6 @@
   "retry_policy": {
     "base_delay_secs": 3600,
     "max_attempts": 3
-  }
+  },
+  "events_cap": 1024
 }

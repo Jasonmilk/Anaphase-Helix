@@ -4,7 +4,7 @@
 ![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)
 ![Build](https://img.shields.io/badge/Build-Passing-brightgreen.svg)
 ![Style](https://img.shields.io/badge/Code%20Style-Google-black.svg)
-[![Tests](https://img.shields.io/badge/tests-169%2F169%20passed-green)](#)
+[![Tests](https://img.shields.io/badge/tests-176%2F176%20passed-green)](#)
 
 **The silicon-based operating system & physical brain for digital lifeforms.
 Perceive, reason, act, remember, and immunize — the body that houses the soul.**
@@ -38,6 +38,11 @@ via the CommonIntents protocol stack with zero hard coupling.
   circuit Reasoning (0 tokens): the answer is assembled verbatim from the
   injected nodes + node ids — no LLM, no synthesis possible. Read-only at
   the type level (`RailScope::Read`). Demo kb: `knowledge_base/rails/demo/`
+- 📡 **Stage Event Bus** (ADR-0019) — append-only process white-box: the
+  six pipeline stages emit begin/end/verdict events on one deterministic
+  trace id (derived job id); pull via `GET /v1/agent/events?after=N`
+  (incremental cursor, no push). Events = process, ledger = fact,
+  evidence = support. Capacity from codex contract (zero hardcoding)
 - 🚗 **CI-144 Transport Layer** (ADR-0017) — `--stdio` speaks the ecosystem's
   common dialect: CIB/1.0 handshake → MessagePack frames (LE u32 length prefix)
   → Manifest (first frame) → 1s snapshot push → ActionRequest/Response
@@ -88,7 +93,7 @@ via the CommonIntents protocol stack with zero hard coupling.
   BTreeMap over HashMap, no endpoint leakage
 - 🛠️ **Safety-First Execution** — Audited tool calls & immune system interception
 - 🚀 **Zero-Dependency Boot** — Runs fully offline without any external services
-- ✅ **Full Test Coverage** — 169/169 passing (lib + integration suites + rails) incl. security gate + Tuck gate + D'-4 live + cockpit snapshot + bootstrap env + CI-144 transport) +
+- ✅ **Full Test Coverage** — 176/176 passing (lib + integration suites + rails + stage events) incl. security gate + Tuck gate + D'-4 live + cockpit snapshot + bootstrap env + CI-144 transport) +
   3 live e2e + 1 CI-144 live probe (#[ignore], real Tentacle / real binary)
 
 ## Project Structure
@@ -164,7 +169,7 @@ You will see a full cycle:
 
 ## Testing
 
-Run the full suite (**169/169 passing**):
+Run the full suite (**176/176 passing**):
 ```bash
 cargo test
 ```

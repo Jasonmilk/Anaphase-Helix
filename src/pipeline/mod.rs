@@ -35,12 +35,21 @@ pub struct RetryPolicy {
 pub struct PipelineConfig {
     pub rules: RuleParams,
     pub retry_policy: RetryPolicy,
+    /// Event-ring capacity (stage events, ADR-0019). Loaded from the codex
+    /// contract — conservative in-memory budget, not a literal.
+    pub events_cap: usize,
 }
 
 #[derive(Debug, Deserialize)]
 struct Codex {
     rules: RuleParams,
     retry_policy: RetryPolicy,
+    #[serde(default = "default_events_cap")]
+    events_cap: usize,
+}
+
+fn default_events_cap() -> usize {
+    1024
 }
 
 impl PipelineConfig {
@@ -53,6 +62,7 @@ impl PipelineConfig {
         Ok(Self {
             rules: codex.rules,
             retry_policy: codex.retry_policy,
+            events_cap: codex.events_cap,
         })
     }
 }
@@ -85,6 +95,9 @@ pub struct Pipeline {
     pub ledger: Ledger,
     /// Optional security gate (ADR-0008 D'-2). `None` = legacy behavior.
     pub security_gate: Option<Arc<dyn SecurityGate>>,
+    /// Stage event ring (ADR-0019): append-only process record. Shared with
+    /// the HTTP projection so consumers can pull incrementally (`after(seq)`).
+    pub events: std::sync::Arc<std::sync::Mutex<crate::events::EventRing>>,
 }
 
 impl Pipeline {
@@ -96,13 +109,30 @@ impl Pipeline {
         // The clock lives in the ledger; the pipeline reads it via the ledger
         // so a single injectable time source drives the whole run.
         let ledger = Ledger::new(clock);
-        Self { tentacle, config, evidence: EvidenceStore::new(), ledger, security_gate: None }
+        let events_cap = config.events_cap;
+        Self {
+            tentacle,
+            config,
+            evidence: EvidenceStore::new(),
+            ledger,
+            security_gate: None,
+            events: std::sync::Arc::new(std::sync::Mutex::new(
+                crate::events::EventRing::new(events_cap),
+            )),
+        }
     }
 
     /// Inject a security gate (ADR-0008). `None` restores legacy behavior.
     pub fn with_security_gate(mut self, gate: Option<Arc<dyn SecurityGate>>) -> Self {
         self.security_gate = gate;
         self
+    }
+
+    /// Emit one stage event (ADR-0019). Timestamp comes from the ledger's
+    /// injected clock — the same deterministic time source drives the whole run.
+    pub fn emit_event(&self, trace_id: &str, stage: u8, phase: &str, detail: &str) {
+        let ts = crate::ledger::unix_secs_to_rfc3339(self.ledger.clock_now());
+        self.events.lock().unwrap().emit(&ts, trace_id, stage, phase, detail);
     }
 
     // ---- stage 2: pure ----
@@ -123,6 +153,7 @@ impl Pipeline {
         identity_labels: &std::collections::BTreeMap<String, String>,
     ) -> Result<Vec<EvidenceRecord>, String> {
         let mut records = Vec::with_capacity(job.calls.len());
+        self.emit_event(&job.job_id, 3, "begin", &format!("calls={}", job.calls.len()));
         for (i, call) in job.calls.iter().enumerate() {
             let params = serde_json::to_string(&call.args)
                 .map_err(|e| format!("serialize args: {e}"))?;
@@ -193,6 +224,12 @@ impl Pipeline {
                 )
             };
             records.push(record);
+            self.emit_event(
+                &job.job_id,
+                3,
+                "end",
+                &format!("{} {}", call.tool, if resp.ok { "ok" } else { "err" }),
+            );
         }
         Ok(records)
     }
@@ -201,9 +238,12 @@ impl Pipeline {
 
     /// Append executed records into the evidence store.
     pub fn record_evidence(&mut self, records: Vec<EvidenceRecord>) {
+        let trace = records.first().map(|r| r.job_id.clone()).unwrap_or_default();
+        self.emit_event(&trace, 4, "begin", &format!("records={}", records.len()));
         for r in records {
             self.evidence.append(r);
         }
+        self.emit_event(&trace, 4, "end", &format!("records={}", self.evidence.records().len()));
     }
 
     // ---- stage 5: pure ----

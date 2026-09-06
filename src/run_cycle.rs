@@ -441,12 +441,19 @@ impl AgentLoop {
                 if self.context.structured {
                     if let Some(p) = self.pipeline.as_ref() {
                         let job_id = crate::contract::derive_job_id(&self.context.user_input);
+                        // stage events (ADR-0019): stage1 = call parsing
+                        // (structured triage happened in Perception — 0 tokens),
+                        // stage2 = tt_job assembly (Reasoning tail).
+                        p.emit_event(&job_id, 1, "begin", "structured");
+                        p.emit_event(&job_id, 1, "end", &format!("calls={}", self.context.calls.len()));
                         let created_at = unix_secs_to_rfc3339(p.ledger.clock_now());
+                        p.emit_event(&job_id, 2, "begin", "assemble");
                         self.context.job = Some(Pipeline::assemble_tt_job(
                             &job_id,
                             &created_at,
                             self.context.calls.clone(),
                         ));
+                        p.emit_event(&job_id, 2, "end", "job=assembled");
                     }
                     return Ok(TransitionCondition::NeedsTool);
                 }
@@ -490,12 +497,19 @@ impl AgentLoop {
                                     // input, created_at from the injected clock).
                                     if let Some(p) = self.pipeline.as_ref() {
                                         let job_id = crate::contract::derive_job_id(&self.context.user_input);
+                                        // stage events (ADR-0019): stage1 =
+                                        // parse_llm_calls completed, stage2 =
+                                        // tt_job assembly (Reasoning tail).
+                                        p.emit_event(&job_id, 1, "begin", "llm");
+                                        p.emit_event(&job_id, 1, "end", &format!("calls={}", sig.calls.len()));
                                         let created_at = unix_secs_to_rfc3339(p.ledger.clock_now());
+                                        p.emit_event(&job_id, 2, "begin", "assemble");
                                         self.context.job = Some(Pipeline::assemble_tt_job(
                                             &job_id,
                                             &created_at,
                                             sig.calls.clone(),
                                         ));
+                                        p.emit_event(&job_id, 2, "end", "job=assembled");
                                     }
                                     Ok(TransitionCondition::NeedsTool)
                                 } else if sig.impasse {
@@ -617,21 +631,33 @@ impl AgentLoop {
                 // ledger — when this cycle executed a structured plan.
                 if !self.context.evidence.is_empty() {
                     if let Some(pipeline) = self.pipeline.as_mut() {
-                        let reports = Pipeline::check_results(&self.context.evidence, &pipeline.config.rules);
-                        let evidence_ids: Vec<String> = self
-                            .context
-                            .evidence
-                            .iter()
-                            .map(|r| r.evidence_id.clone())
-                            .collect();
                         let job_id = self
                             .context
                             .job
                             .as_ref()
                             .map(|j| j.job_id.clone())
                             .unwrap_or_default();
+                        // stage events (ADR-0019): stage5 = criteria checks,
+                        // stage6 = verdict ledger write (Reflection tail).
+                        pipeline.emit_event(&job_id, 5, "begin", "criteria");
+                        let reports = Pipeline::check_results(&self.context.evidence, &pipeline.config.rules);
+                        pipeline.emit_event(&job_id, 5, "end", &format!("reports={}", reports.len()));
+                        let evidence_ids: Vec<String> = self
+                            .context
+                            .evidence
+                            .iter()
+                            .map(|r| r.evidence_id.clone())
+                            .collect();
+                        pipeline.emit_event(&job_id, 6, "begin", "ledger");
                         let verdict = pipeline.build_verdict(&job_id, evidence_ids, &reports, None);
+                        let status = match &verdict {
+                            crate::ledger::LedgerRecord::Verdict { status, .. } => {
+                                format!("{status:?}")
+                            }
+                            crate::ledger::LedgerRecord::Blocked { .. } => "blocked".to_string(),
+                        };
                         pipeline.ledger.append(verdict);
+                        pipeline.emit_event(&job_id, 6, "end", &format!("verdict={status}"));
                         info!("[Reflection] Ledger verdict written for job {}", job_id);
                     }
                 }

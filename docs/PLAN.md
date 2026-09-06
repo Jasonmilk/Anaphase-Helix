@@ -2,7 +2,13 @@
 
 > **DNA 方法论 v1.0** ｜ PLAN.md 是导航牌，不是历史档案（≤150 行）。完成记录进 GROWTH.md。
 
-## 当前阶段：O-1 落地 + Rails 心智外铁轨（ADR-0018）——下一步 O-2 stage 事件总线
+## 当前阶段：O-1 落地 + Rails（ADR-0018）+ O-2 stage 事件总线（ADR-0019）——下一步按生态节奏
+
+**O-2 stage 事件总线（ADR-0019，2026-09-06 完成）**：过程白盒第四层——append-only
+事件环（事件=过程，ledger=事实，evidence=支撑）+ 六 stage 边界插桩（begin/end/verdict）
++ trace_id=派生 job_id（一次 cycle 一条 trace）+ `GET /v1/agent/events?after=N` 增量
+拉取（记录非控制流）+ events_cap 来自 codex contract（零硬编码）。176 tests 全绿
+（+7：3 events 单元 + 4 stage_events 集成）+ 真实二进制端点验证。
 
 **Rails 心智外铁轨（ADR-0018，2026-09-06 完成）**：人类知识 DAG（宪法/律法/SOP）只读引用
 铁轨——`knowledge_base/rails/<kb>/` markdown 原汁原味 + 确定性索引（标题树=节点、
@@ -24,7 +30,7 @@ Cellrix）。事件流：Manifest 首帧 → 1s 节律 Snapshot 推流 → Actio
 | # | 任务 | 验收 | 依赖 |
 |---|---|---|---|
 | O-1 | 想 stage 接 Mind 契约：感知（口袋/资源/生态点亮）→ 设置 budget_tier（ADR-0010）→ 触发 helixQuery → 消费 effective_mode/suggested_actions 编排执行 | ✅ 已完成：结构化输入零 LLM（`!tool` 分诊）+ 生态点亮探测 + 感知点（ecc1924，152 tests 全绿） | ADR-0016 D1/D2.5/D3 |
-| O-2 | stage 事件总线：六 stage 边界发确定性事件（stage_begin/stage_end/verdict），携带 W3C traceparent（与认知工艺共享 trace_id） | Cellrix/Tuck 可订阅；事件 = 过程，ledger = 事实，职责分明 | ADR-0016 D5 |
+| O-2 | stage 事件总线：六 stage 边界发确定性事件（stage_begin/stage_end/verdict） | ✅ 已完成（ADR-0019：事件环 + ?after=seq 增量拉取 + /v1/agent/events 端点；176 tests 全绿，9c0e60c 起） | ADR-0016 D5 |
 | O-3 | 按需加载落点：请求只带本轮所需（窗口 L0 按轮取 + 磁石点开才读） | Memory-Efficient 模式（25 轮上下文近零增长） | 候选 G 快照 |
 | O-4 | 认知工艺触发接线验证（伙伴模式）：想 stage 触发 Mind → Mind 走四拍/五工序 → Anaphase 按建议编排 | 触发链路真实连通；驾驶模式不触发；Anaphase 零工序实现（回归 ADR-0021 边界） | O-1/O-2 |
 | ⏳ | 并行调度 + 上下文窗口感知 | 等待 FlowModus | FlowModus 未完成 |

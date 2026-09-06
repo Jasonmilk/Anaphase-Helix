@@ -87,11 +87,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         anaphase::pipeline::PipelineConfig::from_codex("knowledge_base/fixture-codex.json")
             .map_err(|e| eprintln!("Warning: failed to load fixture-codex: {e}")) // warn + continue
             .ok();
+    // O-2 (ADR-0019): shared stage-event ring projection for the HTTP
+    // endpoint (incremental pull via `?after=seq`). None = no pipeline wired.
+    let mut shared_events: Option<std::sync::Arc<std::sync::Mutex<anaphase::events::EventRing>>> =
+        None;
     if let Some(pcfg) = pipeline_config {
         if let Some(pipeline) =
             anaphase::pipeline::resolve_pipeline(config.anaphase.tentacle_endpoint.clone(), pcfg)
                 .await
         {
+            shared_events = Some(pipeline.events.clone());
             agent = agent.with_pipeline(pipeline);
             eprintln!("Pipeline wired to Tentacle endpoint (deterministic execution channel active)");
         }
@@ -126,15 +131,41 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Arc::new(Mutex::new(None));
         shared_snapshot = Some(shared.clone());
 
-        let app = Router::new().route("/v1/agent/snapshot", get({
-            let shared = shared.clone();
-            move || async move {
-                match shared.lock().unwrap().clone() {
-                    Some(snap) => Json(serde_json::json!({ "status": "Active", "snapshot": snap })),
-                    None => Json(serde_json::json!({ "status": "booting" })),
+        use axum::extract::Query;
+        use std::collections::HashMap;
+
+        let app = Router::new()
+            .route("/v1/agent/snapshot", get({
+                let shared = shared.clone();
+                move || async move {
+                    match shared.lock().unwrap().clone() {
+                        Some(snap) => Json(serde_json::json!({ "status": "Active", "snapshot": snap })),
+                        None => Json(serde_json::json!({ "status": "booting" })),
+                    }
                 }
-            }
-        }));
+            }))
+            .route("/v1/agent/events", get({
+                let events = shared_events.clone();
+                move |Query(params): Query<HashMap<String, String>>| async move {
+                    let after: u64 = params
+                        .get("after")
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(0);
+                    match &events {
+                        Some(ring) => {
+                            let guard = ring.lock().unwrap();
+                            let evs = guard.after(after);
+                            let dropped = guard.dropped();
+                            Json(serde_json::json!({
+                                "events": evs,
+                                "dropped": dropped,
+                                "last_seq": guard.last_seq()
+                            }))
+                        }
+                        None => Json(serde_json::json!({ "status": "no pipeline" })),
+                    }
+                }
+            }));
         let addr = format!("0.0.0.0:{}", config.anaphase.cap_http_port);
         let listener = tokio::net::TcpListener::bind(&addr).await?;
         println!("CAP HTTP server started: http://{}", addr);

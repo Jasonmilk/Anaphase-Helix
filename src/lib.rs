@@ -8,6 +8,7 @@ pub mod hitl;
 pub mod lifecycle;
 pub mod task_dag;
 pub mod gloves;
+pub mod events;
 pub mod contract;
 pub mod evidence;
 pub mod criteria;
