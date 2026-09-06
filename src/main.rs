@@ -92,10 +92,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut shared_events: Option<std::sync::Arc<std::sync::Mutex<anaphase::events::EventRing>>> =
         None;
     if let Some(pcfg) = pipeline_config {
+        // Extract before resolve_pipeline consumes pcfg (O-3 restore needs cap).
+        let events_cap = pcfg.events_cap;
         if let Some(pipeline) =
             anaphase::pipeline::resolve_pipeline(config.anaphase.tentacle_endpoint.clone(), pcfg)
                 .await
         {
+            // O-3: restore the cross-restart event trail BEFORE the pipeline
+            // moves into the agent (same pattern as session_notes — default
+            // "events.jsonl"). Fail-open: a missing or corrupted log starts
+            // a fresh trail, never a crash.
+            let events_path = config
+                .anaphase
+                .events_log_path
+                .clone()
+                .unwrap_or_else(|| "events.jsonl".to_string());
+            match std::fs::read_to_string(&events_path) {
+                Ok(content) => match anaphase::events::EventRing::from_jsonl(
+                    &content,
+                    events_cap,
+                ) {
+                    Ok(restored) => {
+                        let n = restored.events().len();
+                        *pipeline.events.lock().unwrap() = restored;
+                        eprintln!("Events trail restored from {} ({} events)", events_path, n);
+                    }
+                    Err(e) => eprintln!("Warning: event trail unreadable ({events_path}): {e} (fresh trail)"),
+                },
+                Err(_) => eprintln!("Events trail: no existing log at {} (fresh trail)", events_path),
+            }
             shared_events = Some(pipeline.events.clone());
             agent = agent.with_pipeline(pipeline);
             eprintln!("Pipeline wired to Tentacle endpoint (deterministic execution channel active)");
@@ -202,8 +227,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // O-1 (ADR-0016 D1): run_cycle is a single-period primitive — the caller
     // owns the looping policy. Cap from config (DNA principle 11: the 7 is a
     // conservative local-LLM context-budget default, not a protocol value).
+    // O-3: the event trail is appended after every cycle (incremental, only
+    // events after the flushed cursor) — a crash between cycles loses at most
+    // the in-flight cycle, never the settled trail.
+    let events_path = config
+        .anaphase
+        .events_log_path
+        .clone()
+        .unwrap_or_else(|| "events.jsonl".to_string());
+    let mut flushed_seq = 0u64;
     for _ in 0..agent.run_config.cycle_cap {
         let out = agent.run_cycle(user_input).await?;
+        if let Some(pipeline) = agent.pipeline.as_ref() {
+            let ring = pipeline.events.lock().unwrap();
+            let fresh: Vec<anaphase::events::StageEvent> = ring.after(flushed_seq);
+            if !fresh.is_empty() {
+                flushed_seq = ring.last_seq();
+                let mut buf = String::new();
+                for e in &fresh {
+                    buf.push_str(&serde_json::to_string(e).unwrap_or_default());
+                    buf.push('\n');
+                }
+                use std::io::Write;
+                if let Ok(mut f) = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(&events_path)
+                {
+                    let _ = f.write_all(buf.as_bytes());
+                }
+            }
+        }
         if out.done {
             break;
         }

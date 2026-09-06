@@ -49,6 +49,11 @@ pub struct AnaphaseConfig {
     /// 纪元会话笔记路径（P10c T1 强制苏醒/认知脱水）：默认 "session_notes.json"
     pub session_notes_path: Option<String>,
 
+    /// O-3: stage-event trail log path. `None` = default "events.jsonl"
+    /// (trail persistence on, cross-restart replay; same pattern as
+    /// session_notes_path). Set an explicit path to relocate.
+    pub events_log_path: Option<String>,
+
     /// run_cycle state-machine constants (candidate E, ADR-0005).
     /// DNA principle 11 (ADR-0002): the five historical literals in
     /// run_cycle.rs now have a config source. Overridable via
@@ -185,6 +190,7 @@ impl Default for AnaphaseConfig {
             reasoning_max_tokens: None,
 
             session_notes_path: None,
+            events_log_path: None,
             run_cycle: RunCycleConfig::default(),
             rails: RailsConfig::default(),
         }
@@ -246,6 +252,7 @@ mod tests {
                 reasoning_api_key: None,
                 reasoning_max_tokens: None,
                 session_notes_path: None,
+                events_log_path: None,
                 run_cycle: RunCycleConfig {
                     amygdala_default_vector: (0.7, 0.3, 0.2),
                     reasoning_mode: "left_brain".into(),

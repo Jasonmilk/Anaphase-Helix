@@ -173,6 +173,16 @@ live 实测（`cargo test --test ci144_live -- --ignored`）真实二进制全�
 ADR-XXXX 占位全部替换为 ADR-0018。
 **状态**：✅ 完成（169 tests 全绿 = 160 基线 + 9 新增；commit 见 git log）
 
+## 记录 18：O-3 事件轨迹持久化——跨重启可回放（2026-09-06，ADR-0020）
+
+- **健康快照**：180 passed / 0 failed（176 + 4 from_jsonl 单元）
+- **新能力**：`EventRing::from_jsonl`（round-trip 字节一致 / seq 接续 / 坏行失败关闭 / cap 强制）；
+  `AnaphaseConfig.events_log_path`（默认 events.jsonl，跟随 session_notes 先例）；
+  main 装配恢复历史（fail-open）+ 主循环增量 flush（崩溃最多丢在飞轮）
+- **哲学落地**：白盒四层全部跨重启可追溯（能力/状态/过程/事实）；实时逐轮追加 =
+  ADR-0022 "中途崩溃不丢经历" 的物理兑现
+- **零新增**：无新 crate / 无新依赖 / 无新实体——一个函数 + 一个 config 字段
+
 ## 记录 17：O-2 stage 事件总线——过程白盒第四层（2026-09-06，ADR-0019）
 **变异类型**：新器官——六 stage 过程的 append-only 事件投影（事件=过程，ledger=事实，evidence=支撑）
 **背景**：候选 E 后白盒三层（能力 Manifest / 状态 Snapshot / 事实 ledger）缺"过程"层；

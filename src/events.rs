@@ -13,10 +13,10 @@
 //! - naming follows the OTel GenAI signal spirit (event/exception/metric)
 //!   without importing any dependency; stage/phase is our own vocabulary.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// One deterministic stage event.
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct StageEvent {
     /// Monotonic sequence — the cursor for incremental pulls (`after(seq)`).
     pub seq: u64,
@@ -97,6 +97,31 @@ impl EventRing {
         }
         out
     }
+
+    /// Restore from a JSONL dump (O-3): rebuilds events in append order and
+    /// resumes `seq` after the highest restored sequence — the incremental
+    /// cursor stays continuous across restarts. Malformed lines are refused
+    /// (fail-closed: a corrupted trail must not silently truncate history).
+    pub fn from_jsonl(s: &str, cap: usize) -> Result<Self, String> {
+        let mut events = Vec::new();
+        let mut seq = 0u64;
+        for (i, line) in s.lines().enumerate() {
+            if line.trim().is_empty() {
+                continue;
+            }
+            let e: StageEvent = serde_json::from_str(line)
+                .map_err(|e| format!("line {}: {e}", i + 1))?;
+            seq = seq.max(e.seq);
+            events.push(e);
+        }
+        if events.len() > cap {
+            return Err(format!(
+                "restored {} events exceed cap {cap} (history too long for this config)",
+                events.len()
+            ));
+        }
+        Ok(Self { events, seq, cap, dropped: 0 })
+    }
 }
 
 #[cfg(test)]
@@ -138,5 +163,55 @@ mod tests {
             b.emit(&format!("t{i}"), "job-1", 3, "end", "ok");
         }
         assert_eq!(a.to_jsonl(), b.to_jsonl(), "same inputs -> byte-identical jsonl");
+    }
+
+    #[test]
+    fn from_jsonl_restores_round_trip() {
+        let mut ring = EventRing::new(32);
+        for i in 0..3 {
+            ring.emit(&format!("t{i}"), "job-1", 3, "end", "ok");
+        }
+        let dump = ring.to_jsonl();
+        let restored = EventRing::from_jsonl(&dump, 32).expect("valid dump restores");
+        assert_eq!(restored.to_jsonl(), dump, "round-trip byte-identical");
+        assert_eq!(restored.last_seq(), ring.last_seq(), "seq resumed");
+        assert_eq!(restored.after(0).len(), 3, "history replayed");
+    }
+
+    #[test]
+    fn from_jsonl_keeps_cursor_continuous() {
+        let mut ring = EventRing::new(32);
+        ring.emit("t0", "job-1", 3, "begin", "");
+        let restored = EventRing::from_jsonl(&ring.to_jsonl(), 32).unwrap();
+        let mut resumed = restored;
+        resumed.emit("t1", "job-1", 3, "end", "ok");
+        assert_eq!(resumed.last_seq(), 2, "new event allocates the next seq after restored max");
+        assert_eq!(resumed.events().len(), 2);
+    }
+
+    #[test]
+    fn from_jsonl_refuses_corrupt_line() {
+        let mut ring = EventRing::new(32);
+        ring.emit("t0", "job-1", 3, "end", "ok");
+        let mut bad = ring.to_jsonl();
+        bad.push_str("{not-json}
+");
+        assert!(
+            EventRing::from_jsonl(&bad, 32).is_err(),
+            "corrupt line fails closed, never silently truncates"
+        );
+    }
+
+    #[test]
+    fn from_jsonl_enforces_cap() {
+        let mut ring = EventRing::new(32);
+        for i in 0..4 {
+            ring.emit(&format!("t{i}"), "job-1", 3, "end", "ok");
+        }
+        let dump = ring.to_jsonl();
+        assert!(
+            EventRing::from_jsonl(&dump, 2).is_err(),
+            "history longer than cap is refused (config mismatch surfaced)"
+        );
     }
 }
