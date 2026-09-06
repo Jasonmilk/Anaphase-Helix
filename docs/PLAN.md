@@ -34,6 +34,7 @@ Cellrix）。事件流：Manifest 首帧 → 1s 节律 Snapshot 推流 → Actio
 | O-3 | stage 事件轨迹持久化：跨重启可回放的过程白盒（`EventRing::from_jsonl` + 实时逐轮追加）+ 模式无关黑匣子（ADR-0021：事件环提升 AgentLoop 级，驾驶模式无 pipeline 也记录 cycle 轨迹） | ✅ 已完成（ADR-0020/0021：默认 events.jsonl，seq 接续 + 坏行失败关闭 + cap 强制；181 tests 全绿） | O-2 |
 | O-4 | 认知工艺触发接线验证（伙伴模式）：想 stage 触发 Mind → Mind 走四拍/五工序 → Anaphase 按建议编排 | ✅ 已完成（ADR-0022：复用既有 mock Mind 验证触发链；T3 驾驶模式不触发回归守卫；MindConfig 零硬编码收口 mind.rs 12 处字面量；183 tests 全绿） | O-1/O-2 |
 | O-5 | 按需加载落点：请求只带本轮所需（原 O-3 定义） | ✅ 已完成（ADR-0023：记忆折叠注入 Reasoning prompt——修复检索断裂；`memory_inject_chars` 预算封顶，25 轮近零增长验证；`--input`/`smoke_input` 演示输入来源化；窗口 L0 诚实标注待对话入口；189 tests 全绿） | 候选 G 快照 |
+| O-6 | 判断点后端可配化（JP-1 复杂度评估）：Rules 默认 / SmallLlm 3B 可选，失败回退 | ✅ 已完成（ADR-0024：`src/judge.rs` Judge trait + RulesJudge（阈值来自 MindConfig，零字面量）+ SmallLlmJudge（OpenAI 兼容 3B 端点，失败回退 Rules）；`judge_backend`/`judge_endpoint`/`judge_model` config；修复 assess_complexity 10/40 字面量残留；judge-points contract v1.0-draft 入 FlowModus docs；195 tests 全绿） | FlowModus 模型池（JP-2 待 Mind 对接） |
 | ⏳ | 并行调度 + 上下文窗口感知 | 等待 FlowModus | FlowModus 未完成 |
 | ⏳ | 前缀稳定/KV 缓存复用 | 等待 Callosum，不勉强 | Callosum |
 

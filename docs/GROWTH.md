@@ -249,3 +249,19 @@ ADR-XXXX 占位全部替换为 ADR-0018。
 - 25 轮：注入段每轮 ≤ 预算恒定（Memory-Efficient 验收）✅
 - 冒烟：`--input "hello test"` 生效 ✅；全量 189 passed / 0 failed ✅
 **状态**：✅ 完成（commit 见 git log；ECOSYSTEM v1.40 同步）
+
+## 记录 22：O-6 判断点后端可配化——JP-1 复杂度评估 Rules/SmallLlm 双后端（2026-09-06，ADR-0024）
+**健康快照**：✅ 完成（195 tests 全绿 = 189 + 6 judge）
+**物理事实**：
+- 用户务实修正编排哲学（2026-09-06）：0 tokens 是默认通道不是教条，3B 级小 LLM
+  判断质量 ROI 足够高时可用——已固化 HANDOFF §1.3
+- 探查抓真伤：assess_complexity 硬编码 10/40（O-4 已收 MindConfig 但此函数没用）
+- FlowModus 本地存在（Python，5 层确定性路由）——judge-points contract
+  v1.0-draft 入其 docs（JP-1/JP-2 规格）
+**验证**：
+- 零硬编码：assess_complexity 字面量删除，RulesJudge 阈值来自 MindConfig ✅
+- SmallLlm 成功路径：本地 mock OpenAI 端点 → complex 标签 → TIER_COMPLEX ✅
+- 失败回退：不可达端点 → 回退 Rules（32 字符 → moderate）✅
+- 非法标签拒绝 + config 缺参降级（警告 + Rules）✅
+- 全量 195 passed / 0 failed ✅
+**状态**：✅ 完成（ECOSYSTEM v1.41 同步；judge-points contract 已推 FlowModus）

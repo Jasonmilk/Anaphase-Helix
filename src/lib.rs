@@ -1,4 +1,5 @@
 pub mod adapters;
+pub mod judge;
 pub mod run_cycle;
 pub mod ci144;
 pub mod states;

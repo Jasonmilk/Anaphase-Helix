@@ -63,6 +63,18 @@ pub struct AnaphaseConfig {
     /// the demo task source — no literal in main.rs.
     #[serde(default)]
     pub smoke_input: Option<String>,
+    /// O-6 (ADR-0024): judge-point backend — `rules` (default, zero tokens)
+    /// or `small_llm` (3B-class classifier). Explicit selection, never an
+    /// auto router (M3 boundary).
+    #[serde(default)]
+    pub judge_backend: crate::judge::JudgeBackend,
+    /// Judge 3B endpoint (OpenAI-compatible, e.g. Tuck's local llama base
+    /// URL). Required only when judge_backend = small_llm.
+    #[serde(default)]
+    pub judge_endpoint: Option<String>,
+    /// Judge 3B model name at the endpoint.
+    #[serde(default)]
+    pub judge_model: Option<String>,
 
     /// run_cycle state-machine constants (candidate E, ADR-0005).
     /// DNA principle 11 (ADR-0002): the five historical literals in
@@ -209,6 +221,9 @@ impl Default for AnaphaseConfig {
             events_log_path: None,
             memory_inject_chars: 800, // protocol default (ADR-0023)
             smoke_input: None,
+            judge_backend: crate::judge::JudgeBackend::default(),
+            judge_endpoint: None,
+            judge_model: None,
             run_cycle: RunCycleConfig::default(),
             rails: RailsConfig::default(),
             mind: MindConfig::default(),
@@ -274,6 +289,9 @@ mod tests {
                 events_log_path: None,
                 memory_inject_chars: 800,
                 smoke_input: None,
+                judge_backend: crate::judge::JudgeBackend::default(),
+                judge_endpoint: None,
+                judge_model: None,
                 run_cycle: RunCycleConfig {
                     amygdala_default_vector: (0.7, 0.3, 0.2),
                     reasoning_mode: "left_brain".into(),

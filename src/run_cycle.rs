@@ -157,6 +157,10 @@ pub struct AgentLoop {
     /// Source: config `[anaphase] memory_inject_chars` (protocol default
     /// const below, ADR-0023); main overrides from config.
     pub memory_inject_chars: usize,
+    /// O-6 (ADR-0024): judge-point backend — complexity assessment for the
+    /// Amygdala -> suggested_mode chain. Rules by default (zero tokens);
+    /// SmallLlm (3B-class) when configured. Always returns 1/2/3.
+    pub judge: std::sync::Arc<dyn crate::judge::Judge>,
 }
 
 /// Fold memory nodes into a bounded injection string (O-5, ADR-0023).
@@ -275,6 +279,13 @@ impl AgentLoop {
             rails: None,
             rails_config: crate::config::RailsConfig::default(),
             memory_inject_chars: DEFAULT_INJECT_CHARS,
+            judge: std::sync::Arc::new(crate::judge::RulesJudge {
+                // config source, not literals (DNA principle 11 / ADR-0002):
+                // MindConfig protocol defaults feed the rules judge; main
+                // overrides the whole judge from `[anaphase] judge_*`.
+                skilled_len: crate::config::MindConfig::default().skilled_len,
+                anchor_len: crate::config::MindConfig::default().anchor_len,
+            }),
         }
     }
 
@@ -484,9 +495,10 @@ impl AgentLoop {
                 info!("[PreAssessment] Amygdala pre-assessment");
                 // 3D emotional vector from config source (DNA principle 11).
                 self.context.amygdala_vector = self.run_config.amygdala_default_vector;
-                // 状态机驱动（P10b T2）：Amygdala 启发式复杂度评估 → memory.set_complexity，
-                // 影响后续 query 的 suggested_mode。0=未知走兜底。
-                self.memory.set_complexity(assess_complexity(&self.context.user_input));
+                // 状态机驱动（P10b T2）：judge 后端评估复杂度 → memory.set_complexity，
+                // 影响后续 query 的 suggested_mode。后端=config 选择（rules 默认 / small_llm）。
+                let tier = self.judge.assess_complexity(&self.context.user_input).await;
+                self.memory.set_complexity(tier);
                 Ok(TransitionCondition::Success)
             }
             HelixState::MemoryRetrieval => {
@@ -879,21 +891,6 @@ impl AgentLoop {
         }
     }
 }
-
-/// Amygdala 启发式复杂度评估（P10b T2）：PreAssessment 状态输出 → suggested_mode 状态驱动。
-/// 1=简单 / 2=中等 / 3=复杂。当前为 query 特征启发式（P10b 最小正确）；
-/// 未来独立 `amygdala.rs` 时，此处可替换为多维评估（意图/情感/历史）。0 不返回（状态机必输出 1-3）。
-fn assess_complexity(query: &str) -> u8 {
-    let len = query.trim().chars().count();
-    if len <= 10 {
-        1
-    } else if len < 40 {
-        2
-    } else {
-        3
-    }
-}
-
 
 #[cfg(test)]
 mod tests {

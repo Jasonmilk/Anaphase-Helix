@@ -87,6 +87,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // O-5 (ADR-0023): cognitive-injection budget from config (protocol
     // default 800 lives in config.rs, not here).
     agent.memory_inject_chars = config.anaphase.memory_inject_chars;
+    // O-6 (ADR-0024): judge-point backend — explicit selection, rules by
+    // default; small_llm needs endpoint+model, else degrades to rules
+    // (fail-safe, surfaced as a startup warning).
+    let (judge, judge_warn) = anaphase::judge::resolve_judge(
+        config.anaphase.judge_backend,
+        config.anaphase.judge_endpoint.as_deref(),
+        config.anaphase.judge_model.as_deref(),
+        config.anaphase.mind.skilled_len,
+        config.anaphase.mind.anchor_len,
+    );
+    if let Some(w) = judge_warn {
+        eprintln!("[Judge] warning: {}", w);
+    }
+    agent.judge = judge;
     // ADR-0006: the interaction mode is the semantic record carried through
     // the loop; physical Mind participation is decided by resolve_memory_adapter
     // (Noop vs gRPC) — Drive auto-achieves "no experience written" through
