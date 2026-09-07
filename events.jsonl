@@ -33,3 +33,24 @@
 {"seq":5,"ts":"2026-09-07T07:12:44Z","trace_id":"run-a430d84680aabd0b","stage":0,"phase":"state","detail":"{\"from\":\"Reasoning\",\"condition\":\"NoToolNeeded\",\"to\":\"Reflection\"}"}
 {"seq":6,"ts":"2026-09-07T07:12:44Z","trace_id":"run-a430d84680aabd0b","stage":0,"phase":"state","detail":"{\"from\":\"Reflection\",\"condition\":\"Success\",\"to\":\"Perception\"}"}
 {"seq":7,"ts":"2026-09-07T07:12:44Z","trace_id":"run-a430d84680aabd0b","stage":0,"phase":"end","detail":"{\"done\":true,\"success\":true,\"impasse\":false}"}
+{"seq":1,"ts":"2026-09-07T08:22:54Z","trace_id":"run-66c7a024f677514f","stage":0,"phase":"begin","detail":"{\"input\":\"health check\",\"mode\":\"Partner\"}"}
+{"seq":2,"ts":"2026-09-07T08:22:54Z","trace_id":"run-66c7a024f677514f","stage":0,"phase":"state","detail":"{\"from\":\"Perception\",\"condition\":\"Success\",\"to\":\"PreAssessment\"}"}
+{"seq":3,"ts":"2026-09-07T08:22:54Z","trace_id":"run-66c7a024f677514f","stage":0,"phase":"state","detail":"{\"from\":\"PreAssessment\",\"condition\":\"Success\",\"to\":\"MemoryRetrieval\"}"}
+{"seq":4,"ts":"2026-09-07T08:22:54Z","trace_id":"run-66c7a024f677514f","stage":0,"phase":"state","detail":"{\"from\":\"MemoryRetrieval\",\"condition\":\"Success\",\"to\":\"Reasoning\"}"}
+{"seq":5,"ts":"2026-09-07T08:22:56Z","trace_id":"run-66c7a024f677514f","stage":0,"phase":"state","detail":"{\"from\":\"Reasoning\",\"condition\":\"NoToolNeeded\",\"to\":\"Reflection\"}"}
+{"seq":6,"ts":"2026-09-07T08:22:56Z","trace_id":"run-66c7a024f677514f","stage":0,"phase":"state","detail":"{\"from\":\"Reflection\",\"condition\":\"Success\",\"to\":\"Perception\"}"}
+{"seq":7,"ts":"2026-09-07T08:22:56Z","trace_id":"run-66c7a024f677514f","stage":0,"phase":"end","detail":"{\"done\":true,\"success\":true,\"impasse\":false}"}
+{"seq":1,"ts":"2026-09-07T08:24:03Z","trace_id":"run-3802a465e92f94aa","stage":0,"phase":"begin","detail":"{\"input\":\"health check 3\",\"mode\":\"Partner\"}"}
+{"seq":2,"ts":"2026-09-07T08:24:03Z","trace_id":"run-3802a465e92f94aa","stage":0,"phase":"state","detail":"{\"from\":\"Perception\",\"condition\":\"Success\",\"to\":\"PreAssessment\"}"}
+{"seq":3,"ts":"2026-09-07T08:24:03Z","trace_id":"run-3802a465e92f94aa","stage":0,"phase":"state","detail":"{\"from\":\"PreAssessment\",\"condition\":\"Success\",\"to\":\"MemoryRetrieval\"}"}
+{"seq":4,"ts":"2026-09-07T08:24:03Z","trace_id":"run-3802a465e92f94aa","stage":0,"phase":"state","detail":"{\"from\":\"MemoryRetrieval\",\"condition\":\"Success\",\"to\":\"Reasoning\"}"}
+{"seq":5,"ts":"2026-09-07T08:24:03Z","trace_id":"run-3802a465e92f94aa","stage":0,"phase":"state","detail":"{\"from\":\"Reasoning\",\"condition\":\"NoToolNeeded\",\"to\":\"Reflection\"}"}
+{"seq":6,"ts":"2026-09-07T08:24:03Z","trace_id":"run-3802a465e92f94aa","stage":0,"phase":"state","detail":"{\"from\":\"Reflection\",\"condition\":\"Success\",\"to\":\"Perception\"}"}
+{"seq":7,"ts":"2026-09-07T08:24:03Z","trace_id":"run-3802a465e92f94aa","stage":0,"phase":"end","detail":"{\"done\":true,\"success\":true,\"impasse\":false}"}
+{"seq":1,"ts":"2026-09-07T08:24:46Z","trace_id":"run-f97691246db266f1","stage":0,"phase":"begin","detail":"{\"input\":\"probe\",\"mode\":\"Partner\"}"}
+{"seq":2,"ts":"2026-09-07T08:24:46Z","trace_id":"run-f97691246db266f1","stage":0,"phase":"state","detail":"{\"from\":\"Perception\",\"condition\":\"Success\",\"to\":\"PreAssessment\"}"}
+{"seq":3,"ts":"2026-09-07T08:24:46Z","trace_id":"run-f97691246db266f1","stage":0,"phase":"state","detail":"{\"from\":\"PreAssessment\",\"condition\":\"Success\",\"to\":\"MemoryRetrieval\"}"}
+{"seq":4,"ts":"2026-09-07T08:24:46Z","trace_id":"run-f97691246db266f1","stage":0,"phase":"state","detail":"{\"from\":\"MemoryRetrieval\",\"condition\":\"Success\",\"to\":\"Reasoning\"}"}
+{"seq":5,"ts":"2026-09-07T08:24:48Z","trace_id":"run-f97691246db266f1","stage":0,"phase":"state","detail":"{\"from\":\"Reasoning\",\"condition\":\"NoToolNeeded\",\"to\":\"Reflection\"}"}
+{"seq":6,"ts":"2026-09-07T08:24:48Z","trace_id":"run-f97691246db266f1","stage":0,"phase":"state","detail":"{\"from\":\"Reflection\",\"condition\":\"Success\",\"to\":\"Perception\"}"}
+{"seq":7,"ts":"2026-09-07T08:24:48Z","trace_id":"run-f97691246db266f1","stage":0,"phase":"end","detail":"{\"done\":true,\"success\":true,\"impasse\":false}"}

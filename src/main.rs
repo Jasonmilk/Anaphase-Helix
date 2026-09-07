@@ -122,6 +122,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         })),
                     }
                 }
+            }))
+            .route("/v1/health", get({
+                // Self-check (2026-09-07): Anaphase reports the physical
+                // readiness of its own organs — config-derived, probed, never
+                // guessed. The panel probes this instead of assuming.
+                let acfg = config.anaphase.clone();
+                move || async move { Json(anaphase::health::checks(&acfg)) }
             }));
         let addr = format!("0.0.0.0:{}", config.anaphase.cap_http_port);
         let listener = tokio::net::TcpListener::bind(&addr).await?;

@@ -323,6 +323,25 @@ Cellrix's Engram detail panel calls this per selected row — click an audit
 entry and read the exact prompt + response of that round (silicon/carbon
 side by side, no ambiguity).
 
+**Self-check endpoint (ecosystem watch-table, 2026-09-07)** — `/v1/health`
+reports the physical readiness of Anaphase's own organs:
+
+```text
+GET /v1/health
+# {"ok":true,"checks":[{"name":"trace","configured":true,"ok":true,...},...]}
+```
+
+Every check is config-derived and probed — nothing guessed (0 hardcoding):
+write targets (trace/ledger/session) check their parent dir; six endpoints
+are TCP-probed with a deterministic 2s timeout (blocking connect on a helper
+thread — `connect_timeout` is flaky on macOS loopback); judge backend and
+cap_http report their config source; credentials report presence only, the
+value is never exposed. Empty-string config = unconfigured = not judged.
+
+One source, three consumers: the Cellrix panel renders it (human watch),
+Helix-Mind reads it on demand before acting (AI watch-table, 按需看表 —
+never polled in a loop), operators curl it. No second copy of state.
+
 ## Philosophy
 
 Anaphase implements the Helix Design Philosophy + 3 core exoskeleton axioms:
