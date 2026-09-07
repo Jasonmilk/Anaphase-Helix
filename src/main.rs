@@ -247,6 +247,31 @@ async fn build_agent(config: &config::Config) -> BuiltAgent {
         // O-5 (ADR-0023): cognitive-injection budget from config (protocol
         // default 800 lives in config.rs, not here).
         agent.memory_inject_chars = config.anaphase.memory_inject_chars;
+        // Reasoning body trace (Engram join): opt-in via
+        // `reasoning_trace_path`. Max chars: config override or the
+        // documented protocol default (4096, README Engram section).
+        // Redaction: built-in credential shapes + config extra literals.
+        agent.trace = config
+            .anaphase
+            .reasoning_trace_path
+            .as_ref()
+            .map(|p| {
+                let max = config
+                    .anaphase
+                    .reasoning_trace_max_chars
+                    .unwrap_or(4096);
+                let extra = config
+                    .anaphase
+                    .reasoning_redact_patterns
+                    .clone()
+                    .unwrap_or_default();
+                anaphase::trace::ReasoningTrace::open(
+                    std::path::PathBuf::from(p),
+                    max,
+                    anaphase::trace::Redaction::new(extra),
+                )
+                .expect("reasoning trace path must be openable")
+            });
         // O-6 (ADR-0024): judge-point backend — explicit selection, rules by
         // default; small_llm needs endpoint+model, else degrades to rules
         // (fail-safe, surfaced as a startup warning).

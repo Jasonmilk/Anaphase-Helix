@@ -161,6 +161,13 @@ pub struct AgentLoop {
     /// Amygdala -> suggested_mode chain. Rules by default (zero tokens);
     /// SmallLlm (3B-class) when configured. Always returns 1/2/3.
     pub judge: std::sync::Arc<dyn crate::judge::Judge>,
+    /// Reasoning body trace (Engram join, 2026-09-07): append-only JSONL of
+    /// every reasoning round trip (prompt + response, redacted + truncated).
+    /// The audit chain stores metadata; this stores the *body*, on the side
+    /// that constructs the prompt. None = trace off (opt-in, config
+    /// `reasoning_trace_path`). `trace_id` = the derived job id, joining
+    /// body + chain + ledger in Cellrix's Engram view.
+    pub trace: Option<crate::trace::ReasoningTrace>,
 }
 
 /// Fold memory nodes into a bounded injection string (O-5, ADR-0023).
@@ -291,6 +298,8 @@ impl AgentLoop {
                 skilled_len: crate::config::MindConfig::default().skilled_len,
                 anchor_len: crate::config::MindConfig::default().anchor_len,
             }),
+            // Trace is opt-in: main wires it from `reasoning_trace_path`.
+            trace: None,
         }
     }
 
@@ -706,6 +715,21 @@ impl AgentLoop {
                 };
                 match self.reason.reason(&prompt, &self.run_config.reasoning_mode).await {
                     Ok(output) => {
+                        // Body trace (Engram join): record the round trip
+                        // post-redaction/post-truncation. The trace id is the
+                        // derived job id — the same key the pipeline events
+                        // and the Tuck audit chain carry, so Cellrix joins
+                        // body + chain by it. Timestamp from the injected
+                        // clock (deterministic replay). Record failure is
+                        // non-fatal: the cognitive loop must not die on a
+                        // trace write.
+                        if let Some(trace) = self.trace.as_ref() {
+                            let trace_id =
+                                crate::contract::derive_job_id(&self.context.user_input);
+                            let ts = crate::ledger::unix_secs_to_rfc3339(self.clock.now());
+                            let model = self.run_config.reasoning_mode.clone();
+                            let _ = trace.record(&ts, &trace_id, &model, &prompt, &output);
+                        }
                         // candidate E (ADR-0005): structured output protocol
                         // replaces the legacy contains("tool_call") matching.
                         // parse_reasoning_output yields the calls plan + an

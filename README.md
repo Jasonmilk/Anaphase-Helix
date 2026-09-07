@@ -4,7 +4,7 @@
 ![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)
 ![Build](https://img.shields.io/badge/Build-Passing-brightgreen.svg)
 ![Style](https://img.shields.io/badge/Code%20Style-Google-black.svg)
-[![Tests](https://img.shields.io/badge/tests-206%2F206%20passed-green)](#)
+[![Tests](https://img.shields.io/badge/tests-211%2F211%20passed-green)](#)
 
 **The silicon-based operating system & physical brain for digital lifeforms.
 Perceive, reason, act, remember, and immunize — the body that houses the soul.**
@@ -115,7 +115,7 @@ via the CommonIntents protocol stack with zero hard coupling.
   proven at the gRPC wire layer against the mock Mind; Drive mode never
   contacts Mind (assembly-gated, zero runtime branch); all 12 adapter literals
   moved to `MindConfig` (`[anaphase.mind]`, DNA principle 11 zero-hardcoding)
-- ✅ **Full Test Coverage** — 206/206 passing (lib + integration suites + rails + stage events + mind trigger + wakeup trigger + memory injection + judge backends) incl. security gate + Tuck gate + D'-4 live + cockpit snapshot + bootstrap env + CI-144 transport + P10 live) +
+- ✅ **Full Test Coverage** — 211/211 passing (lib + integration suites + rails + stage events + mind trigger + wakeup trigger + memory injection + judge backends) incl. security gate + Tuck gate + D'-4 live + cockpit snapshot + bootstrap env + CI-144 transport + P10 live) +
   3 live e2e + 1 CI-144 live probe (#[ignore], real Tentacle / real binary)
 
 ## Project Structure
@@ -192,7 +192,7 @@ You will see a full cycle:
 
 ## Testing
 
-Run the full suite (**206/206 passing**):
+Run the full suite (**211/211 passing**):
 ```bash
 cargo test
 ```
@@ -291,6 +291,26 @@ Edit `config.toml` to connect real services:
 - Empty endpoints automatically use Noop adapters
 - Models, safety rules, and thresholds all configurable
 - Criteria rules & retry policy: `knowledge_base/fixture-codex.json` (zero hardcoding)
+
+### Engram body trace (reasoning round trips, 2026-09-07)
+
+The Tuck audit chain stores *metadata* (it never touches bodies — that would
+be a sensitive data lake). The **body** of every reasoning call (prompt +
+response) is recorded here, on the side that constructs the prompt:
+
+```toml
+[anaphase]
+reasoning_trace_path = "reasoning-trace.jsonl"   # opt-in; None = off
+reasoning_trace_max_chars = 4096                 # post-redaction truncation
+reasoning_redact_patterns = []                   # extra credential literals
+```
+
+- **Redacted before disk** (sk- / Bearer / api_key= / token= / password= +
+  config extras) — the 2026-09-07 key-leak audit is the reason this exists
+- **Keyed by the derived job id** (`trace_id = derive_job_id(input)`) — the
+  same key the audit chain and ledger carry, so Cellrix's Engram view joins
+  body + chain + verdict for one round
+- Timestamps from the injected Clock (deterministic replay)
 
 ## Philosophy
 

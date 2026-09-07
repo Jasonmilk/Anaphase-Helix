@@ -52,6 +52,16 @@ pub struct AnaphaseConfig {
     /// (trail persistence on, cross-restart replay; same pattern as
     /// session_notes_path). Set an explicit path to relocate.
     pub events_log_path: Option<String>,
+    /// Reasoning body trace path (Engram join). `None` = trace off (opt-in).
+    /// When set, every reasoning round trip (prompt + response) is appended
+    /// redacted + truncated to this JSONL file, keyed by the derived job id.
+    pub reasoning_trace_path: Option<String>,
+    /// Redaction/truncation budget for body records: entries are truncated
+    /// to this many chars after redaction. `None` = protocol default 4096.
+    pub reasoning_trace_max_chars: Option<usize>,
+    /// Extra credential literals to redact (project-specific secrets),
+    /// in addition to the built-in shapes (sk- / Bearer / api_key= / ...).
+    pub reasoning_redact_patterns: Option<Vec<String>>,
     /// O-5 (ADR-0023): cognitive-injection budget — memory nodes folded into
     /// the Reasoning prompt, capped at this many chars. 0 = no injection
     /// (pure stateless). Protocol default 800 (ADR-0023).
@@ -247,6 +257,9 @@ impl Default for AnaphaseConfig {
 
             session_notes_path: None,
             events_log_path: None,
+            reasoning_trace_path: None,
+            reasoning_trace_max_chars: None,
+            reasoning_redact_patterns: None,
             memory_inject_chars: 800, // protocol default (ADR-0023)
             smoke_input: None,
             judge_backend: crate::judge::JudgeBackend::default(),
@@ -324,6 +337,9 @@ mod tests {
                 reasoning_max_tokens: None,
                 session_notes_path: None,
                 events_log_path: None,
+                reasoning_trace_path: None,
+                reasoning_trace_max_chars: None,
+                reasoning_redact_patterns: None,
                 memory_inject_chars: 800,
                 smoke_input: None,
                 judge_backend: crate::judge::JudgeBackend::default(),

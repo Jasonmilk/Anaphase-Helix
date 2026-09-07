@@ -117,6 +117,29 @@ PLAN（旁路焊死段）｜ ECOSYSTEM v1.61（Tuck 369 + 全生态物理核对�
 
 ### 状态
 🧬 已完成（key 轮换待用户执行后更新 Tuck config）
+
+## 记录 31：Engram 正文轨迹——推理 round trip 落盘（2026-09-07）
+
+### 触发条件
+Cellrix Engram（印痕）面板落地后，审计链只有元数据（正文不落盘是 ADR-0004 安全决策）——
+"以适配 ai 的输入输出展示轨迹"需要正文半体，记录在构造 prompt 的一侧（Anaphase）。
+
+### 变更性质
+- **`src/trace.rs`**：`ReasoningTrace`（append-only JSONL，seq 文件行数续启）+ `Redaction`
+  （sk-/Bearer /api_key=/token=/password= 内建 + config 附加字面量，token 级匹配不误伤散文）
+  + 截断预算（脱敏后 max_chars）
+- **run_cycle 接线**：reason 调用 Ok 后记录（trace_id = `derive_job_id(user_input)`——
+  与审计链/ledger 同一 join 键；ts 来自注入 Clock——确定性回放；写失败非致命）
+- **config**：`reasoning_trace_path`（None=默认关闭）/ `reasoning_trace_max_chars`
+  （None=协议默认 4096）/ `reasoning_redact_patterns`——零硬编码
+- **测试**：trace 5（脱敏/附加模式/append/截断/续启 seq）+ reasoning_trace 2
+  （join 键 + 凭证不落盘 + 默认关闭）；**206→211 全绿**
+
+### 验收
+`cargo test` 211/211 全绿（0 failed）｜ trace 文件脱敏实测（sk-4056 不落盘）
+
+### 状态
+🧬 已完成（Cellrix Engram 正文 join 为下一步）
 ## 记录 29：驾驶舱真对话——send_message 输入 + 真实 LLM 回复（2026-09-06）
 
 ### 触发条件

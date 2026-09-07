@@ -3,12 +3,13 @@
 > **DNA 方法论 v1.0** ｜ PLAN.md 是导航牌，不是历史档案（≤150 行）。完成记录进 GROWTH.md。
 
 ## 当前阶段：O-1 落地 + Rails + O-2 事件总线 + P10 全链路 + up 全栈
-**旁路焊死（2026-09-07 完成，ADR-0004 D12 收口）**：reasoning_endpoint 指向 Tuck 网关
-（127.0.0.1:60052）+ reasoning_api_key = Tuck 身份凭证——推理流量物理上唯一出口；真实 deepseek
-live 验证达成（响应经 Tuck 之门 + 审计链记录）；真实 key 移入 Tuck config（gitignored），本仓库
-config.toml/.bak 已 untrack（部署配置永不进 git）。待办：用户轮换 key 后更新 Tuck config。
+**Engram 正文轨迹（2026-09-07，ADR-0004 印痕半体）**：推理正文（prompt+response）落盘
+`reasoning-trace.jsonl`（`reasoning_trace_path` 可选开启）——落盘前脱敏（sk-/Bearer/api_key=
+内建 + config 附加字面量）+ 按预算截断；trace_id = 派生 job_id（与审计链/ledger 同一 join 键）；
+时间戳来自注入 Clock（确定性回放）；默认关闭（None）。测试：trace 5 + reasoning_trace 2，
+211 全绿。
 
-（Tentacle+Mind+Anaphase+WebUI+驾驶舱真身+真对话）——下一步按生态节奏
+（Tentacle+Mind+Anaphase+WebUI+驾驶舱真身+真对话）——下一步：Cellrix Engram 消费正文（按 trace_id join）
 
 **P10d 预约制闹钟（ADR-0032，2026-09-06 完成）**：Mind 侧 ana_wakeup/ana_wakeup_ack RPC（Anaphase 客户端
 同步）+ MemoryAdapter wakeup/wakeup_ack/consolidate 默认方法（Noop 静默降级）+ GrpcMindAdapter 实现
