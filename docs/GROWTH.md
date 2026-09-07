@@ -1,3 +1,11 @@
+## [2026-09-07] 待办登记（用户裁定：记下以后再修）
+
+### TODO-1: demo rails 导航词法误命中
+`knowledge_base/rails/demo/`（civil-code.md 数字世界基本法 / procedure.md）对通用问句（如"记得"）误命中——rails 命中 3 节点 331 bytes 注入法典文本。处置：本地 config.toml `[anaphase.rails] enabled = false`（备份 /tmp/config.toml.bak，文件 gitignore 不推库）。修法待定：rails 导航词法加意图门控（工具类意图才走 rails）或 demo 数据瘦身。
+
+### TODO-2: 自检状态四色语义化（用户建议）
+Anaphase 侧 /v1/health 已是真实 TCP 连通探测（tcp_reachable 2s / connect_timeout 400ms），非"只看进程"。但 up.rs / Cellrix 面板显示为二元 ✅/❌。用户建议：黄=启动未联通、绿=联通、红=错误/不合法、灰=未检出——UI 状态语义化待实施。
+
 ## [2026-09-07] 完成：P10 注入打通（ADR-0033 联动）
 
 ### 变更性质
