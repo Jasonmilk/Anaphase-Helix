@@ -16,7 +16,14 @@ impl HttpReasoningAdapter {
             model: config.reasoning_model.clone().unwrap_or_default(),
             api_key: config.reasoning_api_key.clone(),
             max_tokens: config.reasoning_max_tokens.unwrap_or(2048),
-            client: reqwest::Client::new(),
+            // No idle connection reuse: a gateway-closed keep-alive makes the
+            // second call fail with EAGAIN (os error 35). Fresh connect per
+            // call is deterministic — the cheap local-LLM path pays no TLS,
+            // the remote path pays one handshake per call (correctness first).
+            client: reqwest::Client::builder()
+                .pool_max_idle_per_host(0)
+                .build()
+                .expect("reqwest client build"),
         }
     }
 }

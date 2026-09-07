@@ -17,6 +17,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(cfg_path) = args.windows(2).find(|w| w[0] == "--config").map(|w| w[1].clone()) {
         std::env::set_var("ANAPHASE_CONFIG", cfg_path);
     }
+    // Resource base: repo-relative paths (fixture-codex, …) must resolve
+    // from the config's own directory, not the launcher cwd (TUI child).
+    // Safe for the daemon too — its cwd is already the repo root.
+    let cfg_abs = std::env::var("ANAPHASE_CONFIG")
+        .map(|p| std::path::PathBuf::from(p))
+        .unwrap_or_else(|_| std::path::PathBuf::from("config.toml"));
+    if let Some(dir) = cfg_abs.parent().filter(|d| !d.as_os_str().is_empty()) {
+        let _ = std::env::set_current_dir(dir);
+    }
     // CI-144 stdio entry: accept both `--stdio` (native flag) and the
     // ecosystem launcher convention `--mode stdio` (Cellrix `--exec` appends
     // this pair for every stdio agent — one launch contract, every agent).

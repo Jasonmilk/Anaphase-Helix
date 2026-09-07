@@ -218,3 +218,21 @@ README（fail-closed 节）｜ GROWTH｜ ECOSYSTEM v1.67（Anaphase 219）
 
 ### 状态
 🧬 已完成
+
+## 记录 45：第二次对话 EAGAIN 修复 + 资源基准目录（2026-09-07）
+
+### 触发条件
+①WebUI 第一次对话正常、第二次报 `Helix⚠ Resource temporarily unavailable (os error 35)`；②TUI 启动日志混入 DEBUG 与 fixture-codex 加载失败。
+
+### 根因与修复
+- **EAGAIN（os error 35）**：HttpReasoningAdapter 复用 reqwest 连接池，网关/上游关闭 keep-alive 后第二次调用复用死连接 → EAGAIN。修复：`pool_max_idle_per_host(0)`——每次调用新连接（本地 LLM 无 TLS 代价低；正确性优先）。
+- **fixture-codex 找不到**：TUI stdio 子进程 cwd=Cellrix，`knowledge_base/fixture-codex.json` 相对路径解析失败。修复：`--config`/`ANAPHASE_CONFIG` 确定后 chdir 到配置所在目录——repo 相对资源（codex/rails）从配置目录解析，daemon（cwd 已是 repo 根）无副作用。
+- **TUI 日志污染**：transport stdio 的 DEBUG eprintln 直接打到 TUI 终端。修复：`CELLRIX_DEBUG` 环境变量门控，默认静默。
+
+### 验证
+- 两次真实 chat：1.1s / 1.4s 全成功，无 EAGAIN
+- TUI 启动输出：无 DEBUG、无 codex warning、Rails 正常挂载
+- 测试：Anaphase 225 / Cellrix 337 全绿
+
+### 状态
+🧬 已完成
