@@ -12,6 +12,7 @@ pub mod gloves;
 pub mod events;
 pub mod trace;
 pub mod health;
+pub mod bind;
 pub mod contract;
 pub mod evidence;
 pub mod criteria;

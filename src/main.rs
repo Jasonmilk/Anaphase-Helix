@@ -45,12 +45,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut shared_snapshot: Option<Arc<Mutex<Option<anaphase::run_cycle::AgentSnapshot>>>> = None;
 
     if config.anaphase.cap_http_enabled && !stdio_mode {
-        use axum::{Router, routing::get, Json};
+        use axum::{
+            Router,
+            middleware,
+            routing::{get, post},
+            extract::State,
+            Json,
+        };
         use std::sync::{Arc, Mutex};
 
         let shared: Arc<Mutex<Option<anaphase::run_cycle::AgentSnapshot>>> =
             Arc::new(Mutex::new(None));
         shared_snapshot = Some(shared.clone());
+
+        // One-to-one binding (2026-09-07): Anaphase is the challenger. The
+        // state lives here for the server's lifetime; the identity persists
+        // to ~/.cellrix/anaphase-identity.json (0600) on confirm.
+        let bind_state: Arc<Mutex<anaphase::bind::BindState>> =
+            Arc::new(Mutex::new(anaphase::bind::BindState::default()));
+        anaphase::bind::load(&config.anaphase, &bind_state);
+        if bind_state.lock().unwrap().device.is_some() {
+            println!("  bound: device {} (one-to-one, HMAC challenge-response)",
+                bind_state.lock().unwrap().device.as_ref().unwrap().device_id);
+        } else {
+            println!("  bound: no — /v1/bind/start to bind your human (HITL)");
+        }
 
         use axum::extract::Query;
         use std::collections::HashMap;
@@ -129,7 +148,61 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // guessed. The panel probes this instead of assuming.
                 let acfg = config.anaphase.clone();
                 move || async move { Json(anaphase::health::checks(&acfg)) }
-            }));
+            }))
+            .route("/v1/bind/start", post({
+                let acfg = config.anaphase.clone();
+                let st = bind_state.clone();
+                move || async move {
+                    match anaphase::bind::start(&acfg, &st) {
+                        Ok(v) => Json(v),
+                        Err(e) => Json(serde_json::json!({ "error": e })),
+                    }
+                }
+            }))
+            .route("/v1/bind/confirm", post({
+                let acfg = config.anaphase.clone();
+                let st = bind_state.clone();
+                move |Json(body): Json<serde_json::Value>| async move {
+                    let code = body.get("pairing_code").and_then(|v| v.as_str()).unwrap_or("");
+                    match anaphase::bind::confirm(&acfg, &st, code) {
+                        Ok(v) => Json(v),
+                        Err(e) => Json(serde_json::json!({ "error": e })),
+                    }
+                }
+            }))
+            .route("/v1/bind/status", get({
+                let st = bind_state.clone();
+                move || async move { Json(anaphase::bind::status(&st)) }
+            }))
+            .layer(middleware::from_fn_with_state(
+                bind_state.clone(),
+                auth_mw,
+            ));
+        // Bind gate: once a human is bound, every endpoint except the bind
+        // flow itself and /v1/health requires a signed Bearer (v1.<id>.<ts>.
+        // <nonce>.<hmac>). Unbound = open — honest, never silently locked.
+        use axum::response::IntoResponse;
+        async fn auth_mw(
+            State(st): State<Arc<Mutex<anaphase::bind::BindState>>>,
+            req: axum::http::Request<axum::body::Body>,
+            next: middleware::Next,
+        ) -> axum::response::Response {
+            let path = req.uri().path().to_string();
+            let open = path.starts_with("/v1/bind/") || path == "/v1/health";
+            if !open {
+                let header = req
+                    .headers()
+                    .get(axum::http::header::AUTHORIZATION)
+                    .and_then(|v| v.to_str().ok());
+                if let Err(e) = anaphase::bind::verify_bearer(&st, header) {
+                    return (axum::http::StatusCode::UNAUTHORIZED,
+                            Json(serde_json::json!({ "error": e, "bound": true })))
+                        .into_response();
+                }
+            }
+            next.run(req).await
+        }
+
         let addr = format!("0.0.0.0:{}", config.anaphase.cap_http_port);
         let listener = tokio::net::TcpListener::bind(&addr).await?;
         println!("CAP HTTP server started: http://{}", addr);

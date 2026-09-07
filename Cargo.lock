@@ -53,6 +53,7 @@ dependencies = [
  "async-trait",
  "axum 0.7.9",
  "chrono",
+ "getrandom 0.2.17",
  "petgraph",
  "prost",
  "prost-types",

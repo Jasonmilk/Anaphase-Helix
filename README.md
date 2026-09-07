@@ -205,6 +205,17 @@ the honest state on the panel; only reasoning halts:
 `/v1/health` includes the `tuck` check (configured → probed; empty → honest
 `not configured`, never judged). Unconfigured Tuck = no gate (按需驱动).
 
+### One-to-one binding (2026-09-07) — Anaphase is the challenger
+
+`POST /v1/bind/start` mints a 6-digit one-time pairing code (10 min);
+`POST /v1/bind/confirm {pairing_code}` (human confirmed, HITL) mints
+`device_id + secret` persisted to `~/.cellrix/anaphase-identity.json`
+(0600). Once bound, every cap_http endpoint except `/v1/bind/*` and
+`/v1/health` requires `Authorization: Bearer v1.<id>.<ts>.<nonce>.<hmac>`:
+known device + ±60s window + one-time nonce + HMAC (防重放双保险). Unbound
+= open, honestly reported (`/v1/bind/status`). The client half lives in
+`~/.cellrix/identity.toml` (0600) — never in git.
+
 ## Testing
 
 Run the full suite (**211/211 passing**):

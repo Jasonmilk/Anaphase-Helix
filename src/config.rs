@@ -85,6 +85,12 @@ pub struct AnaphaseConfig {
     #[serde(default)]
     pub judge_model: Option<String>,
 
+    /// One-to-one binding state path (2026-09-07). `None` = per-user
+    /// convention `$HOME/.cellrix/anaphase-identity.json` (same directory
+    /// as the `up` launcher config). 0600; device_id + secret.
+    #[serde(default)]
+    pub bind_state_path: Option<String>,
+
     /// run_cycle state-machine constants (candidate E, ADR-0005).
     /// DNA principle 11 (ADR-0002): the five historical literals in
     /// run_cycle.rs now have a config source. Overridable via
@@ -246,6 +252,7 @@ impl Default for AnaphaseConfig {
             flowmodus_endpoint: None,
             tentacle_endpoint: None,
             tuck_endpoint: None,
+            bind_state_path: None,
             cellrix_endpoint: None,
             cap_http_enabled: false,
             cap_http_port: 50061,
@@ -328,6 +335,7 @@ mod tests {
                 flowmodus_endpoint: None,
                 tentacle_endpoint: None,
                 tuck_endpoint: None,
+                bind_state_path: None,
                 cellrix_endpoint: None,
                 cap_http_enabled: true,
                 cap_http_port: 50061,

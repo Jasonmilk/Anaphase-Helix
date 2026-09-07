@@ -21,6 +21,7 @@ serde = { version = "1", features = ["derive"] }
 rmp-serde = "1.1"   # CI-144 MessagePack frames (ADR-0017)
 sha2 = "0.10"     # rails version-frozen manifest (ADR-0018)
 serde_json = "1"
+getrandom = "0.2"   # pairing code / device secret entropy (bind)
 toml = "0.8"
 
 # Logging
