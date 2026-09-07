@@ -326,3 +326,14 @@ README（fail-closed 节）｜ GROWTH｜ ECOSYSTEM v1.67（Anaphase 219）
 
 ### 待办
 - Cellrix Engram v2：turn 时间线渲染（读事件流，角色徽标 + 统计条）——下一步
+
+## 记录 48：会话事件流查询端点（2026-09-07，ADR-0026 续）
+
+### 变更性质
+- `/v1/sessions?limit=`：经历列表（每轮一条摘要，newest first，只读每文件首/末行——按需加载，不建热索引）
+- `/v1/events?job_id=`：单轮完整事件流（turn 时间线数据源；未知 id → missing 标记，绝不 500）
+- `session_events.rs` 新增 `list_periods` / `read_period` 纯函数 + 2 测试（newest-first 排序 / 单轮读取）
+
+### 验收
+- 236 passed（+2 query 测试）
+- 实弹（走 8080 代理）：sessions 列出 3 段经历；events 返回质量守恒轮的完整 5 事件时间线

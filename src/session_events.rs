@@ -239,3 +239,137 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 }
+
+/// Read one period's full event stream by job id (on-demand query).
+pub fn read_period(dir: &std::path::Path, job_id: &str) -> io::Result<Vec<SessionEvent>> {
+    let path = dir.join(format!("{job_id}.events.jsonl"));
+    let body = fs::read_to_string(&path)?;
+    let mut events = Vec::new();
+    for line in body.lines() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        match serde_json::from_str::<SessionEvent>(line) {
+            Ok(e) => events.push(e),
+            Err(e) => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("bad event row: {e}"),
+                ))
+            }
+        }
+    }
+    Ok(events)
+}
+
+/// One period's list summary (session-management sidebar, Engram v2).
+/// Reads only each file's first row (user/message preview + start time)
+/// and last row (end time) — on-demand, never a hot index.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PeriodSummary {
+    pub job_id: String,
+    pub first_ts: String,
+    pub last_ts: String,
+    pub count: u64,
+    /// Bounded first-human-prompt preview (protocol default 120 chars).
+    pub preview: String,
+}
+
+/// List periods from the event directory, newest first. `limit` bounds the
+/// returned window (protocol default lives at the caller, not here).
+pub fn list_periods(dir: &std::path::Path, limit: usize) -> io::Result<Vec<PeriodSummary>> {
+    let mut out = Vec::new();
+    let entries = fs::read_dir(dir)?;
+    for entry in entries {
+        let entry = entry?;
+        let name = entry.file_name().to_string_lossy().to_string();
+        let Some(job_id) = name.strip_suffix(".events.jsonl") else {
+            continue;
+        };
+        let body = match fs::read_to_string(entry.path()) {
+            Ok(b) => b,
+            Err(_) => continue, // torn file mid-write: skip, never fail the list
+        };
+        let mut first_ts = String::new();
+        let mut last_ts = String::new();
+        let mut preview = String::new();
+        let mut count: u64 = 0;
+        for line in body.lines() {
+            if line.trim().is_empty() {
+                continue;
+            }
+            count += 1;
+            let row: SessionEvent = match serde_json::from_str(line) {
+                Ok(r) => r,
+                Err(_) => continue,
+            };
+            if count == 1 {
+                first_ts = row.time.clone();
+                if row.event_type == EventType::UserMessage.as_str() {
+                    if let Some(t) = row.data.get("text").and_then(|v| v.as_str()) {
+                        // Protocol default preview bound (README Engram
+                        // section); summaries are bounded by construction.
+                        preview = t.chars().take(120).collect();
+                    }
+                }
+            }
+            last_ts = row.time;
+        }
+        if count == 0 {
+            continue;
+        }
+        out.push(PeriodSummary {
+            job_id: job_id.to_string(),
+            first_ts,
+            last_ts,
+            count,
+            preview,
+        });
+    }
+    // Newest first by first event timestamp; tie-break by job id for
+    // determinism (same data, same order).
+    out.sort_by(|a, b| b.first_ts.cmp(&a.first_ts).then_with(|| a.job_id.cmp(&b.job_id)));
+    out.truncate(limit);
+    Ok(out)
+}
+
+#[cfg(test)]
+mod query_tests {
+    use super::*;
+
+    #[test]
+    fn lists_periods_newest_first() {
+        let dir = std::env::temp_dir().join("anaphase-session-events-test-3");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        // Two periods written out of time order (b first, a second).
+        let mut b = SessionEventStream::open(dir.clone(), "job-b", Redaction::default()).unwrap();
+        let mut a = SessionEventStream::open(dir.clone(), "job-a", Redaction::default()).unwrap();
+        b.emit("2026-09-07T00:00:00Z", EventType::UserMessage, json!({ "text": "second" })).unwrap();
+        b.emit("2026-09-07T00:00:02Z", EventType::TurnEnd, json!({})).unwrap();
+        a.emit("2026-09-07T00:00:10Z", EventType::UserMessage, json!({ "text": "first message" })).unwrap();
+        a.emit("2026-09-07T00:00:12Z", EventType::TurnEnd, json!({})).unwrap();
+        let list = list_periods(&dir, 10).unwrap();
+        assert_eq!(list.len(), 2);
+        assert_eq!(list[0].job_id, "job-a", "newest first");
+        assert_eq!(list[1].job_id, "job-b");
+        assert_eq!(list[0].preview, "first message");
+        assert_eq!(list[0].count, 2);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn reads_one_period_by_id() {
+        let dir = std::env::temp_dir().join("anaphase-session-events-test-4");
+        let _ = fs::remove_dir_all(&dir);
+        let mut s = SessionEventStream::open(dir.clone(), "job-x", Redaction::default()).unwrap();
+        s.emit("2026-09-07T00:00:00Z", EventType::TurnStart, json!({})).unwrap();
+        s.emit("2026-09-07T00:00:01Z", EventType::UserMessage, json!({ "text": "hi" })).unwrap();
+        let events = read_period(&dir, "job-x").unwrap();
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].event_type, "turn/start");
+        assert_eq!(events[1].event_type, "user/message");
+        assert!(read_period(&dir, "missing").is_err(), "unknown id must error");
+        let _ = fs::remove_dir_all(&dir);
+    }
+}

@@ -156,6 +156,72 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
             }))
+            .route("/v1/sessions", get({
+                // Session-management sidebar (Engram v2): one summary per
+                // cognitive period, newest first. Reads only each file's
+                // first/last row — on-demand, never a hot index. Unconfigured
+                // or empty dir -> empty list, never 500 (按需加载).
+                let events_dir = config.anaphase.session_events_path.clone();
+                move |Query(params): Query<HashMap<String, String>>| async move {
+                    let Some(dir) = events_dir.as_deref() else {
+                        return Json(serde_json::json!({ "configured": false, "periods": [] }));
+                    };
+                    let limit: usize = params
+                        .get("limit")
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(50);
+                    match anaphase::session_events::list_periods(
+                        std::path::Path::new(dir),
+                        limit,
+                    ) {
+                        Ok(periods) => Json(serde_json::json!({
+                            "configured": true,
+                            "periods": periods
+                        })),
+                        Err(e) => Json(serde_json::json!({
+                            "configured": true, "periods": [], "error": e.to_string()
+                        })),
+                    }
+                }
+            }))
+            .route("/v1/events", get({
+                // One period's full event stream (Engram turn timeline):
+                // the session-as-experience body (ADR-0026). `job_id` is the
+                // derived run id — the same join key the Tuck audit chain
+                // and the reasoning trace carry. Unknown id -> 404-style
+                // empty list with a missing flag (honest, never 500).
+                let events_dir = config.anaphase.session_events_path.clone();
+                move |Query(params): Query<HashMap<String, String>>| async move {
+                    let Some(dir) = events_dir.as_deref() else {
+                        return Json(serde_json::json!({
+                            "configured": false, "missing": true, "events": []
+                        }));
+                    };
+                    let job_id = params
+                        .get("job_id")
+                        .map(|s| s.as_str())
+                        .filter(|s| !s.is_empty())
+                        .unwrap_or_default();
+                    if job_id.is_empty() {
+                        return Json(serde_json::json!({
+                            "configured": true, "missing": true, "events": [],
+                            "error": "job_id required"
+                        }));
+                    }
+                    match anaphase::session_events::read_period(
+                        std::path::Path::new(dir),
+                        job_id,
+                    ) {
+                        Ok(events) => Json(serde_json::json!({
+                            "configured": true, "missing": false, "events": events
+                        })),
+                        Err(e) => Json(serde_json::json!({
+                            "configured": true, "missing": true, "events": [],
+                            "error": e.to_string()
+                        })),
+                    }
+                }
+            }))
             .route("/v1/health", get({
                 // Self-check (2026-09-07): Anaphase reports the physical
                 // readiness of its own organs — config-derived, probed, never
