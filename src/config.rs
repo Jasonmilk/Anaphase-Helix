@@ -225,6 +225,13 @@ pub struct RunCycleConfig {
     /// done with a warning (released, never deadlocked).
     #[serde(default = "default_wakeup_actions")]
     pub wakeup_actions: Vec<String>,
+    /// Reasoning empty-reply retry (ADR-0034): thinking shares the output
+    /// token budget with the answer; when the budget starves the reply to
+    /// empty (thinking ate max_tokens), retry with a direct-answer directive
+    /// that frees the budget from thinking. 0 = never retry. Protocol
+    /// default 1 — bounded and conservative, never a retry storm.
+    #[serde(default = "default_empty_reply_retries")]
+    pub empty_reply_retries: u32,
 }
 
 fn default_wakeup_enabled() -> bool {
@@ -239,6 +246,10 @@ fn default_wakeup_actions() -> Vec<String> {
     vec!["hibernate".into()]
 }
 
+fn default_empty_reply_retries() -> u32 {
+    1
+}
+
 impl Default for RunCycleConfig {
     fn default() -> Self {
         Self {
@@ -251,6 +262,7 @@ impl Default for RunCycleConfig {
             wakeup_enabled: true,
             wakeup_jitter_minutes: 60,
             wakeup_actions: vec!["hibernate".into()],
+            empty_reply_retries: 1,
         }
     }
 }
@@ -384,6 +396,7 @@ mod tests {
                     mode: Mode::Partner,
                     wakeup_enabled: true,
                     wakeup_jitter_minutes: 60,
+                    empty_reply_retries: 1,
                     wakeup_actions: vec!["hibernate".into()],
                 },
                 rails: RailsConfig::default(),

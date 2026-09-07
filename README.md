@@ -48,6 +48,12 @@ via the CommonIntents protocol stack with zero hard coupling.
   text; the client overwrites typewriter accumulation). Terminal channel
   is mpsc — safe to poll repeatedly — so the done line can never be lost
   to a runtime race (oneshot panic), even under burst requests
+- 💭 **Empty-Reply Guard** (ADR-0034) — reasoning models share one output
+  token budget between thinking and the answer; when thinking starves the
+  reply to empty (DeepSeek-family known behaviour), the cycle retries once
+  with a direct-answer directive (bounded, config `empty_reply_retries`)
+  and marks a still-empty attempt `empty: true` so the client never
+  pretends a blank line is an answer
 - 🚗 **CI-144 Transport Layer** (ADR-0017) — `--stdio` speaks the ecosystem's
   common dialect: CIB/1.0 handshake → MessagePack frames (LE u32 length prefix)
   → Manifest (first frame) → 1s snapshot push → ActionRequest/Response

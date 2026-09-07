@@ -885,32 +885,69 @@ impl AgentLoop {
                 }
                 // Streaming when a delta sink is attached (SSE chat); the
                 // buffered path otherwise — one contract, two transports.
+                // ADR-0034: thinking shares the output token budget with the
+                // answer; a reasoning model may spend the whole budget on
+                // hidden reasoning and return empty content (DeepSeek-family
+                // known behaviour — the mature-client answer is a large
+                // budget plus a bounded direct-answer retry). Retry budget
+                // comes from RunCycleConfig (0 = never retry).
+                let retries = self.run_config.empty_reply_retries;
+                let mut output = String::new();
+                let mut attempt = 0u32;
+                let mut effective_prompt = prompt;
                 let thinking_sink = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
-                let streamed = match &self.stream_tx {
-                    Some(tx) => {
-                        self.reason
-                            .reason_stream(
-                                &prompt,
-                                &self.run_config.reasoning_mode,
-                                &trace_id,
-                                tx.clone(),
-                                thinking_sink.as_ref(),
-                            )
-                            .await
+                loop {
+                    let streamed = match &self.stream_tx {
+                        Some(tx) => {
+                            self.reason
+                                .reason_stream(
+                                    &effective_prompt,
+                                    &self.run_config.reasoning_mode,
+                                    &trace_id,
+                                    tx.clone(),
+                                    thinking_sink.as_ref(),
+                                )
+                                .await
+                        }
+                        None => {
+                            self.reason
+                                .reason(&effective_prompt, &self.run_config.reasoning_mode, &trace_id)
+                                .await
+                        }
+                    };
+                    match streamed {
+                        Ok(o) => {
+                            let empty = o.trim().is_empty();
+                            if !empty || attempt >= retries {
+                                output = o;
+                                break;
+                            }
+                            // Budget starvation: the retry drops the reasoning
+                            // demand so the answer gets the freed budget.
+                            attempt += 1;
+                            info!(
+                                "[Reasoning] empty reply (thinking ate budget) — retry {}/{} with direct-answer directive",
+                                attempt, retries
+                            );
+                            thinking_sink.lock().unwrap().clear();
+                            effective_prompt = format!(
+                                "{}\n\n[direct answer required — output your final answer directly, no reasoning]",
+                                effective_prompt
+                            );
+                        }
+                        Err(e) => {
+                            warn!("Reasoning failed: {}", e);
+                            self.context.reasoning_output.clear();
+                            self.context.calls.clear();
+                            return Ok(TransitionCondition::Impass);
+                        }
                     }
-                    None => {
-                        self.reason
-                            .reason(&prompt, &self.run_config.reasoning_mode, &trace_id)
-                            .await
-                    }
-                };
-                match streamed {
-                    Ok(output) => {
-                        // Private reasoning (ADR-0029): keep it on the context
-                        // and persist an `assistant/think` event (redacted on
-                        // write, display-only — criteria never sees it).
-                        self.context.reasoning_think =
-                            thinking_sink.lock().unwrap().clone();
+                }
+                // Private reasoning (ADR-0029): keep it on the context
+                // and persist an `assistant/think` event (redacted on
+                // write, display-only — criteria never sees it).
+                self.context.reasoning_think =
+                    thinking_sink.lock().unwrap().clone();
                         if let Some(ev) = self.session_events.as_mut() {
                             let ts = crate::ledger::unix_secs_to_rfc3339(self.clock.now());
                             let _ = ev.emit(
@@ -930,7 +967,7 @@ impl AgentLoop {
                         if let Some(trace) = self.trace.as_ref() {
                             let ts = crate::ledger::unix_secs_to_rfc3339(self.clock.now());
                             let model = self.run_config.reasoning_mode.clone();
-                            let _ = trace.record(&ts, &trace_id, &model, &prompt, &output);
+                            let _ = trace.record(&ts, &trace_id, &model, &effective_prompt, &output);
                         }
                         // Session event: the Reasoning attempt (redacted on
                         // write). The full prompt/response body stays in the
@@ -941,7 +978,15 @@ impl AgentLoop {
                             let _ = ev.emit(
                                 &ts,
                                 crate::session_events::EventType::Attempt,
-                                serde_json::json!({ "text": output }),
+                                serde_json::json!({
+                                    "text": output,
+                                    // ADR-0034: honest terminal — after the
+                                    // bounded retry the reply may still be
+                                    // empty (model refused/starved); the
+                                    // client renders a clear hint instead of
+                                    // pretending a blank line is an answer.
+                                    "empty": output.trim().is_empty(),
+                                }),
                             );
                         }
                         // candidate E (ADR-0005): structured output protocol
@@ -987,12 +1032,6 @@ impl AgentLoop {
                                 Ok(TransitionCondition::NoToolNeeded)
                             }
                         }
-                    }
-                    Err(e) => {
-                        warn!("Reasoning failed: {}", e);
-                        Ok(TransitionCondition::Impass)
-                    }
-                }
             }
             HelixState::ReflexCheck => {
                 info!("[ReflexCheck] Somatic reflex arc validation...");
@@ -1393,6 +1432,64 @@ mod tests {
                 safety_rules: vec![],
             },
         )
+    }
+
+    /// Empty-then-reply reasoning adapter (ADR-0034): first call returns an
+    /// empty reply (thinking ate the token budget), the retry answers —
+    /// proves the bounded direct-answer retry fires and lands the reply.
+    struct EmptyThenReplyReasoning {
+        calls: Arc<std::sync::Mutex<Vec<String>>>,
+    }
+
+    #[async_trait::async_trait]
+    impl crate::adapters::ReasoningAdapter for EmptyThenReplyReasoning {
+        async fn reason(&self, input: &str, _mode: &str, _trace_id: &str) -> Result<String, String> {
+            let mut guard = self.calls.lock().unwrap();
+            guard.push(input.to_string());
+            let n = guard.len();
+            drop(guard);
+            if n == 1 {
+                // Budget starvation: thinking consumed max_tokens, content empty.
+                Ok("".to_string())
+            } else {
+                Ok("{\"calls\":[],\"impasse\":false}".to_string())
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn empty_reply_retries_with_direct_answer_directive() {
+        // ADR-0034: an empty reply (thinking ate the budget) must trigger one
+        // bounded retry whose prompt carries the direct-answer directive, and
+        // the cycle must end with the retried reply, not a blank line.
+        let calls = Arc::new(std::sync::Mutex::new(vec![]));
+        let mut agent = AgentLoop::new(
+            Arc::new(NoopMemoryAdapter),
+            Arc::new(EmptyThenReplyReasoning { calls: calls.clone() }),
+            Arc::new(NoopToolAdapter),
+            Arc::new(NoopSafetyAdapter),
+            Arc::new(NoopUiAdapter),
+            Arc::new(NoopFearAdapter),
+            ReflexArc {
+                safety_rules: vec![],
+            },
+        )
+        .with_run_config(RunCycleConfig {
+            empty_reply_retries: 1,
+            ..RunCycleConfig::default()
+        });
+        let out = agent.run_cycle("hello").await.unwrap();
+        assert!(out.done);
+        let prompts = calls.lock().unwrap();
+        assert_eq!(prompts.len(), 2, "one starved call + one direct-answer retry");
+        assert!(
+            prompts[1].contains("direct answer required"),
+            "retry prompt must carry the direct-answer directive"
+        );
+        assert!(
+            !prompts[1].contains("[think-first"),
+            "retry must not re-trigger the craft note"
+        );
     }
 
     #[tokio::test]
