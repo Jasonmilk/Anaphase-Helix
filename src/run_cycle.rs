@@ -108,7 +108,7 @@ pub struct AgentLoop {
     pub context: AgentContext,
     /// Optional streaming deltas sink (SSE chat): when set, the reasoning
     /// adapter emits content deltas here instead of buffering silently.
-    pub stream_tx: Option<tokio::sync::mpsc::UnboundedSender<String>>,
+    pub stream_tx: Option<tokio::sync::mpsc::UnboundedSender<crate::adapters::StreamDelta>>,
     /// HITL 人在回路审批通道（P10b T3，执行闸；默认 fail-closed）
     pub hitl: HITLApprover,
     /// M1.5-T6 (ADR-0004): optional real tool name resolved for Execution.

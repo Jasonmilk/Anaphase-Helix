@@ -184,6 +184,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
             }))
+            .route("/v1/sessions/rename", post({
+                // Human-chosen experience name (ADR-0026): written as a
+                // `{job_id}.name` sidecar so every client sees the same name
+                // (one source of truth, not per-browser localStorage). Empty
+                // name clears the sidecar. Id shape is validated server-side.
+                let events_dir = config.anaphase.session_events_path.clone();
+                move |Json(body): Json<serde_json::Value>| async move {
+                    let Some(dir) = events_dir.as_deref() else {
+                        return Json(serde_json::json!({ "ok": false, "error": "session events not configured" }));
+                    };
+                    let job_id = body
+                        .get("job_id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let name = body
+                        .get("name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    match anaphase::session_events::rename_period(
+                        std::path::Path::new(dir),
+                        &job_id,
+                        &name,
+                    ) {
+                        Ok(()) => Json(serde_json::json!({ "ok": true })),
+                        Err(e) => Json(serde_json::json!({ "ok": false, "error": e.to_string() })),
+                    }
+                }
+            }))
             .route("/v1/events", get({
                 // One period's full event stream (Engram turn timeline):
                 // the session-as-experience body (ADR-0026). `job_id` is the
@@ -312,7 +342,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // full reply + done flag. The cycle itself is untouched
                         // — streaming is transport only (judgement still runs
                         // on the complete text).
-                        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+                        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<anaphase::adapters::StreamDelta>();
                         built.agent.stream_tx = Some(tx);
                         let mut agent = built.agent;
                         let (done_tx, done_rx) = tokio::sync::oneshot::channel();
@@ -323,36 +353,49 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             *shared.lock().unwrap() = Some(agent.capture());
                             let _ = done_tx.send(reply);
                         });
+                        // Deterministic event ordering (2026-09-08): the cycle
+                        // may complete while deltas are still buffered in the
+                        // channel — a naive select! could pick the terminal
+                        // line first and drop the tail. So the terminal line
+                        // is deferred: once `done` fires we enter the draining
+                        // phase, flush every buffered delta, and only when the
+                        // channel closes (agent dropped the sender) emit the
+                        // final `done`/`error` line. The client always sees
+                        // events before the verdict, in order.
                         let body = axum::body::Body::from_stream(futures_util::stream::unfold(
-                            (rx, Some(done_rx), false),
-                            |(mut rx, mut done, mut finished)| async move {
-                                if finished {
-                                    return None;
-                                }
-                                tokio::select! {
-                                    Some(d) = rx.recv() => {
-                                        let line = format!("data: {}\n\n", serde_json::json!({"delta": d}));
-                                        Some((Ok::<_, std::convert::Infallible>(axum::body::Bytes::from(line)), (rx, done, false)))
-                                    }
-                                    r = async {
-                                        match done.as_mut() {
-                                            Some(d) => d.await,
-                                            None => std::future::pending::<Result<Result<String, String>, _>>().await,
+                            (rx, Some(done_rx), None),
+                            |(mut rx, mut done, pending)| async move {
+                                let pending = match pending {
+                                    Some(p) => p,
+                                    None => tokio::select! {
+                                        Some(d) = rx.recv() => {
+                                            let line = format!("data: {}\n\n", serde_json::json!({"delta": d.content, "think": d.thinking}));
+                                            return Some((Ok::<_, std::convert::Infallible>(axum::body::Bytes::from(line)), (rx, done, None)));
                                         }
-                                    } => {
-                                        match r {
-                                            Ok(Ok(reply)) => {
-                                                let line = format!("data: {}\n\n", serde_json::json!({"done": true, "reply": reply}));
-                                                Some((Ok::<_, std::convert::Infallible>(axum::body::Bytes::from(line)), (rx, None, true)))
+                                        r = async {
+                                            match done.as_mut() {
+                                                Some(d) => d.await,
+                                                None => std::future::pending::<Result<Result<String, String>, _>>().await,
                                             }
-                                            Ok(Err(e)) => {
-                                                let line = format!("data: {}\n\n", serde_json::json!({"error": e}));
-                                                Some((Ok::<_, std::convert::Infallible>(axum::body::Bytes::from(line)), (rx, None, true)))
+                                        } => {
+                                            match r {
+                                                Ok(v) => v,
+                                                Err(_) => return None,
                                             }
-                                            Err(_) => None,
                                         }
-                                    }
+                                    },
+                                };
+                                // Draining: flush buffered deltas first.
+                                if let Some(d) = rx.recv().await {
+                                    let line = format!("data: {}\n\n", serde_json::json!({"delta": d.content, "think": d.thinking}));
+                                    return Some((Ok::<_, std::convert::Infallible>(axum::body::Bytes::from(line)), (rx, done, Some(pending))));
                                 }
+                                // Channel drained: emit the terminal line once.
+                                let (line, next) = match pending {
+                                    Ok(reply) => (format!("data: {}\n\n", serde_json::json!({"done": true, "reply": reply})), None),
+                                    Err(e) => (format!("data: {}\n\n", serde_json::json!({"error": e})), None),
+                                };
+                                Some((Ok::<_, std::convert::Infallible>(axum::body::Bytes::from(line)), (rx, done, next)))
                             },
                         ));
                         return (

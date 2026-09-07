@@ -351,3 +351,22 @@ README（fail-closed 节）｜ GROWTH｜ ECOSYSTEM v1.67（Anaphase 219）
 ### 验收
 - 236 passed（+2 query 测试）
 - 实弹（走 8080 代理）：sessions 列出 3 段经历；events 返回质量守恒轮的完整 5 事件时间线
+
+## 记录 50：SSE 确定性排空 + 会话命名 + 印痕形态纠错（2026-09-08，ADR-0028）
+
+### 关键动作
+- **SSE 三阶段 unfold**：`tokio::select!` 等 delta/done 的随机丢包根因修复——done 后先
+  draining 排空剩余 delta，channel 关闭后再发唯一终行 `{done,reply}`；reply 为权威全文，
+  前端渲染以 reply 覆盖打字机累积（截断不可能上屏）。
+- **思考透传**：`StreamDelta{content, thinking}`，SSE 事件 `{"delta","think"}` 双字段，
+  思考仅展示、永不参与判据。
+- **会话命名**：preview 全文件扫第一条 user/message 作自动名；`rename_period` sidecar
+  落盘 + POST `/v1/sessions/rename`（空名=回退自动 preview）。
+- **印痕形态纠错**：对照 DSH session-turn-outline 确认轨迹= turn 大纲非时间轴甘特；
+  SA-Core 选择 / L1-L3 节点 chip 标签化（ADR-0028 D5）。
+
+### 验收
+- 237 passed（+SSE thinking 断言、preview 新语义、rename 测试）
+- 实弹（浏览器走 8080）：连发两条消息均完整回复（无截断/空回复）；思考折叠行流式出现；
+  印痕 chip 标签化（SA-Core 选择 L1×1 L3×19 + mnode chips）；续接下拉 8 条经历；
+  重命名设置/清空回退全通

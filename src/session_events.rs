@@ -370,6 +370,47 @@ pub struct PeriodSummary {
     pub count: u64,
     /// Bounded first-human-prompt preview (protocol default 120 chars).
     pub preview: String,
+    /// Human-chosen experience name (`{job_id}.name` sidecar), if any.
+    pub name: Option<String>,
+}
+
+/// Persist a human-chosen experience name as a `{job_id}.name` sidecar next
+/// to the event stream — same directory, same derived id, one source of
+/// truth shared by every client. The id is validated against the derived
+/// shape (`run-` + hex) so a hostile value can never escape the directory.
+pub fn rename_period(dir: &std::path::Path, job_id: &str, name: &str) -> io::Result<()> {
+    let valid = job_id.len() >= 4
+        && job_id.len() <= 64
+        && job_id.starts_with("run-")
+        && job_id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-');
+    if !valid {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, "invalid job id"));
+    }
+    let name = name.trim();
+    let sidecar = dir.join(format!("{job_id}.name"));
+    if name.is_empty() {
+        // Empty name = clear the sidecar (rename back to auto preview).
+        match fs::remove_file(&sidecar) {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(e),
+        }
+    } else {
+        fs::write(&sidecar, name)
+    }
+}
+
+/// Load the optional human-chosen name for a period (`{job_id}.name`).
+fn period_name(dir: &std::path::Path, job_id: &str) -> Option<String> {
+    let raw = fs::read_to_string(dir.join(format!("{job_id}.name"))).ok()?;
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
 }
 
 /// List periods from the event directory, newest first. `limit` bounds the
@@ -402,12 +443,14 @@ pub fn list_periods(dir: &std::path::Path, limit: usize) -> io::Result<Vec<Perio
             };
             if count == 1 {
                 first_ts = row.time.clone();
-                if row.event_type == EventType::UserMessage.as_str() {
-                    if let Some(t) = row.data.get("text").and_then(|v| v.as_str()) {
-                        // Protocol default preview bound (README Engram
-                        // section); summaries are bounded by construction.
-                        preview = t.chars().take(120).collect();
-                    }
+            }
+            // Preview = the FIRST human message of the period, wherever it
+            // sits in the stream (turn/start leads the file, so a first-row
+            // check alone would always miss it — that was the "无用户输入"
+            // bug). Bounded by construction (protocol default 120 chars).
+            if preview.is_empty() && row.event_type == EventType::UserMessage.as_str() {
+                if let Some(t) = row.data.get("text").and_then(|v| v.as_str()) {
+                    preview = t.chars().take(120).collect();
                 }
             }
             last_ts = row.time;
@@ -421,6 +464,7 @@ pub fn list_periods(dir: &std::path::Path, limit: usize) -> io::Result<Vec<Perio
             last_ts,
             count,
             preview,
+            name: period_name(dir, job_id),
         });
     }
     // Newest first by first event timestamp; tie-break by job id for

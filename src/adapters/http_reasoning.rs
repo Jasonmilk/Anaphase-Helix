@@ -70,7 +70,7 @@ impl ReasoningAdapter for HttpReasoningAdapter {
         prompt: &str,
         _model: &str,
         trace_id: &str,
-        deltas: tokio::sync::mpsc::UnboundedSender<String>,
+        deltas: tokio::sync::mpsc::UnboundedSender<crate::adapters::StreamDelta>,
     ) -> Result<String, String> {
         let resp = self.post_chat(prompt, trace_id, true).await?;
         if !resp.status().is_success() {
@@ -92,11 +92,19 @@ impl ReasoningAdapter for HttpReasoningAdapter {
                 .as_str()
                 .unwrap_or("")
                 .to_string();
-            let _ = deltas.send(full.clone());
+            let _ = deltas.send(crate::adapters::StreamDelta {
+                content: full.clone(),
+                thinking: json["choices"][0]["message"]["reasoning_content"]
+                    .as_str()
+                    .unwrap_or("")
+                    .to_string(),
+            });
             return Ok(full);
         }
         // SSE line protocol: `data: {json}` separated by blank lines;
-        // `data: [DONE]` closes the stream.
+        // `data: [DONE]` closes the stream. Thinking (reasoning_content) is
+        // forwarded as a disclosure slice; the returned full text is content
+        // only — judgement must never run on the model's private deliberation.
         let mut full = String::new();
         let mut stream = resp.bytes_stream();
         let mut line = String::new();
@@ -112,9 +120,17 @@ impl ReasoningAdapter for HttpReasoningAdapter {
                             break 'outer;
                         }
                         if let Ok(v) = serde_json::from_str::<serde_json::Value>(payload) {
-                            if let Some(delta) = v["choices"][0]["delta"]["content"].as_str() {
-                                full.push_str(delta);
-                                let _ = deltas.send(delta.to_string());
+                            let delta = &v["choices"][0]["delta"];
+                            let content = delta["content"].as_str().unwrap_or("");
+                            let thinking = delta["reasoning_content"].as_str().unwrap_or("");
+                            if !content.is_empty() {
+                                full.push_str(content);
+                            }
+                            if !content.is_empty() || !thinking.is_empty() {
+                                let _ = deltas.send(crate::adapters::StreamDelta {
+                                    content: content.to_string(),
+                                    thinking: thinking.to_string(),
+                                });
                             }
                         }
                     }
@@ -165,7 +181,7 @@ mod tests {
     #[tokio::test]
     async fn reason_stream_parses_sse_deltas_in_order() {
         let gw = spawn_gateway(
-            "data: {\"choices\":[{\"delta\":{\"content\":\"hel\"}}]}\n\n\
+            "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"think-a\",\"content\":\"hel\"}}]}\n\n\
              data: {\"choices\":[{\"delta\":{\"content\":\"lo\"}}]}\n\n\
              data: {\"choices\":[{\"delta\":{\"content\":\" world\"}}]}\n\n\
              data: [DONE]\n\n",
@@ -175,7 +191,7 @@ mod tests {
         cfg.reasoning_endpoint = Some(format!("http://{}", gw.addr));
         cfg.reasoning_model = Some("fake".into());
         let adapter = HttpReasoningAdapter::new(&cfg);
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<crate::adapters::StreamDelta>();
         let full = adapter
             .reason_stream("hi", "fake", "t1", tx)
             .await
@@ -185,7 +201,10 @@ mod tests {
         while let Ok(d) = rx.try_recv() {
             deltas.push(d);
         }
-        assert_eq!(deltas, vec!["hel", "lo", " world"]);
+        assert_eq!(deltas[0].thinking, "think-a");
+        assert_eq!(deltas[0].content, "hel");
+        assert_eq!(deltas[1].content, "lo");
+        assert_eq!(deltas[2].content, " world");
         gw.handle.abort();
     }
 
@@ -215,12 +234,12 @@ mod tests {
         cfg.reasoning_endpoint = Some(format!("http://{addr}"));
         cfg.reasoning_model = Some("fake".into());
         let adapter = HttpReasoningAdapter::new(&cfg);
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<crate::adapters::StreamDelta>();
         let full = adapter
             .reason_stream("hi", "fake", "t1", tx)
             .await
             .unwrap();
         assert_eq!(full, "plain");
-        assert_eq!(rx.try_recv().unwrap(), "plain");
+        assert_eq!(rx.try_recv().unwrap().content, "plain");
     }
 }

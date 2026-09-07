@@ -141,6 +141,16 @@ pub async fn resolve_memory_adapter(config: &crate::config::AnaphaseConfig) -> A
 }
 
 // ---------- Reasoning Adapter ----------
+/// One streaming slice of a reasoning round. `content` is the answer
+/// surface (what the client types out); `thinking` is the model's private
+/// deliberation (rendered as a collapsible disclosure, DSH-style, never
+/// injected into judgement — the cycle always runs on the full content).
+#[derive(Debug, Clone, Default)]
+pub struct StreamDelta {
+    pub content: String,
+    pub thinking: String,
+}
+
 #[async_trait]
 pub trait ReasoningAdapter: Send + Sync {
     /// Run one reasoning round trip. `trace_id` is the derived job id —
@@ -148,19 +158,23 @@ pub trait ReasoningAdapter: Send + Sync {
     /// Anaphase body trace and the ledger share one join key (Engram).
     async fn reason(&self, prompt: &str, model: &str, trace_id: &str) -> Result<String, String>;
 
-    /// Streaming variant: emits content deltas into `deltas` as they arrive
-    /// and returns the full text (same contract as `reason`). Default = the
-    /// buffered path (every adapter stays valid; only HTTP streams). The
-    /// channel keeps the callback out of the async trait — no lifetime glue.
+    /// Streaming variant: emits content/thinking deltas into `deltas` as they
+    /// arrive and returns the full text (same contract as `reason`). Default
+    /// = the buffered path (every adapter stays valid; only HTTP streams).
+    /// The channel keeps the callback out of the async trait — no lifetime
+    /// glue.
     async fn reason_stream(
         &self,
         prompt: &str,
         model: &str,
         trace_id: &str,
-        deltas: tokio::sync::mpsc::UnboundedSender<String>,
+        deltas: tokio::sync::mpsc::UnboundedSender<StreamDelta>,
     ) -> Result<String, String> {
         let out = self.reason(prompt, model, trace_id).await?;
-        let _ = deltas.send(out.clone());
+        let _ = deltas.send(StreamDelta {
+            content: out.clone(),
+            thinking: String::new(),
+        });
         Ok(out)
     }
 }
