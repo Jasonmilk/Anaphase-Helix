@@ -99,6 +99,24 @@ README（驾驶舱=Anaphase 本体 + WebUI + env 注入）｜ PLAN（共享装�
 
 ### 状态
 🧬 已完成
+## 记录 30：推理流量过 Tuck 之门 + 凭证治理（2026-09-07）
+
+### 触发条件
+Tuck 内容治理网关 v1 完成后，旁路焊死最后一环——Anaphase 真实推理流量接入唯一出口。
+
+### 变更性质
+- **零代码改动**：config 两行切换——`reasoning_endpoint` → `http://127.0.0.1:60052/v1`（Tuck 网关）、
+  `reasoning_api_key` → `tk-local-gate`（Tuck 身份凭证）；真实 deepseek key 移入 Tuck config（gitignored）
+- **live 验证**：deepseek 真实响应经 Tuck 之门返回；审计链 request/response 双记录（hash 链）
+- **凭证治理**：发现真实 key 曾进本仓库 git 历史（60df6f8）→ `config.toml`/`.bak` untrack
+  （磁盘保留，gitignore 机制防再犯），`config.toml.example` 保留为模板
+- **依赖**：Tuck reqwest 补 rustls-tls（https 上游必须，mock 掩盖的真伤）
+
+### 验收
+PLAN（旁路焊死段）｜ ECOSYSTEM v1.61（Tuck 369 + 全生态物理核对）
+
+### 状态
+🧬 已完成（key 轮换待用户执行后更新 Tuck config）
 ## 记录 29：驾驶舱真对话——send_message 输入 + 真实 LLM 回复（2026-09-06）
 
 ### 触发条件
