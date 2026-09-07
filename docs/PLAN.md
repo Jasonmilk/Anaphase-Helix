@@ -96,4 +96,4 @@ Cellrix）。事件流：Manifest 首帧 → 1s 节律 Snapshot 推流 → Actio
 
 ---
 
-*Anaphase-Helix PLAN v2.7（L0-L3 实弹 + 工具链闭环，2026-09-07）*
+*Anaphase-Helix PLAN v2.8（会话事件流落盘，2026-09-07，ADR-0026）*

@@ -309,3 +309,20 @@ README（fail-closed 节）｜ GROWTH｜ ECOSYSTEM v1.67（Anaphase 219）
 - web_search 端到端通（LLM 生成调用 → Tentacle 执行 → 结果回填）
 - 全量：anaphase 231 passed（+3）/ tentacle 153+ passed，零失败
 - 已知待办：web_search 结果质量（Bing 首条偶现泛化）→ 解析微调；协议行若再违约 → prompt 断言
+
+## 记录 47：会话事件流——经历的确定性落盘（2026-09-07，ADR-0026）
+
+### 变更性质
+- **新增 `src/session_events.rs`**：每认知周期一个 JSONL（`{dir}/{job_id}.events.jsonl`），事件 `{type, seq, time, data}`，词汇表（协议值）：turn/start · user/message · context/inject · assistant/attempt · tool/call · tool/result · verdict/status · turn/end
+- **run_cycle 五处挂钩**：周期头（turn/start+user/message+context/inject）→ attempt → tool/call+tool/result（evidence 行）→ verdict（criteria 判据）→ turn/end
+- **join key 统一**：与 reasoning trace、Tuck 审计链同一 `run-<12hex>`（Engram 三源一键）
+- **写前脱敏**：payload 递归红act（复用 trace Redaction），凭证永不落盘
+- **DSH 轨迹结构参考**（deepseek-harness session-format 实证），**不借其命名**（生态词汇自定）
+
+### 验收
+- 234 passed（+3：词汇表稳定 / seq 单调与 roundtrip / 递归脱敏）
+- 实弹：`7^9` 工具轮完整事件流（turn/start→…→tool/call calc→tool/result ok→verdict Unmet→turn/end）
+- 非致命写入（写失败不终止认知循环）
+
+### 待办
+- Cellrix Engram v2：turn 时间线渲染（读事件流，角色徽标 + 统计条）——下一步

@@ -11,6 +11,7 @@ pub mod task_dag;
 pub mod gloves;
 pub mod events;
 pub mod trace;
+pub mod session_events;
 pub mod health;
 pub mod bind;
 pub mod contract;

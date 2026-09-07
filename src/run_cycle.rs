@@ -175,6 +175,15 @@ pub struct AgentLoop {
     /// `reasoning_trace_path`). `trace_id` = the derived job id, joining
     /// body + chain + ledger in Cellrix's Engram view.
     pub trace: Option<crate::trace::ReasoningTrace>,
+    /// Session event stream directory (Engram turn timeline, ADR-0023):
+    /// one append-only JSONL per cognitive period, keyed by the derived
+    /// job id. Opened at period start (the id exists only then); None =
+    /// stream off. Non-fatal: a failed open degrades to no stream.
+    pub session_events_dir: Option<std::path::PathBuf>,
+    /// Redactor for the event stream (same credential shapes as trace).
+    pub session_events_redact: crate::trace::Redaction,
+    /// The open per-period stream (rebuilt each period).
+    pub session_events: Option<crate::session_events::SessionEventStream>,
 }
 
 /// Fold memory nodes into a bounded injection string (O-5, ADR-0023).
@@ -313,6 +322,9 @@ impl AgentLoop {
             }),
             // Trace is opt-in: main wires it from `reasoning_trace_path`.
             trace: None,
+            session_events_dir: None,
+            session_events_redact: crate::trace::Redaction::default(),
+            session_events: None,
         }
     }
 
@@ -549,6 +561,19 @@ impl AgentLoop {
                         outcome.done, outcome.success, outcome.impasse
                     ),
                 );
+                // Session event: the period ended (back to Perception).
+                if let Some(ev) = self.session_events.as_mut() {
+                    let ts = crate::ledger::unix_secs_to_rfc3339(self.clock.now());
+                    let _ = ev.emit(
+                        &ts,
+                        crate::session_events::EventType::TurnEnd,
+                        serde_json::json!({
+                            "done": outcome.done,
+                            "success": outcome.success,
+                            "impasse": outcome.impasse,
+                        }),
+                    );
+                }
                 break;
             }
         }
@@ -761,6 +786,31 @@ impl AgentLoop {
                 // (x-tuck-trace -> Tuck chain), to the body trace, and to the
                 // pipeline events — one join key across all three (Engram).
                 let trace_id = crate::contract::derive_job_id(&self.context.user_input);
+                // Session event stream (Engram turn timeline): open the
+                // per-period stream and emit the period header — turn/start,
+                // user/message, context/inject (summary only). The stream is
+                // keyed by the same derived job id as the body trace and the
+                // Tuck audit chain, so the client joins all three on it.
+                self.session_events = self
+                    .session_events_dir
+                    .as_ref()
+                    .and_then(|dir| {
+                        crate::session_events::SessionEventStream::open(
+                            dir.clone(),
+                            &trace_id,
+                            self.session_events_redact.clone(),
+                        )
+                        .ok()
+                    });
+                if let Some(ev) = self.session_events.as_mut() {
+                    let ts = crate::ledger::unix_secs_to_rfc3339(self.clock.now());
+                    let _ = ev.emit_period_start(
+                        &ts,
+                        &self.context.user_input,
+                        self.context.memory_nodes.len(),
+                        self.memory_inject_chars,
+                    );
+                }
                 // Streaming when a delta sink is attached (SSE chat); the
                 // buffered path otherwise — one contract, two transports.
                 let streamed = match &self.stream_tx {
@@ -794,6 +844,18 @@ impl AgentLoop {
                             let ts = crate::ledger::unix_secs_to_rfc3339(self.clock.now());
                             let model = self.run_config.reasoning_mode.clone();
                             let _ = trace.record(&ts, &trace_id, &model, &prompt, &output);
+                        }
+                        // Session event: the Reasoning attempt (redacted on
+                        // write). The full prompt/response body stays in the
+                        // reasoning trace; the event carries the output so a
+                        // client can render the turn without opening trace.
+                        if let Some(ev) = self.session_events.as_mut() {
+                            let ts = crate::ledger::unix_secs_to_rfc3339(self.clock.now());
+                            let _ = ev.emit(
+                                &ts,
+                                crate::session_events::EventType::Attempt,
+                                serde_json::json!({ "text": output }),
+                            );
                         }
                         // candidate E (ADR-0005): structured output protocol
                         // replaces the legacy contains("tool_call") matching.
@@ -987,6 +1049,16 @@ impl AgentLoop {
                         };
                         pipeline.ledger.append(verdict);
                         pipeline.emit_event(&job_id, 6, "end", &format!("verdict={status}"));
+                        // Session event: the criteria verdict (MET/UNMET/
+                        // blocked) — the turn timeline's terminal judgement.
+                        if let Some(ev) = self.session_events.as_mut() {
+                            let ts = crate::ledger::unix_secs_to_rfc3339(self.clock.now());
+                            let _ = ev.emit(
+                                &ts,
+                                crate::session_events::EventType::Verdict,
+                                serde_json::json!({ "job_id": job_id, "status": status }),
+                            );
+                        }
                         info!("[Reflection] Ledger verdict written for job {}", job_id);
                     }
                     // Human-readable reply: replace the plan JSON with the tool
@@ -1079,6 +1151,34 @@ impl AgentLoop {
         };
         match pipeline.execute_calls(&job, &labels).await {
             Ok(records) => {
+                // Session events: one tool/call + tool/result pair per
+                // executed call (redacted on write). The evidence rows carry
+                // tool, args shape, result and duration — the turn timeline
+                // renders execution from this single source.
+                if let Some(ev) = self.session_events.as_mut() {
+                    let ts = crate::ledger::unix_secs_to_rfc3339(self.clock.now());
+                    for r in &records {
+                        let _ = ev.emit(
+                            &ts,
+                            crate::session_events::EventType::ToolCall,
+                            serde_json::json!({
+                                "tool": r.tool,
+                                "index": r.call_index,
+                                "expect": r.expect,
+                            }),
+                        );
+                        let _ = ev.emit(
+                            &ts,
+                            crate::session_events::EventType::ToolResult,
+                            serde_json::json!({
+                                "tool": r.tool,
+                                "ok": r.ok,
+                                "duration_ms": r.duration_ms,
+                                "data": r.data,
+                            }),
+                        );
+                    }
+                }
                 pipeline.record_evidence(records.clone());
                 let ids: Vec<String> = records.iter().map(|r| r.evidence_id.clone()).collect();
                 self.context.evidence = records;

@@ -67,6 +67,14 @@ pub struct AnaphaseConfig {
     /// Extra credential literals to redact (project-specific secrets),
     /// in addition to the built-in shapes (sk- / Bearer / api_key= / ...).
     pub reasoning_redact_patterns: Option<Vec<String>>,
+    /// Session event stream directory (Engram turn timeline, ADR-0023).
+    /// `None` = stream off (opt-in). When set, every cognitive period
+    /// appends its structured events (turn/start, user/message,
+    /// context/inject, attempt, tool/call, tool/result, verdict,
+    /// turn/end) as one JSONL keyed by the derived job id — the same join
+    /// key the body trace and the Tuck audit chain carry.
+    #[serde(default)]
+    pub session_events_path: Option<String>,
     /// L0 identity source: path to gene_lock.md (Lineage + immutable
     /// principles). None = no identity injection (honest degraded state).
     #[serde(default)]
@@ -277,6 +285,7 @@ impl Default for AnaphaseConfig {
             reasoning_trace_path: None,
             reasoning_trace_max_chars: None,
             reasoning_redact_patterns: None,
+            session_events_path: None,
             gene_lock_path: None,
             memory_inject_chars: DEFAULT_MEMORY_INJECT_CHARS,
             smoke_input: None,
@@ -359,6 +368,7 @@ mod tests {
                 reasoning_trace_path: None,
                 reasoning_trace_max_chars: None,
                 reasoning_redact_patterns: None,
+                session_events_path: None,
                 gene_lock_path: None,
                 memory_inject_chars: DEFAULT_MEMORY_INJECT_CHARS,
                 smoke_input: None,

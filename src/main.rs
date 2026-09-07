@@ -523,6 +523,22 @@ async fn build_agent(config: &config::Config) -> BuiltAgent {
                 )
                 .expect("reasoning trace path must be openable")
             });
+        // Session event stream (Engram turn timeline, ADR-0023): opt-in via
+        // `session_events_path`. The stream opens per period inside
+        // run_cycle (the derived job id exists only then); this wires the
+        // directory and the redactor (same credential shapes as trace).
+        agent.session_events_dir = config
+            .anaphase
+            .session_events_path
+            .as_ref()
+            .map(|d| std::path::PathBuf::from(d));
+        agent.session_events_redact = anaphase::trace::Redaction::new(
+            config
+                .anaphase
+                .reasoning_redact_patterns
+                .clone()
+                .unwrap_or_default(),
+        );
         // O-6 (ADR-0024): judge-point backend — explicit selection, rules by
         // default; small_llm needs endpoint+model, else degrades to rules
         // (fail-safe, surfaced as a startup warning).
