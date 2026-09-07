@@ -12,6 +12,11 @@ use std::sync::{Arc, Mutex};
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().collect();
+    // Config path flag: `--config <path>` wins over env/default (DNA 11 —
+    // the cockpit stdio launcher injects the same config from any cwd).
+    if let Some(cfg_path) = args.windows(2).find(|w| w[0] == "--config").map(|w| w[1].clone()) {
+        std::env::set_var("ANAPHASE_CONFIG", cfg_path);
+    }
     // CI-144 stdio entry: accept both `--stdio` (native flag) and the
     // ecosystem launcher convention `--mode stdio` (Cellrix `--exec` appends
     // this pair for every stdio agent — one launch contract, every agent).
