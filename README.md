@@ -216,6 +216,12 @@ known device + ±60s window + one-time nonce + HMAC (防重放双保险). Unboun
 = open, honestly reported (`/v1/bind/status`). The client half lives in
 `~/.cellrix/identity.toml` (0600) — never in git.
 
+### Partner-mode chat (2026-09-07)
+
+`POST /v1/chat {"message": "..."}` — one single-period run_cycle per request
+(fresh assembly, same subconscious, no cross-session bleed). Fail-closed:
+Tuck unreachable → 503. Bound → signed Bearer required (same auth_mw gate).
+
 ## Testing
 
 Run the full suite (**211/211 passing**):

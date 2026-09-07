@@ -204,3 +204,17 @@ README（fail-closed 节）｜ GROWTH｜ ECOSYSTEM v1.67（Anaphase 219）
 
 ### 状态
 🧬 已完成
+
+## 记录 34：/v1/chat——伙伴模式对话端点（2026-09-07）
+
+### 触发条件
+小白全流程实测：面板无输入框、无对话入口——打开只能看状态，无法与 Helix 说话。
+
+### 变更性质
+- **cap_http 新增 POST /v1/chat**：{message} → gate_ok（Tuck 不可达 503）→ build_agent（同装配、同潜意识、同黑盒）→ 单周期 run_cycle → {reply, done}
+- 每次请求装配全新 AgentLoop：无共享可变状态、无跨会话串话；对话连续性 = 未来 Memory（L3 情景）职责，v1 不承诺
+- 绑定后自动进 auth_mw 门禁（非白名单端点）
+- **真实验证**：面板 /api/chat → 200 1.0s 真实 LLM 回复（走 Tuck 网关审计）；无凭据 401（继承绑定门禁）
+
+### 状态
+🧬 已完成

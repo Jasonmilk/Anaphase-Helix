@@ -174,6 +174,48 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let st = bind_state.clone();
                 move || async move { Json(anaphase::bind::status(&st)) }
             }))
+            .route("/v1/chat", post({
+                // Partner-mode dialogue (2026-09-07): the panel's input box
+                // lands here. Each request assembles a fresh Helix (build_agent
+                // = same subconscious, same hand, same black box) and runs one
+                // single-period cycle — no shared mutable state, no cross-
+                // session bleed; conversation continuity is a future Memory
+                // concern (L3 情景), not a v1 promise.
+                // Fail-closed: Tuck down = refuse to reason (gate_ok), the
+                // process stays alive to keep the panel honest.
+                let cfg = config.clone();
+                let shared = shared.clone();
+                move |Json(body): Json<serde_json::Value>| async move {
+                    use axum::http::StatusCode;
+                    let msg = body
+                        .get("message")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .trim()
+                        .to_string();
+                    if msg.is_empty() {
+                        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": "empty message" })));
+                    }
+                    if let Err(e) = anaphase::health::gate_ok(&cfg.anaphase) {
+                        return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
+                            "error": "tuck unreachable", "detail": e.to_string()
+                        })));
+                    }
+                    // build_agent already wires run_config / memory budget /
+                    // trace from the same config — one assembly, both faces.
+                    let mut built = build_agent(&cfg).await;
+                    match built.agent.run_cycle(&msg).await {
+                        Ok(out) => {
+                            *shared.lock().unwrap() = Some(built.agent.capture());
+                            (StatusCode::OK, Json(serde_json::json!({
+                                "reply": built.agent.context.reasoning_output,
+                                "done": out.done
+                            })))
+                        }
+                        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": e }))),
+                    }
+                }
+            }))
             .layer(middleware::from_fn_with_state(
                 bind_state.clone(),
                 auth_mw,
