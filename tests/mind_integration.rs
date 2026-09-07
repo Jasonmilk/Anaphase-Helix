@@ -61,6 +61,10 @@ fn mock_node(content: &str) -> Node {
         corrected_by: "".into(),
         notes: "".into(),
         derived_from: vec![],
+        phase_state: "liquid".into(),
+        subject_dependency: "low".into(),
+        concentration: "medium".into(),
+        tension: 0.0,
     }
 }
 
@@ -316,7 +320,12 @@ async fn normal_closed_loop_returns_nodes() {
         .query("帮我查一下昨天的会议记录", false)
         .await
         .expect("query ok");
-    assert_eq!(result.nodes, vec!["test-node-content".to_string()]);
+    assert_eq!(result.nodes.len(), 1);
+    assert_eq!(result.nodes[0].content, "test-node-content");
+    assert_eq!(result.nodes[0].tier, "L3");
+    assert_eq!(result.nodes[0].phase, "liquid");
+    assert_eq!(result.nodes[0].heat, 0.5);
+    assert_eq!(result.nodes[0].id, "n1");
 }
 
 #[tokio::test]

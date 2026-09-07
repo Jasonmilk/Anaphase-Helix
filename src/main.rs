@@ -291,6 +291,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .unwrap_or("")
                         .contains("text/event-stream");
                     let mut built = build_agent(&cfg).await;
+                    // Explicit continuation (ADR-0026): `job_id` names a
+                    // previous experience; its last round is injected as
+                    // true history so the new period continues the
+                    // conversation instead of meeting a stranger.
+                    if let Some(job) = body.get("job_id").and_then(|v| v.as_str()) {
+                        if let Some(dir) = &cfg.anaphase.session_events_path {
+                            let resume = anaphase::session_events::read_summary(
+                                &std::path::PathBuf::from(dir),
+                                job,
+                                400,
+                            );
+                            if let Some(r) = resume {
+                                built.agent.context.resume = Some(r);
+                            }
+                        }
+                    }
                     if wants_sse {
                         // Stream deltas live, then a final line carries the
                         // full reply + done flag. The cycle itself is untouched

@@ -192,7 +192,7 @@ pub struct AgentLoop {
 /// `budget` chars with an explicit fold marker — the LLM request carries a
 /// fixed-size cognitive slice regardless of how many rounds have passed
 /// (25-round context grows ~zero). Budget 0 -> empty (no injection).
-fn fold_memory_nodes(nodes: &[String], budget: usize) -> String {
+fn fold_memory_nodes(nodes: &[MemoryNode], budget: usize) -> String {
     if budget == 0 || nodes.is_empty() {
         return String::new();
     }
@@ -208,7 +208,7 @@ fn fold_memory_nodes(nodes: &[String], budget: usize) -> String {
         // P10: L3 notes are "User said: …\nCycle completed. p_death: …". The
         // bookkeeping tail is provenance, not experience — inject only the
         // experience line so the LLM reads the memory, not the ledger.
-        let experience = n.split("\nCycle").next().unwrap_or(n);
+        let experience = n.content.split("\nCycle").next().unwrap_or(&n.content);
         acc.push_str(experience);
     }
     if acc.chars().count() <= budget {
@@ -224,7 +224,12 @@ fn fold_memory_nodes(nodes: &[String], budget: usize) -> String {
 pub struct AgentContext {
     pub user_input: String,
     pub amygdala_vector: (f64, f64, f64),  // (heliotropism, pulse, vigilance)
-    pub memory_nodes: Vec<String>,
+    pub memory_nodes: Vec<MemoryNode>,
+    /// Explicit continuation (2026-09-07): when the panel asks to resume a
+    /// previous experience (`job_id`), the last round's summary is injected
+    /// here as true history — the new period opens as a continuation, not a
+    /// fresh stranger.
+    pub resume: Option<String>,
     pub reasoning_output: String,
     /// Legacy unstructured action suggestions (from MemoryAdapter.query).
     /// Retained for P11b compatibility; Execution prefers the structured plan.
@@ -261,6 +266,42 @@ pub struct AgentContext {
 }
 
 impl AgentLoop {
+    /// SA-Core choice detail for the Engram cockpit (ADR-0033): which layers
+    /// were picked and the top-heat nodes — provenance only (id/tier/heat/
+    /// phase), never node content. Empty when no memory was retrieved.
+    fn memory_choice_detail(&self) -> Option<serde_json::Value> {
+        if self.context.memory_nodes.is_empty() {
+            return None;
+        }
+        let mut tiers: std::collections::BTreeMap<String, usize> = Default::default();
+        for n in &self.context.memory_nodes {
+            *tiers.entry(n.tier.clone()).or_insert(0) += 1;
+        }
+        let mut top: Vec<serde_json::Value> = self
+            .context
+            .memory_nodes
+            .iter()
+            .filter(|n| !n.recessive)
+            .map(|n| {
+                serde_json::json!({
+                    "id": n.id,
+                    "tier": n.tier,
+                    "heat": (n.heat * 100.0).round() / 100.0,
+                    "phase": n.phase,
+                })
+            })
+            .collect();
+        top.sort_by(|a, b| {
+            b["heat"]
+                .as_f64()
+                .unwrap_or(0.0)
+                .partial_cmp(&a["heat"].as_f64().unwrap_or(0.0))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        top.truncate(3);
+        Some(serde_json::json!({ "tiers": tiers, "top": top }))
+    }
+
     /// Create a new cognitive loop engine with Noop adapters as default
     pub fn new(
         memory: Arc<dyn MemoryAdapter>,
@@ -659,7 +700,7 @@ impl AgentLoop {
                             .iter()
                             .take(2)
                             .map(|n| {
-                                let cut: String = n.chars().take(100).collect();
+                                let cut: String = n.content.chars().take(100).collect();
                                 cut
                             })
                             .collect();
@@ -772,6 +813,17 @@ impl AgentLoop {
 \n[memory: Helix's past experiences — true history, answer from them]\n{}", prompt, inject)
                     }
                 };
+                // Explicit continuation (2026-09-07): resume a previous
+                // experience as true history — the new period continues the
+                // conversation instead of meeting a stranger.
+                let prompt = match self.context.resume.as_ref() {
+                    Some(r) => format!(
+                        "{}
+\n[previous episode — true history of this conversation's last round]\n{}",
+                        prompt, r
+                    ),
+                    None => prompt,
+                };
                 // P10a (ADR-0031): fold the cognitive craft note (zero-token
                 // deterministic orchestration from Mind) into the prompt —
                 // think first, then spend tokens. None = no note (degraded or
@@ -802,6 +854,7 @@ impl AgentLoop {
                         )
                         .ok()
                     });
+                let detail = self.memory_choice_detail();
                 if let Some(ev) = self.session_events.as_mut() {
                     let ts = crate::ledger::unix_secs_to_rfc3339(self.clock.now());
                     let _ = ev.emit_period_start(
@@ -809,6 +862,8 @@ impl AgentLoop {
                         &self.context.user_input,
                         self.context.memory_nodes.len(),
                         self.memory_inject_chars,
+                        self.context.resume.as_deref(),
+                        detail.as_ref(),
                     );
                 }
                 // Streaming when a delta sink is attached (SSE chat); the
@@ -1229,7 +1284,7 @@ mod tests {
 
     /// Fixed-memory adapter (O-5): returns the same two nodes every round,
     /// so round-to-round injection size is measured in isolation.
-    struct SpyMemory(Arc<Vec<String>>);
+    struct SpyMemory(Arc<Vec<MemoryNode>>);
 
     #[async_trait::async_trait]
     impl crate::adapters::MemoryAdapter for SpyMemory {
@@ -1422,15 +1477,26 @@ mod tests {
 
     // ── O-5 (ADR-0023): on-demand cognitive injection ──────────────────
 
+    fn mn(text: &str) -> MemoryNode {
+        MemoryNode {
+            content: text.to_string(),
+            id: "n-test".to_string(),
+            tier: "L3".to_string(),
+            heat: 1.0,
+            phase: "liquid".to_string(),
+            recessive: false,
+        }
+    }
+
     #[test]
     fn fold_memory_nodes_empty_and_zero_budget() {
         assert_eq!(fold_memory_nodes(&[], 800), "");
-        assert_eq!(fold_memory_nodes(&["a".into()], 0), "");
+        assert_eq!(fold_memory_nodes(&[mn("a")], 0), "");
     }
 
     #[test]
     fn fold_memory_nodes_within_budget_is_verbatim() {
-        let nodes = vec!["alpha".into(), "beta".into()];
+        let nodes = vec![mn("alpha"), mn("beta")];
         let folded = fold_memory_nodes(&nodes, 100);
         assert!(folded.contains("alpha"));
         assert!(folded.contains("beta"));
@@ -1440,7 +1506,7 @@ mod tests {
     #[test]
     fn fold_memory_nodes_over_budget_truncates_with_marker() {
         let long = "x".repeat(400);
-        let folded = fold_memory_nodes(&[long], 200);
+        let folded = fold_memory_nodes(&[mn(&long)], 200);
         assert!(folded.contains("[folded"), "fold marker must appear");
         // the budget slice itself is exactly `budget` chars of node content
         let body: Vec<char> = folded.chars().collect();
@@ -1452,8 +1518,8 @@ mod tests {
         // O-5 core: MemoryRetrieval results finally reach the LLM (they were
         // retrieved but never consumed before — the broken link is fixed).
         let nodes = Arc::new(vec![
-            "master taught: prefer deterministic tools over guessing".to_string(),
-            "last time the gap was expectation vs actual feedback".to_string(),
+            mn("master taught: prefer deterministic tools over guessing"),
+            mn("last time the gap was expectation vs actual feedback"),
         ]);
         let prompts = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
         let mut agent = base();
@@ -1473,7 +1539,7 @@ mod tests {
     #[tokio::test]
     async fn zero_budget_keeps_stateless_prompt() {
         // 0 = pure stateless (legacy behaviour): no [memory] section at all.
-        let nodes = Arc::new(vec!["secret memory".to_string()]);
+        let nodes = Arc::new(vec![mn("secret memory")]);
         let prompts = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
         let mut agent = base();
         agent.memory_inject_chars = 0;
@@ -1489,9 +1555,8 @@ mod tests {
         // P10: L3 notes are "User said: …\nCycle completed. p_death: …". The
         // bookkeeping tail must not reach the LLM — only the experience line.
         let nodes = vec![
-            "User said: 我叫Jason，请记住我的名字\nCycle completed. p_death: 0.00, impasse: 5"
-                .to_string(),
-            "plain memory node".to_string(),
+            mn("User said: 我叫Jason，请记住我的名字\nCycle completed. p_death: 0.00, impasse: 5"),
+            mn("plain memory node"),
         ];
         let folded = fold_memory_nodes(&nodes, 400);
         assert!(folded.contains("我叫Jason，请记住我的名字"), "experience must survive");
@@ -1505,8 +1570,8 @@ mod tests {
         // grow with round count — 25 rounds of the same task keep the LLM
         // context ~constant (O-5 acceptance).
         let nodes = Arc::new(vec![
-            "n1 ".repeat(150),
-            "n2 ".repeat(150),
+            mn(&"n1 ".repeat(150)),
+            mn(&"n2 ".repeat(150)),
         ]);
         let prompts = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
         let mut agent = base();

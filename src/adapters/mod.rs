@@ -9,9 +9,28 @@ use serde::{Serialize, Deserialize};
 use std::sync::Arc;
 
 // ---------- Memory Adapter ----------
+/// One retrieved memory node with its provenance metadata (ADR-0033):
+/// Mind's Node carries layer/heat/phase already — the adapter must not
+/// discard them, or the cockpit cannot show what SA-Core actually chose.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct MemoryNode {
+    /// The node's text (what gets folded into the prompt).
+    pub content: String,
+    /// Deterministic node id in Mind (for provenance display).
+    pub id: String,
+    /// Layer label: "L0"|"L1"|"L2"|"L3" (Mind's own serialization).
+    pub tier: String,
+    /// Heat score (relevance) reported by retrieval.
+    pub heat: f64,
+    /// Phase state: "gas"|"liquid"|"crystal" (SA-Core phase semantics).
+    pub phase: String,
+    /// Recessive (隐性) flag — surfaced but never injected by default.
+    pub recessive: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QueryResult {
-    pub nodes: Vec<String>,
+    pub nodes: Vec<MemoryNode>,
     pub impasse_level: u8,
     pub suggested_actions: Vec<String>,
 }

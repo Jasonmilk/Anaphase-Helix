@@ -249,6 +249,12 @@ message Node {
   string corrected_by = 13;
   string notes = 14;
   repeated string derived_from = 15;
+  // P0 (ADR-0011): phase-state & subject-dependency (fields 16-19, aligned
+  // with Helix-Mind proto as of 2026-09 — vendored, same field numbers).
+  string phase_state = 16;          // "gas" | "liquid" | "crystal"
+  string subject_dependency = 17;   // "high" | "low"
+  string concentration = 18;        // meta concentration
+  double tension = 19;              // meta tension
 }
 
 message Edge {

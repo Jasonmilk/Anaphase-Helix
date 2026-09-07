@@ -96,4 +96,8 @@ Cellrix）。事件流：Manifest 首帧 → 1s 节律 Snapshot 推流 → Actio
 
 ---
 
-*Anaphase-Helix PLAN v2.8（会话事件流落盘，2026-09-07，ADR-0026）*
+*Anaphase-Helix PLAN v2.9（记忆决策白盒 + 显式续聊 + 印痕 v3，2026-09-07，ADR-0027）*
+
+| 阶段 | 状态 | 内容 |
+|---|---|---|
+| **印痕 v3 白盒** | ✅ 完成（ADR-0027） | MemoryNode 元数据透传 + choice 明细 + resume 续接 + 甘特图/SA-Core 展开/续聊按钮 + 237 tests |

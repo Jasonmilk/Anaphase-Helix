@@ -25,7 +25,7 @@ use crate::helix_mind_api::{
     AnaWakeupAckRequest, AnaWakeupRequest, AutonomyLevel, BudgetTier, CognitiveMode, EnergyContext,
     HelixConsolidateRequest, HelixCraftRequest, HelixQueryRequest, RememberRequest,
 };
-use super::{MemoryAdapter, QueryResult};
+use super::{MemoryAdapter, MemoryNode, QueryResult};
 
 pub struct GrpcMindAdapter {
     client: HelixMindClient<Channel>,
@@ -78,7 +78,18 @@ impl MemoryAdapter for GrpcMindAdapter {
             Ok(response) => {
                 let inner = response.into_inner();
                 Ok(QueryResult {
-                    nodes: inner.nodes.into_iter().map(|n| n.content_json).collect(),
+                    nodes: inner
+                        .nodes
+                        .into_iter()
+                        .map(|n| MemoryNode {
+                            content: n.content_json,
+                            id: n.id,
+                            tier: n.node_type,
+                            heat: n.heat,
+                            phase: n.phase_state,
+                            recessive: n.is_recessive,
+                        })
+                        .collect(),
                     impasse_level: inner.impasse_level as u8,
                     suggested_actions: inner
                         .suggested_actions

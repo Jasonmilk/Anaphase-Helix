@@ -4,7 +4,7 @@
 ![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)
 ![Build](https://img.shields.io/badge/Build-Passing-brightgreen.svg)
 ![Style](https://img.shields.io/badge/Code%20Style-Google-black.svg)
-[![Tests](https://img.shields.io/badge/tests-234%2F234%20passed-green)](#)
+[![Tests](https://img.shields.io/badge/tests-237%2F237%20passed-green)](#)
 
 **The silicon-based operating system & physical brain for digital lifeforms.
 Perceive, reason, act, remember, and immunize — the body that houses the soul.**
@@ -325,7 +325,7 @@ Edit `config.toml` to connect real services:
 - Models, safety rules, and thresholds all configurable
 - Criteria rules & retry policy: `knowledge_base/fixture-codex.json` (zero hardcoding)
 
-### Engram session event stream (turn timeline, 2026-09-07, ADR-0026)
+### Engram session event stream (turn timeline, 2026-09-07, ADR-0026/0027)
 
 The session-as-experience body: every cognitive period appends its
 structured events to one JSONL keyed by the derived job id:
@@ -341,6 +341,18 @@ Vocabulary (protocol values): `turn/start` · `user/message` ·
 prompt/response bodies stay in the body trace below). Same join key as the
 audit chain + body trace — Cellrix renders a turn timeline from this one
 source, with criteria verdicts and tool actions in the same replayable line.
+
+**Memory decision white-box (ADR-0027)**: `context/inject` carries
+`choice` — which layers SA-Core picked (`tiers` distribution) and the
+top-heat nodes (id/tier/heat/phase, provenance only, never node content).
+The `Node` metadata Mind already returns is now passed through instead of
+being discarded (`MemoryNode`).
+
+**Explicit resume (ADR-0027)**: `/v1/chat` accepts an optional `job_id`;
+the previous round is flattened into "true history" and injected as
+`[previous episode]`, and the new period records `resume_from`. Sessions
+are experiences — a conversation can be continued by choosing it, never
+silently bled across periods.
 
 ### Engram body trace (reasoning round trips, 2026-09-07)
 

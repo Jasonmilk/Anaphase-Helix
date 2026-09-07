@@ -327,6 +327,20 @@ README（fail-closed 节）｜ GROWTH｜ ECOSYSTEM v1.67（Anaphase 219）
 ### 待办
 - Cellrix Engram v2：turn 时间线渲染（读事件流，角色徽标 + 统计条）——下一步
 
+## 记录 49：记忆决策白盒 + 显式续聊（2026-09-07，ADR-0027）
+
+### 变更性质
+- **MemoryNode 元数据透传**：`QueryResult.nodes` 从 `Vec<String>` 升级为 `Vec<MemoryNode>`（content/id/tier/heat/phase/recessive）；GrpcMindAdapter 透传 Mind 的 node_type/heat/phase_state——此前一行 `.map(|n| n.content_json)` 把白盒能力全丢了
+- **vendored proto 对齐**：`helix_mind.proto` Node 补字段 16-19（phase_state/subject_dependency/concentration/tension），与 Mind 官方字段号一致
+- **context/inject 写 choice 明细**：`{"tiers":{"L1":2,"L3":18},"top":[{id,tier,heat,phase}]}`——只写 provenance 不写正文（写前脱敏延续）
+- **显式续聊**：`/v1/chat` 收 `job_id` → `read_summary` 展平上一轮（human said…/helix answered…）→ `AgentContext.resume` 注入 prompt → 事件写 `resume_from`
+- run_cycle 加 `memory_choice_detail()`（tiers 分布 + top 3，隐性节点只计数不展示）
+
+### 验收
+- 237 passed（+2：period_start 带 resume+choice / read_summary 展平）
+- 实弹（走 8080）：续聊 `{"message":"继续，这次算 8 的 6 次方","job_id":"run-ffaa02…"}` → 新轮 context/inject 带 resume_from + choice{tiers:{L1:2,L3:18}} → 真实 calc 执行 8**6=262144 → verdict Unmet
+- 前端（Cellrix 341 全绿）：甘特图 + SA-Core 选择展开 + 续聊按钮
+
 ## 记录 48：会话事件流查询端点（2026-09-07，ADR-0026 续）
 
 ### 变更性质

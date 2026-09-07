@@ -147,12 +147,17 @@ impl SessionEventStream {
 /// terse and the vocabulary single-sourced).
 impl SessionEventStream {
     /// turn/start + user/message + context/inject — the period header.
+    /// `detail` (SA-Core choice: tiers distribution + top nodes, provenance
+    /// only) and `resume_from` (explicit continuation of a previous
+    /// experience) ride on context/inject when present.
     pub fn emit_period_start(
         &mut self,
         time: &str,
         user_input: &str,
         nodes: usize,
         inject_chars: usize,
+        resume_from: Option<&str>,
+        detail: Option<&Value>,
     ) -> io::Result<()> {
         self.emit(time, EventType::TurnStart, json!({}))?;
         self.emit(
@@ -160,12 +165,57 @@ impl SessionEventStream {
             EventType::UserMessage,
             json!({ "text": user_input }),
         )?;
-        self.emit(
-            time,
-            EventType::ContextInject,
-            json!({ "nodes": nodes, "chars": inject_chars }),
-        )
+        let mut data = json!({ "nodes": nodes, "chars": inject_chars });
+        if let Some(r) = resume_from {
+            data["resume_from"] = json!(r);
+        }
+        if let Some(d) = detail {
+            data["choice"] = d.clone();
+        }
+        self.emit(time, EventType::ContextInject, data)
     }
+}
+
+/// One period's conversation summary for explicit continuation (resume):
+/// the human's message plus the assistant's attempt, bounded and flattened
+/// into "true history" prose. None when the period has neither, or the
+/// stream is missing — resuming a vanished episode is a no-op, never an
+/// error.
+pub fn read_summary(dir: &PathBuf, job_id: &str, max_chars: usize) -> Option<String> {
+    let path = dir.join(format!("{job_id}.events.jsonl"));
+    let Ok(content) = fs::read_to_string(&path) else {
+        return None;
+    };
+    let mut user: Option<String> = None;
+    let mut attempt: Option<String> = None;
+    for line in content.lines() {
+        let Ok(ev) = serde_json::from_str::<SessionEvent>(line) else {
+            continue;
+        };
+        match ev.event_type.as_str() {
+            "user/message" => {
+                user = ev.data.get("text").and_then(|v| v.as_str()).map(|s| s.to_string())
+            }
+            "assistant/attempt" => {
+                attempt = ev
+                    .data
+                    .get("text")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+            }
+            _ => {}
+        }
+    }
+    let user = user?;
+    let mut out = format!("human said: {}", user.chars().take(max_chars).collect::<String>());
+    if let Some(a) = attempt {
+        let cut: String = a.chars().take(max_chars).collect();
+        if !cut.is_empty() {
+            out.push_str("\nhelix answered: ");
+            out.push_str(&cut);
+        }
+    }
+    Some(out)
 }
 
 #[cfg(test)]
@@ -212,6 +262,53 @@ mod tests {
     }
 
     #[test]
+    fn period_start_carries_resume_and_choice_detail() {
+        let dir = std::env::temp_dir().join("anaphase-session-events-test-3");
+        let _ = fs::remove_dir_all(&dir);
+        let mut stream = SessionEventStream::open(dir.clone(), "job-c", Redaction::default()).unwrap();
+        let t = ts();
+        let detail = json!({
+            "tiers": { "L1": 1, "L2": 2, "L3": 5 },
+            "top": [{ "id": "n-1", "tier": "L3", "heat": 0.82, "phase": "liquid" }]
+        });
+        stream
+            .emit_period_start(&t, "hello", 8, 800, Some("run-abc"), Some(&detail))
+            .unwrap();
+        let rows: Vec<SessionEvent> = fs::read_to_string(stream.path())
+            .unwrap()
+            .lines()
+            .map(|l| serde_json::from_str(l).unwrap())
+            .collect();
+        assert_eq!(rows.len(), 3);
+        let ctx = &rows[2];
+        assert_eq!(ctx.event_type, "context/inject");
+        assert_eq!(ctx.data["nodes"], 8);
+        assert_eq!(ctx.data["chars"], 800);
+        assert_eq!(ctx.data["resume_from"], "run-abc");
+        assert_eq!(ctx.data["choice"]["tiers"]["L3"], 5);
+        assert_eq!(ctx.data["choice"]["top"][0]["tier"], "L3");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn read_summary_flattens_last_round_as_history() {
+        let dir = std::env::temp_dir().join("anaphase-session-events-test-4");
+        let _ = fs::remove_dir_all(&dir);
+        let mut stream = SessionEventStream::open(dir.clone(), "job-d", Redaction::default()).unwrap();
+        let t = ts();
+        stream.emit(&t, EventType::TurnStart, json!({})).unwrap();
+        stream.emit(&t, EventType::UserMessage, json!({ "text": "用计算器算 7 的 9 次方" })).unwrap();
+        stream.emit(&t, EventType::Attempt, json!({ "text": "我将用确定性工具计算，而不是口算。" })).unwrap();
+        let summary = read_summary(&dir, "job-d", 400).expect("summary");
+        assert!(summary.contains("用计算器算 7 的 9 次方"));
+        assert!(summary.contains("我将用确定性工具计算"));
+        assert!(summary.contains("human said:"));
+        assert!(summary.contains("helix answered:"));
+        // Missing period -> None (resuming a vanished episode is a no-op).
+        assert!(read_summary(&dir, "run-missing", 400).is_none());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
     fn redacts_strings_recursively() {
         let dir = std::env::temp_dir().join("anaphase-session-events-test-2");
         let _ = fs::remove_dir_all(&dir);
