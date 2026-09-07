@@ -1,4 +1,17 @@
 
+## 记录 25：Helix-Mind 物理打通（live）（2026-09-07）
+
+### 触发条件
+用户实测"Helix 还是 DeepSeek，并没有真正连接 Helix-Mind"——排查发现 Mind 服务一直在跑（:50052，24 节点），但 Anaphase `mind_endpoint` 为空 → Noop 离线，对话从不触达潜意识层。
+
+### 变更性质
+- config.toml `mind_endpoint = "http://127.0.0.1:50052"`（gitignore 保护，本地生效）
+- 重启 anaphase daemon + web 面板；**物理验证全链**：glove `mind: Available` → `[MemoryRetrieval] Querying memory`（helix_query 真实 gRPC）→ `craft note (0 tokens)`（认知工艺确定性编排）→ Reflection `memory.remember` → Mind L3 append
+- **诚实缺口**：检索 FTS5 短语匹配（"我叫Jason你记得我吗" 与库中"你好,我是Jason" 整句不匹配→零命中）；语义 onnx 模型未加载。写入全通、读取召回待 P10 增强
+
+### 状态
+🧬 已完成（写入链路）｜ 召回增强待 P10
+
 ## 记录 24：P10d 预约制闹钟——Anaphase 唤醒侧接线（2026-09-06，ADR-0032）
 
 ### 触发条件
