@@ -4,7 +4,7 @@
 ![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)
 ![Build](https://img.shields.io/badge/Build-Passing-brightgreen.svg)
 ![Style](https://img.shields.io/badge/Code%20Style-Google-black.svg)
-[![Tests](https://img.shields.io/badge/tests-231%2F231%20passed-green)](#)
+[![Tests](https://img.shields.io/badge/tests-234%2F234%20passed-green)](#)
 
 **The silicon-based operating system & physical brain for digital lifeforms.
 Perceive, reason, act, remember, and immunize — the body that houses the soul.**
@@ -324,6 +324,23 @@ Edit `config.toml` to connect real services:
 - Empty endpoints automatically use Noop adapters
 - Models, safety rules, and thresholds all configurable
 - Criteria rules & retry policy: `knowledge_base/fixture-codex.json` (zero hardcoding)
+
+### Engram session event stream (turn timeline, 2026-09-07, ADR-0026)
+
+The session-as-experience body: every cognitive period appends its
+structured events to one JSONL keyed by the derived job id:
+
+```toml
+[anaphase]
+session_events_path = "events/"   # opt-in; None = off
+```
+
+Vocabulary (protocol values): `turn/start` · `user/message` ·
+`context/inject` · `assistant/attempt` · `tool/call` · `tool/result` ·
+`verdict/status` · `turn/end`. Redacted on write; summaries only (the
+prompt/response bodies stay in the body trace below). Same join key as the
+audit chain + body trace — Cellrix renders a turn timeline from this one
+source, with criteria verdicts and tool actions in the same replayable line.
 
 ### Engram body trace (reasoning round trips, 2026-09-07)
 
