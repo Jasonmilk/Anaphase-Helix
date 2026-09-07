@@ -192,7 +192,11 @@ fn fold_memory_nodes(nodes: &[String], budget: usize) -> String {
             acc.push_str(SEP);
         }
         first = false;
-        acc.push_str(n);
+        // P10: L3 notes are "User said: …\nCycle completed. p_death: …". The
+        // bookkeeping tail is provenance, not experience — inject only the
+        // experience line so the LLM reads the memory, not the ledger.
+        let experience = n.split("\nCycle").next().unwrap_or(n);
+        acc.push_str(experience);
     }
     if acc.chars().count() <= budget {
         return acc;
@@ -619,12 +623,28 @@ impl AgentLoop {
                         // dependency). Structured commands (!) skip thinking:
                         // the plan already exists. Degradation is silent:
                         // craft failure leaves craft_note = None.
+                        let preview: Vec<String> = self
+                            .context
+                            .memory_nodes
+                            .iter()
+                            .take(2)
+                            .map(|n| {
+                                let cut: String = n.chars().take(100).collect();
+                                cut
+                            })
+                            .collect();
+                        info!(
+                            "[MemoryRetrieval] {} memory node(s): {:?}",
+                            self.context.memory_nodes.len(),
+                            preview
+                        );
                         if !self.context.structured {
                             let job_id = crate::contract::derive_job_id(&self.context.user_input);
                             match self.memory.craft(&self.context.user_input, &job_id).await {
                                 Ok(note) => {
+                                    let synth: String = note.synthesis.chars().take(120).collect();
+                                    info!("[MemoryRetrieval] craft note (0 tokens): {}", synth);
                                     self.context.craft_note = Some(note);
-                                    info!("[MemoryRetrieval] craft note (0 tokens)");
                                 }
                                 Err(e) => {
                                     self.context.craft_note = None;
@@ -689,6 +709,11 @@ impl AgentLoop {
                     return Ok(TransitionCondition::NoToolNeeded);
                 }
                 info!("[Reasoning] Left-brain reasoning...");
+                info!(
+                    "[Reasoning] inject_chars={} memory_nodes={}",
+                    self.memory_inject_chars,
+                    self.context.memory_nodes.len()
+                );
                 // O-5 (ADR-0023): on-demand injection — the request carries
                 // only what this round needs. Memory nodes (retrieved in
                 // MemoryRetrieval, previously never consumed by the LLM) are
@@ -704,7 +729,7 @@ impl AgentLoop {
                         self.context.user_input.clone()
                     } else {
                         format!("{}
-\n[memory]\n{}", self.context.user_input, inject)
+\n[memory: Helix's past experiences — true history, answer from them]\n{}", self.context.user_input, inject)
                     }
                 };
                 // P10a (ADR-0031): fold the cognitive craft note (zero-token
@@ -950,8 +975,16 @@ impl AgentLoop {
                         info!("[Reflection] Ledger verdict written for job {}", job_id);
                     }
                 }
+                // L3 episodic note (P10): the EXPERIENCE, not the bookkeeping.
+                // Previously only "Cycle completed. p_death: ..." was written —
+                // the loop's ledger line, not the conversation — so nothing
+                // retrievable about the human ever reached Mind. The L3
+                // record is what happened this round: what the human said,
+                // plus the minimal cognitive state that gives the note its
+                // provenance. Retrieval (tokenized) then finds it verbatim.
                 self.context.reflection_notes = format!(
-                    "Cycle completed. p_death: {:.2}, impasse: {}",
+                    "User said: {}\nCycle completed. p_death: {:.2}, impasse: {}",
+                    self.context.user_input,
                     self.context.p_death,
                     self.context.memory_nodes.len()
                 );
@@ -1298,7 +1331,7 @@ mod tests {
         let captured = prompts.lock().unwrap();
         assert_eq!(captured.len(), 1);
         assert!(
-            captured[0].contains("[memory]"),
+            captured[0].contains("[memory"),
             "memory section must be injected: {}",
             captured[0]
         );
@@ -1316,7 +1349,22 @@ mod tests {
         agent.reason = Arc::new(SpyReasoning(prompts.clone()));
         agent.run_cycle("hello").await.unwrap();
         let captured = prompts.lock().unwrap();
-        assert!(!captured[0].contains("[memory]"), "budget 0 must not inject");
+        assert!(!captured[0].contains("[memory"), "budget 0 must not inject");
+    }
+
+    #[tokio::test]
+    async fn fold_strips_bookkeeping_tail_keeps_experience() {
+        // P10: L3 notes are "User said: …\nCycle completed. p_death: …". The
+        // bookkeeping tail must not reach the LLM — only the experience line.
+        let nodes = vec![
+            "User said: 我叫Jason，请记住我的名字\nCycle completed. p_death: 0.00, impasse: 5"
+                .to_string(),
+            "plain memory node".to_string(),
+        ];
+        let folded = fold_memory_nodes(&nodes, 400);
+        assert!(folded.contains("我叫Jason，请记住我的名字"), "experience must survive");
+        assert!(!folded.contains("Cycle completed"), "bookkeeping tail must be stripped");
+        assert!(folded.contains("plain memory node"));
     }
 
     #[tokio::test]

@@ -27,6 +27,11 @@ pub struct Config {
     pub anaphase: AnaphaseConfig,
 }
 
+/// O-5 (ADR-0023): cognitive-injection budget protocol default — single
+/// source for both `Default` and serde-deserialization paths.
+pub const DEFAULT_MEMORY_INJECT_CHARS: usize = 800;
+fn default_memory_inject_chars() -> usize { DEFAULT_MEMORY_INJECT_CHARS }
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct AnaphaseConfig {
     pub mind_endpoint: Option<String>,
@@ -65,7 +70,7 @@ pub struct AnaphaseConfig {
     /// O-5 (ADR-0023): cognitive-injection budget — memory nodes folded into
     /// the Reasoning prompt, capped at this many chars. 0 = no injection
     /// (pure stateless). Protocol default 800 (ADR-0023).
-    #[serde(default)]
+    #[serde(default = "default_memory_inject_chars")]
     pub memory_inject_chars: usize,
     /// Demo/smoke input for the local run loop (O-5, ADR-0023): CLI `--input`
     /// wins, then this config, then the protocol-default demo task. This is
@@ -267,7 +272,7 @@ impl Default for AnaphaseConfig {
             reasoning_trace_path: None,
             reasoning_trace_max_chars: None,
             reasoning_redact_patterns: None,
-            memory_inject_chars: 800, // protocol default (ADR-0023)
+            memory_inject_chars: DEFAULT_MEMORY_INJECT_CHARS,
             smoke_input: None,
             judge_backend: crate::judge::JudgeBackend::default(),
             judge_endpoint: None,
@@ -348,7 +353,7 @@ mod tests {
                 reasoning_trace_path: None,
                 reasoning_trace_max_chars: None,
                 reasoning_redact_patterns: None,
-                memory_inject_chars: 800,
+                memory_inject_chars: DEFAULT_MEMORY_INJECT_CHARS,
                 smoke_input: None,
                 judge_backend: crate::judge::JudgeBackend::default(),
                 judge_endpoint: None,

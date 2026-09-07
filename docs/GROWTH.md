@@ -1,3 +1,15 @@
+## [2026-09-07] 完成：P10 注入打通（ADR-0033 联动）
+
+### 变更性质
+- L3 经历化：Reflection note 改 `User said: {}\nCycle completed. …`（记"这一轮经历了什么"，不是账本行）
+- 注入折叠：fold 剥离 `\nCycle` 账本尾行（provenance 不进 prompt）；标签 `[memory: Helix's past experiences — true history, answer from them]`
+- serde 默认修复：`memory_inject_chars` `#[serde(default)]` 对 usize 反序列化为 0 的 bug（协议默认 800 只在 impl Default）→ 单一常量 `DEFAULT_MEMORY_INJECT_CHARS`，Default 与 Deserialize 同源（0 硬编码）
+- 诊断：`[MemoryRetrieval] N memory node(s)` 预览 + `inject_chars` 一行日志（白盒审计）
+- daemon 保活：`sh -c 'nohup … &'` double-fork（直接 nohup & 在 bash 退出后不稳定）
+
+### 验收
+端到端：`"我叫什么名字？"` → 14 memory node(s)（User said 排前）→ "你叫Jason。"；新增 `fold_strips_bookkeeping_tail_keeps_experience`；228 passed 0 failed。
+
 
 ## 记录 25：Helix-Mind 物理打通（live）（2026-09-07）
 

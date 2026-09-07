@@ -30,3 +30,4 @@ Thumbs.db
 # Deployment config (never track secrets)
 config.toml
 config.toml.bak
+events.jsonl
