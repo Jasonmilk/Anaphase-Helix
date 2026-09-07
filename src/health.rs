@@ -126,6 +126,17 @@ pub fn checks(cfg: &AnaphaseConfig) -> Value {
     json!({ "ok": ok, "checks": checks })
 }
 
+/// Fail-closed gate: when Tuck is configured (audit/LLM gateway), the
+/// engine refuses to reason while Tuck is unreachable — Tuck down = Helix
+/// stops thinking (SPOF explicitly accepted, 网关可用性换审计完整性).
+/// Unconfigured → pass (按需驱动: nothing to gate).
+pub fn gate_ok(cfg: &AnaphaseConfig) -> Result<(), String> {
+    match cfg.tuck_endpoint.as_ref().filter(|s| !s.is_empty()) {
+        Some(ep) => tcp_reachable(ep).map_err(|e| format!("tuck unreachable ({ep}): {e}")),
+        None => Ok(()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -151,6 +162,28 @@ mod tests {
         assert!(names.contains(&"trace"));
         assert!(names.contains(&"tentacle"));
         assert!(names.contains(&"judge"));
+    }
+
+    #[test]
+    fn gate_unconfigured_passes() {
+        let c = base();
+        assert!(gate_ok(&c).is_ok());
+    }
+
+    #[test]
+    fn gate_configured_unreachable_blocks() {
+        let mut c = base();
+        c.tuck_endpoint = Some("http://127.0.0.1:1".into()); // closed port
+        assert!(gate_ok(&c).is_err());
+    }
+
+    #[test]
+    fn gate_configured_reachable_passes() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let mut c = base();
+        c.tuck_endpoint = Some(format!("http://127.0.0.1:{port}"));
+        assert!(gate_ok(&c).is_ok());
     }
 
     #[test]

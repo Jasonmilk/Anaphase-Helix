@@ -186,3 +186,21 @@ README（Read-back endpoint 节）｜ GROWTH｜ ECOSYSTEM v1.62（Anaphase 212�
 
 ### 状态
 🧬 已完成
+
+## 记录 33：Fail-closed Tuck 门禁（2026-09-07）
+
+### 触发条件
+用户要求：绑定后无 Tuck 要提醒人类并停止工作（SPOF 落地）。
+
+### 变更性质
+- **gate_ok()**（health.rs）：tuck_endpoint 配置了 → tcp_reachable 探测；未配置 → pass（按需驱动，空串不评判）
+- **main 门禁**：run_cycle 每轮前检查——Tuck 不可达 → `⚠️ Tuck 不在岗，已停止工作` + break（进程存活继续显示状态，只停推理）
+- **config.toml**：`tuck_endpoint = "http://127.0.0.1:60052"`（对齐 LLM 已走 Tuck 网关的现状）
+- **测试**：+3（未配置 pass / 不可达 block / 可达 pass），Anaphase 216→**219**
+- **真实验证**：gate-fail（tuck 不可达）→ ⚠️ 停止 + 引导恢复；gate-ok（60052）→ 正常 run_cycle + snapshot tuck=Available
+
+### 验收
+README（fail-closed 节）｜ GROWTH｜ ECOSYSTEM v1.67（Anaphase 219）
+
+### 状态
+🧬 已完成

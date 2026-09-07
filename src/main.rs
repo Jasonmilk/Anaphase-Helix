@@ -178,6 +178,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or_else(|| "events.jsonl".to_string());
     let mut flushed_seq = 0u64;
     for _ in 0..agent.run_config.cycle_cap {
+        // Fail-closed gate (Tuck): refuse to reason while the audit/LLM
+        // gateway is down — Tuck down = Helix stops thinking (SPOF
+        // explicitly accepted). The process stays alive to keep showing
+        // the panel and the honest ❌ state; only reasoning halts.
+        if let Err(e) = anaphase::health::gate_ok(&config.anaphase) {
+            eprintln!("\n⚠️  Tuck 不在岗，已停止工作：{e}");
+            eprintln!("   请恢复 Tuck（如运行 `tuck` 网关）后重新运行本命令。");
+            break;
+        }
         let out = agent.run_cycle(&user_input).await?;
         if let Some(ring) = agent.events.as_ref() {
             let guard = ring.lock().unwrap();

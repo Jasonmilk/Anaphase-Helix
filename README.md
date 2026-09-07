@@ -190,6 +190,21 @@ cargo run
 You will see a full cycle:
 `Perception → PreAssessment → MemoryRetrieval → Reasoning → ReflexCheck → Execution → Reflection`
 
+### Fail-closed Tuck gate (2026-09-07)
+
+When `tuck_endpoint` is configured, Anaphase refuses to reason while Tuck
+is unreachable — **Tuck down = Helix stops thinking** (SPOF explicitly
+accepted, 网关可用性换审计完整性). The process stays alive to keep showing
+the honest state on the panel; only reasoning halts:
+
+```
+⚠️ Tuck 不在岗，已停止工作：tuck unreachable (http://127.0.0.1:60052): ...
+   请恢复 Tuck（如运行 `tuck` 网关）后重新运行本命令。
+```
+
+`/v1/health` includes the `tuck` check (configured → probed; empty → honest
+`not configured`, never judged). Unconfigured Tuck = no gate (按需驱动).
+
 ## Testing
 
 Run the full suite (**211/211 passing**):
