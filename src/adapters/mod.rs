@@ -162,13 +162,16 @@ pub trait ReasoningAdapter: Send + Sync {
     /// arrive and returns the full text (same contract as `reason`). Default
     /// = the buffered path (every adapter stays valid; only HTTP streams).
     /// The channel keeps the callback out of the async trait — no lifetime
-    /// glue.
+    /// glue. `thinking` is a sink the streaming implementation appends the
+    /// model's private reasoning to, so the period can persist it as an
+    /// `assistant/think` event (ADR-0029) without re-parsing the stream.
     async fn reason_stream(
         &self,
         prompt: &str,
         model: &str,
         trace_id: &str,
         deltas: tokio::sync::mpsc::UnboundedSender<StreamDelta>,
+        _thinking: &std::sync::Mutex<String>,
     ) -> Result<String, String> {
         let out = self.reason(prompt, model, trace_id).await?;
         let _ = deltas.send(StreamDelta {

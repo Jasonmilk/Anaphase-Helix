@@ -35,10 +35,15 @@ pub enum EventType {
     ContextInject,
     /// The Reasoning adapter's output (attempt), redacted on write.
     Attempt,
+    /// Private reasoning (thinking) streamed by the model, redacted on
+    /// write. Display-only — never participates in criteria.
+    Think,
     /// A tool call assembled into the deterministic job (args summary).
     ToolCall,
-    /// A tool execution result (evidence row summary).
+    /// A tool execution result (evidence row summary, with outcome).
     ToolResult,
+    /// One deterministic criteria check (judge/gate/expect/actual/reason).
+    Check,
     /// The criteria verdict (MET / UNMET / blocked).
     Verdict,
     /// The period ended and returned to Perception.
@@ -52,8 +57,10 @@ impl EventType {
             EventType::UserMessage => "user/message",
             EventType::ContextInject => "context/inject",
             EventType::Attempt => "assistant/attempt",
+            EventType::Think => "assistant/think",
             EventType::ToolCall => "tool/call",
             EventType::ToolResult => "tool/result",
+            EventType::Check => "check/status",
             EventType::Verdict => "verdict/status",
             EventType::TurnEnd => "turn/end",
         }
@@ -224,6 +231,84 @@ mod tests {
 
     fn ts() -> String {
         crate::ledger::unix_secs_to_rfc3339(1_700_000_000)
+    }
+
+    fn tmp_dir() -> std::path::PathBuf {
+        let d = std::env::temp_dir().join(format!(
+            "se-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|x| x.subsec_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    #[test]
+    fn crystallize_distills_unmet_into_rule() {
+        use crate::trace::Redaction;
+        let dir = tmp_dir().join("distill");
+        let redact = Redaction::default();
+        let mut stream = SessionEventStream::open(dir.clone(), "run-xyz", redact).unwrap();
+        let t = ts();
+        stream
+            .emit(&t, EventType::UserMessage, json!({ "text": "calc 7^9" }))
+            .unwrap();
+        stream
+            .emit(&t, EventType::ToolCall, json!({ "tool": "calc", "index": 0, "expect": "ok" }))
+            .unwrap();
+        stream
+            .emit(
+                &t,
+                EventType::ToolResult,
+                json!({ "tool": "calc", "ok": true, "duration_ms": 276, "outcome": "40353607", "outcome_sha": "abcd1234" }),
+            )
+            .unwrap();
+        stream
+            .emit(
+                &t,
+                EventType::Check,
+                json!({ "check_id": "run-xyz#c0", "check": "exec_ok", "passed": false, "judge": "rule", "gate": "hard", "expect": "ok", "evidence_id": "run-xyz#0", "reason": "ok=false or echo mismatch" }),
+            )
+            .unwrap();
+        stream
+            .emit(&t, EventType::Verdict, json!({ "job_id": "run-xyz", "status": "Unmet", "reason": "failed: exec_ok" }))
+            .unwrap();
+        stream
+            .emit(&t, EventType::TurnEnd, json!({ "done": true, "success": false, "impasse": false, "verdict": "Unmet" }))
+            .unwrap();
+        drop(stream);
+
+        let out = crystallize(&dir, 50).unwrap();
+        assert_eq!(out.len(), 1, "one unmet period -> one suggestion");
+        let s = &out[0];
+        assert_eq!(s.job_id, "run-xyz");
+        assert_eq!(s.tool, "calc");
+        assert_eq!(s.expect, "ok");
+        assert_eq!(s.failed_checks, vec!["exec_ok".to_string()]);
+        assert_eq!(s.outcome_shas, vec!["abcd1234".to_string()]);
+        assert!(s.suggested_rule.contains("gate=hard judge=rule"));
+        assert!(dir.join("crystallized/rule-run-xyz.json").exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn crystallize_skips_met_periods() {
+        use crate::trace::Redaction;
+        let dir = tmp_dir().join("skips");
+        let redact = Redaction::default();
+        let mut stream = SessionEventStream::open(dir.clone(), "run-met", redact).unwrap();
+        let t = ts();
+        stream
+            .emit(&t, EventType::Verdict, json!({ "job_id": "run-met", "status": "Met", "reason": "all checks passed" }))
+            .unwrap();
+        drop(stream);
+        let out = crystallize(&dir, 50).unwrap();
+        assert!(out.is_empty(), "Met periods are not ore");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -513,4 +598,124 @@ mod query_tests {
         assert!(read_period(&dir, "missing").is_err(), "unknown id must error");
         let _ = fs::remove_dir_all(&dir);
     }
+}
+
+// ---- Crystallization (ADR-0029) ----
+//
+// UNMET periods are raw ore, rules are the product. `crystallize` scans
+// the latest periods, folds each Unmet verdict's physical outcome
+// (tool/result) and its check rows into one rule suggestion. The machine
+// only suggests — a human reviews before any rule goes live; nothing is
+// auto-injected (fail-human, never fail-machine).
+
+/// One rule suggestion distilled from an Unmet period.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CrystalSuggestion {
+    /// The period that supplied the raw ore.
+    pub job_id: String,
+    pub tool: String,
+    pub expect: String,
+    /// Which deterministic checks failed (names).
+    pub failed_checks: Vec<String>,
+    /// The first failed check's reason (why it failed).
+    pub symptom: String,
+    /// Outcome fingerprints of the physical runs (join for the full body).
+    pub outcome_shas: Vec<String>,
+    /// 0-token, human-readable rule template (review, then inject).
+    pub suggested_rule: String,
+}
+
+/// Scan the latest `limit` periods under `dir` and distill Unmet rounds
+/// into rule suggestions, persisted under `{dir}/crystallized/`. Returns
+/// the newly suggested rules (empty when nothing unmet).
+pub fn crystallize(dir: &std::path::Path, limit: usize) -> io::Result<Vec<CrystalSuggestion>> {
+    let mut suggestions = Vec::new();
+    let periods = list_periods(dir, limit).unwrap_or_default();
+    for p in periods {
+        let Ok(events) = read_period(dir, &p.job_id) else {
+            continue;
+        };
+        let mut verdict: Option<String> = None;
+        let mut tool: Option<String> = None;
+        let mut expect: Option<String> = None;
+        let mut failed: Vec<String> = Vec::new();
+        let mut symptom = String::new();
+        let mut shas: Vec<String> = Vec::new();
+        for ev in &events {
+            match ev.event_type.as_str() {
+                "tool/result" => {
+                    tool = ev
+                        .data
+                        .get("tool")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                    if let Some(s) = ev.data.get("outcome_sha").and_then(|v| v.as_str()) {
+                        shas.push(s.to_string());
+                    }
+                }
+                "tool/call" => {
+                    expect = ev
+                        .data
+                        .get("expect")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                }
+                "check/status" => {
+                    let passed = ev.data.get("passed").and_then(|v| v.as_bool()).unwrap_or(false);
+                    if !passed {
+                        let check = ev
+                            .data
+                            .get("check")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("?")
+                            .to_string();
+                        let reason = ev
+                            .data
+                            .get("reason")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        if symptom.is_empty() {
+                            symptom = reason;
+                        }
+                        failed.push(check);
+                    }
+                }
+                "verdict/status" => {
+                    verdict = ev.data.get("status").and_then(|v| v.as_str()).map(|s| s.to_string());
+                }
+                _ => {}
+            }
+        }
+        if verdict.as_deref() == Some("Unmet") && !failed.is_empty() {
+            let tool = tool.unwrap_or_default();
+            let expect = expect.unwrap_or_default();
+            let rule = format!(
+                "gate=hard judge=rule: when expect={} and {} then reject before execution",
+                expect,
+                failed.join("/")
+            );
+            suggestions.push(CrystalSuggestion {
+                job_id: p.job_id.clone(),
+                tool,
+                expect,
+                failed_checks: failed,
+                symptom,
+                outcome_shas: shas,
+                suggested_rule: rule,
+            });
+        }
+    }
+    if !suggestions.is_empty() {
+        let out_dir = dir.join("crystallized");
+        fs::create_dir_all(&out_dir)?;
+        for s in &suggestions {
+            let path = out_dir.join(format!("rule-{}.json", s.job_id));
+            if let Ok(json) = serde_json::to_string_pretty(s) {
+                let mut f = fs::File::create(path)?;
+                writeln!(f, "{json}")?;
+            }
+        }
+    }
+    Ok(suggestions)
 }

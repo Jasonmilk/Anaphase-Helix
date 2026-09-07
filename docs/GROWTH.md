@@ -370,3 +370,34 @@ README（fail-closed 节）｜ GROWTH｜ ECOSYSTEM v1.67（Anaphase 219）
 - 实弹（浏览器走 8080）：连发两条消息均完整回复（无截断/空回复）；思考折叠行流式出现；
   印痕 chip 标签化（SA-Core 选择 L1×1 L3×19 + mnode chips）；续接下拉 8 条经历；
   重命名设置/清空回退全通
+
+## 记录 51（2026-09-08）印痕链条完整性（ADR-0029）
+
+### 目标
+把印痕从"标签流水"升级为"物理事实 → 确定性判据 → 可审计记账"闭环；
+修复对话中途 `⚠ origin ended mid-line` 断连；思考进印痕（点展/关闭/悬浮预览）。
+
+### 健康快照
+- **链条补齐**：tool/result 补 `outcome + outcome_sha`（产出物字节可对合）；
+  CheckReport 扩 judge/gate/expect/evidence_id（判决自带身份证）；
+  新增 `check/status` 事件（每判据一条）+ VERDICT 补 reason/checks；
+  END.success 立铁律 `success ≡ (verdict ≠ Met)`（有工具轮时），禁止状态机自报。
+- **思考落印痕**：reason_stream 增加 thinking sink 聚合 → `assistant/think` 事件
+  （脱敏、显示专用、判据永不消费）；前端统一 fold 原语（点击展开/再点关闭/悬浮预览）
+  服务 think/check/outcome 所有可折叠行——一个能力，处处复用。
+- **结晶闭环**：`crystallize(dir, limit)` 扫 Unmet 轮析出规则建议
+  （`{dir}/crystallized/rule-{job_id}.json`）+ POST `/v1/crystallize`；
+  0 token、机器只建议、人不审核不上线。
+- **断连修复**：proxy 读超时 30s→180s（长思考物理事实）；EOF 冲刷剩余半行而非
+  `origin ended mid-line` 硬错误；chunked 中途 EOF 冲刷 payload 正常返回；
+  前端 error 已有内容则静默保留（传输故障是驾驶舱的事，不是 Helix 在说话）。
+- **测试确定性**：health 端口探测测试并行竞态修复（固定测试端口 37901/37902 + 锁 +
+  超时 2s→10s，macOS loopback connect 可 stall ~1.7s）。
+
+### 验收
+- 239 passed（+crystallize 蒸馏/跳过 Met 两测试；health 并行稳定）
+- Cellrix 341 passed（前端 fold/think/check/outcome 分支 + proxy EOF 测试）
+- 印痕详情：THINK 折叠行（点击展开全文/悬浮预览）、CHECK gate/judge/PASS-FAIL/依据、
+  RESULT sha+结果 fold、VERDICT reason、END verdict 派生
+- 续接经历：下拉选中即把该经历历史加载进会话空间（user/attempt/tool 结果消息化），
+  下一句延续该经历

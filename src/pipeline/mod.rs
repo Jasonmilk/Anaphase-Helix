@@ -259,6 +259,11 @@ impl Pipeline {
                 serde_json::Value::Null
             };
             let mut rs = run_for_expect(&r.expect, &data, rules);
+            for rep in rs.iter_mut() {
+                // Provenance (ADR-0029): each check names the evidence row
+                // it read — the audit trail is self-joining.
+                rep.evidence_id = r.evidence_id.clone();
+            }
             if !r.ok {
                 // The execution itself failed: fail every mapped check.
                 for rep in rs.iter_mut() {

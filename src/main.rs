@@ -214,6 +214,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
             }))
+            .route("/v1/crystallize", post({
+                // Crystallization (ADR-0029): UNMET rounds are raw ore for
+                // 0-token rules. Scan the latest periods, distill suggestions
+                // to {dir}/crystallized/ — machine suggests, human reviews,
+                // nothing auto-injects.
+                let events_dir = config.anaphase.session_events_path.clone();
+                move |Json(body): Json<serde_json::Value>| async move {
+                    let Some(dir) = events_dir.as_deref() else {
+                        return Json(serde_json::json!({ "ok": false, "error": "session events not configured" }));
+                    };
+                    let limit = body
+                        .get("limit")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(50)
+                        .min(500) as usize;
+                    match anaphase::session_events::crystallize(
+                        std::path::Path::new(dir),
+                        limit,
+                    ) {
+                        Ok(suggestions) => Json(serde_json::json!({
+                            "ok": true,
+                            "suggested": suggestions.len(),
+                            "rules": suggestions
+                        })),
+                        Err(e) => Json(serde_json::json!({ "ok": false, "error": e.to_string() })),
+                    }
+                }
+            }))
             .route("/v1/events", get({
                 // One period's full event stream (Engram turn timeline):
                 // the session-as-experience body (ADR-0026). `job_id` is the

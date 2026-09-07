@@ -19,6 +19,18 @@ pub enum Expect {
     Ok,
 }
 
+impl Expect {
+    /// Protocol wire name (lowercase, matches serde rename).
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Expect::Numbers => "numbers",
+            Expect::Rate => "rate",
+            Expect::Text => "text",
+            Expect::Ok => "ok",
+        }
+    }
+}
+
 /// One planned tool call.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Call {

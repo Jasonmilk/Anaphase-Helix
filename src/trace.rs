@@ -31,6 +31,16 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde::{Deserialize, Serialize};
 
+/// Short content fingerprint (8 hex chars of SHA-256). Lets an imprint row
+/// carry a stable, compact reference to a physical outcome without storing
+/// the body twice (ADR-0029). Deterministic: same content, same id.
+pub fn short_sha(content: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let d = Sha256::digest(content.as_bytes());
+    let hex: String = d.iter().take(4).map(|b| format!("{b:02x}")).collect();
+    hex
+}
+
 /// One reasoning round trip (post-redaction, post-truncation).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ReasoningEntry {

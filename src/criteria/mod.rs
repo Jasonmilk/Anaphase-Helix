@@ -9,11 +9,33 @@ use crate::contract::Expect;
 use serde::{Deserialize, Serialize};
 
 /// Result of a single check. Fixed-field struct for deterministic JSON.
+/// Provenance-carrying (ADR-0029): every judgement records who judged
+/// (`judge`), how strict (`gate`), what contract (`expect`/`evidence_id`)
+/// and why (`detail`) — no bare labels, the chain stays auditable.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CheckReport {
     pub check: String,
     pub passed: bool,
     pub detail: String,
+    /// Who judged: "rule" (deterministic criteria) or a model backend.
+    pub judge: String,
+    /// Hard = fail-closed (a failed check blocks the verdict); soft =
+    /// bookkeeping only. 0-token rules are hard by default (生存伦理).
+    pub gate: String,
+    /// The expected contract this check validates (from the call's expect).
+    pub expect: String,
+    /// The evidence row this check read (join key `{job_id}#{index}`).
+    pub evidence_id: String,
+}
+
+impl CheckReport {
+    /// Fixed provenance defaults for pure checkers (patched by the call
+    /// sites that know the expect name and evidence id).
+    pub fn with_provenance(mut self, expect: &str, evidence_id: &str) -> Self {
+        self.expect = expect.to_string();
+        self.evidence_id = evidence_id.to_string();
+        self
+    }
 }
 
 /// Rule parameters sourced from `knowledge_base/fixture-codex.json`.
@@ -36,6 +58,10 @@ pub fn threshold(value: f64, low: f64, high: f64) -> CheckReport {
         check: "threshold".into(),
         passed,
         detail: format!("value={value:.4} in [{low:.4},{high:.4}]"),
+        judge: "rule".into(),
+        gate: "hard".into(),
+        expect: String::new(),
+        evidence_id: String::new(),
     }
 }
 
@@ -46,6 +72,10 @@ pub fn sequence_length(items: &[f64], min_len: usize) -> CheckReport {
         check: "sequence_length".into(),
         passed,
         detail: format!("len={} >= {min_len}", items.len()),
+        judge: "rule".into(),
+        gate: "hard".into(),
+        expect: String::new(),
+        evidence_id: String::new(),
     }
 }
 
@@ -57,6 +87,10 @@ pub fn sample_size(items: &[f64], min_n: usize) -> CheckReport {
         check: "sample_size".into(),
         passed,
         detail: format!("valid={valid} >= {min_n}"),
+        judge: "rule".into(),
+        gate: "hard".into(),
+        expect: String::new(),
+        evidence_id: String::new(),
     }
 }
 
@@ -68,6 +102,10 @@ pub fn cross_check(a: f64, b: f64, tolerance: f64) -> CheckReport {
         check: "cross_check".into(),
         passed,
         detail: format!("|{a:.4}-{b:.4}| <= {tolerance:.4}*{denom:.4}"),
+        judge: "rule".into(),
+        gate: "hard".into(),
+        expect: String::new(),
+        evidence_id: String::new(),
     }
 }
 
@@ -78,6 +116,10 @@ pub fn divergence(trend_a: f64, trend_b: f64) -> CheckReport {
         check: "divergence".into(),
         passed,
         detail: format!("sign({trend_a:.4}) == sign({trend_b:.4})"),
+        judge: "rule".into(),
+        gate: "hard".into(),
+        expect: String::new(),
+        evidence_id: String::new(),
     }
 }
 
@@ -88,6 +130,10 @@ pub fn ratio_band(numerator: f64, denominator: f64, min: f64) -> CheckReport {
             check: "ratio_band".into(),
             passed: false,
             detail: format!("denominator={denominator:.4} must be > 0"),
+            judge: "rule".into(),
+            gate: "hard".into(),
+            expect: String::new(),
+            evidence_id: String::new(),
         };
     }
     let ratio = numerator / denominator;
@@ -96,6 +142,10 @@ pub fn ratio_band(numerator: f64, denominator: f64, min: f64) -> CheckReport {
         check: "ratio_band".into(),
         passed,
         detail: format!("ratio={ratio:.4} >= {min:.4}"),
+        judge: "rule".into(),
+        gate: "hard".into(),
+        expect: String::new(),
+        evidence_id: String::new(),
     }
 }
 
@@ -107,6 +157,10 @@ pub fn exec_ok(ok_flag: bool, echoed: bool) -> CheckReport {
         check: "exec_ok".into(),
         passed,
         detail: format!("ok={ok_flag} echo={echoed}"),
+        judge: "rule".into(),
+        gate: "hard".into(),
+        expect: String::new(),
+        evidence_id: String::new(),
     }
 }
 
@@ -115,33 +169,40 @@ pub fn exec_ok(ok_flag: bool, echoed: bool) -> CheckReport {
 /// Run the criteria set mapped from `expect` against tool-return `data`.
 /// Malformed data yields a failed report (deterministic, never panics).
 pub fn run_for_expect(expect: &Expect, data: &serde_json::Value, params: &RuleParams) -> Vec<CheckReport> {
+    let tag = expect.as_str();
+    let attach = |mut rs: Vec<CheckReport>| {
+        for r in rs.iter_mut() {
+            r.expect = tag.to_string();
+        }
+        rs
+    };
     match expect {
         Expect::Numbers => {
             let series = match data.get("series").and_then(|v| v.as_array()) {
                 Some(s) => s.iter().filter_map(|v| v.as_f64()).collect::<Vec<f64>>(),
-                None => vec![],
+                None => Vec::new(),
             };
             let sum: f64 = series.iter().sum();
-            vec![
+            attach(vec![
                 sequence_length(&series, params.min_len),
                 sample_size(&series, params.min_n),
                 threshold(sum, params.low, params.high),
-            ]
+            ])
         }
         Expect::Rate => {
             let numerator = data.get("numerator").and_then(|v| v.as_f64()).unwrap_or(f64::NAN);
             let denominator = data.get("denominator").and_then(|v| v.as_f64()).unwrap_or(f64::NAN);
             let ratio = if denominator > 0.0 { numerator / denominator } else { f64::NAN };
-            vec![
+            attach(vec![
                 threshold(ratio, params.low, params.high),
                 ratio_band(numerator, denominator, params.min_ratio),
                 cross_check(numerator, denominator, params.tolerance),
-            ]
+            ])
         }
         Expect::Text => {
             let trend_a = data.get("trend_a").and_then(|v| v.as_f64()).unwrap_or(f64::NAN);
             let trend_b = data.get("trend_b").and_then(|v| v.as_f64()).unwrap_or(f64::NAN);
-            vec![divergence(trend_a, trend_b)]
+            attach(vec![divergence(trend_a, trend_b)])
         }
         Expect::Ok => {
             // D'-4: structured execution success. The executor contract echoes
@@ -152,7 +213,7 @@ pub fn run_for_expect(expect: &Expect, data: &serde_json::Value, params: &RulePa
                 .and_then(|d| d.get("params"))
                 .map(|p| !p.is_null())
                 .unwrap_or(false);
-            vec![exec_ok(ok_flag, echoed)]
+            attach(vec![exec_ok(ok_flag, echoed)])
         }
     }
 }

@@ -187,7 +187,7 @@ mod tests {
     use super::*;
 
     fn report(passed: bool) -> CheckReport {
-        CheckReport { check: "threshold".into(), passed, detail: "x".into() }
+        CheckReport { check: "threshold".into(), passed, detail: "x".into(), judge: "rule".into(), gate: "hard".into(), expect: String::new(), evidence_id: String::new() }
     }
 
     #[test]

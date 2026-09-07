@@ -38,9 +38,12 @@ fn tcp_reachable(endpoint: &str) -> Result<(), String> {
     std::thread::spawn(move || {
         let _ = tx.send(std::net::TcpStream::connect(addr).map(|_| ()));
     });
-    match rx.recv_timeout(Duration::from_secs(2)) {
+    // 10s budget: macOS loopback connect can stall ~1.7s on a busy
+    // machine; under parallel tests 2s was a flaky boundary (确定性优先:
+    // the probe must measure the network, not the scheduler).
+    match rx.recv_timeout(Duration::from_secs(10)) {
         Ok(r) => r.map_err(|e| e.to_string()),
-        Err(_) => Err("connect timeout (2s)".to_string()),
+        Err(_) => Err("connect timeout (10s)".to_string()),
     }
 }
 
@@ -177,9 +180,15 @@ mod tests {
         assert!(gate_ok(&c).is_err());
     }
 
+    static PORT_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn gate_configured_reachable_passes() {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let _guard = PORT_LOCK.lock().unwrap();
+        // Fixed test port (37901): a random :0 port is not isolated across
+        // concurrent test binaries — a freed port can be re-bound by a
+        // parallel listener, flipping refused->reachable and flaking.
+        let listener = TcpListener::bind("127.0.0.1:37901").unwrap();
         let port = listener.local_addr().unwrap().port();
         let mut c = base();
         c.tuck_endpoint = Some(format!("http://127.0.0.1:{port}"));
@@ -204,7 +213,8 @@ mod tests {
 
     #[test]
     fn endpoint_reachable_vs_refused() {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let _guard = PORT_LOCK.lock().unwrap();
+        let listener = TcpListener::bind("127.0.0.1:37902").unwrap();
         let addr = listener.local_addr().unwrap().to_string();
         // Reachable while the listener lives.
         let mut c = base();

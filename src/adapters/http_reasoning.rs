@@ -71,6 +71,7 @@ impl ReasoningAdapter for HttpReasoningAdapter {
         _model: &str,
         trace_id: &str,
         deltas: tokio::sync::mpsc::UnboundedSender<crate::adapters::StreamDelta>,
+        thinking: &std::sync::Mutex<String>,
     ) -> Result<String, String> {
         let resp = self.post_chat(prompt, trace_id, true).await?;
         if !resp.status().is_success() {
@@ -92,12 +93,16 @@ impl ReasoningAdapter for HttpReasoningAdapter {
                 .as_str()
                 .unwrap_or("")
                 .to_string();
+            let think = json["choices"][0]["message"]["reasoning_content"]
+                .as_str()
+                .unwrap_or("")
+                .to_string();
+            if !think.is_empty() {
+                *thinking.lock().unwrap() = think.clone();
+            }
             let _ = deltas.send(crate::adapters::StreamDelta {
                 content: full.clone(),
-                thinking: json["choices"][0]["message"]["reasoning_content"]
-                    .as_str()
-                    .unwrap_or("")
-                    .to_string(),
+                thinking: think,
             });
             return Ok(full);
         }
@@ -122,14 +127,17 @@ impl ReasoningAdapter for HttpReasoningAdapter {
                         if let Ok(v) = serde_json::from_str::<serde_json::Value>(payload) {
                             let delta = &v["choices"][0]["delta"];
                             let content = delta["content"].as_str().unwrap_or("");
-                            let thinking = delta["reasoning_content"].as_str().unwrap_or("");
+                            let think = delta["reasoning_content"].as_str().unwrap_or("");
                             if !content.is_empty() {
                                 full.push_str(content);
                             }
-                            if !content.is_empty() || !thinking.is_empty() {
+                            if !content.is_empty() || !think.is_empty() {
+                                if !think.is_empty() {
+                                    thinking.lock().unwrap().push_str(think);
+                                }
                                 let _ = deltas.send(crate::adapters::StreamDelta {
                                     content: content.to_string(),
-                                    thinking: thinking.to_string(),
+                                    thinking: think.to_string(),
                                 });
                             }
                         }
@@ -193,7 +201,7 @@ mod tests {
         let adapter = HttpReasoningAdapter::new(&cfg);
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<crate::adapters::StreamDelta>();
         let full = adapter
-            .reason_stream("hi", "fake", "t1", tx)
+            .reason_stream("hi", "fake", "t1", tx, &std::sync::Mutex::new(String::new()))
             .await
             .unwrap();
         assert_eq!(full, "hello world");
@@ -236,7 +244,7 @@ mod tests {
         let adapter = HttpReasoningAdapter::new(&cfg);
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<crate::adapters::StreamDelta>();
         let full = adapter
-            .reason_stream("hi", "fake", "t1", tx)
+            .reason_stream("hi", "fake", "t1", tx, &std::sync::Mutex::new(String::new()))
             .await
             .unwrap();
         assert_eq!(full, "plain");

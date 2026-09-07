@@ -231,6 +231,13 @@ pub struct AgentContext {
     /// fresh stranger.
     pub resume: Option<String>,
     pub reasoning_output: String,
+    /// Private reasoning (thinking) accumulated from the streaming sink
+    /// (ADR-0029). Persisted as `assistant/think` (redacted, display-only).
+    pub reasoning_think: String,
+    /// Last criteria verdict status of this period ("MET"/"UNMET"/"blocked"/
+    /// None when no tool ran). END.success derives from it (铁律:
+    /// success ≡ verdict ≠ Unmet), never from the transition alone.
+    pub last_verdict: Option<String>,
     /// Legacy unstructured action suggestions (from MemoryAdapter.query).
     /// Retained for P11b compatibility; Execution prefers the structured plan.
     pub suggested_actions: Vec<String>,
@@ -593,7 +600,16 @@ impl AgentLoop {
             // Period end: the state machine returned to Perception.
             if self.current_state == HelixState::Perception {
                 outcome.done = true;
-                outcome.success = condition == TransitionCondition::Success;
+                // 铁律 (ADR-0029): END.success derives from the criteria
+                // verdict when a tool ran — success ≡ (verdict ≠ Unmet).
+                // Never from the transition alone; a tool round that failed
+                // its checks is NOT a success even when the machine moved on.
+                outcome.success = match &self.context.last_verdict {
+                    // VerdictStatus Debug spelling ("Met"/"Unmet") — the
+                    // same string the session event carries.
+                    Some(v) => v == "Met",
+                    None => condition == TransitionCondition::Success,
+                };
                 outcome.impasse = condition == TransitionCondition::Impass;
                 self.emit_cycle(
                     "end",
@@ -612,6 +628,7 @@ impl AgentLoop {
                             "done": outcome.done,
                             "success": outcome.success,
                             "impasse": outcome.impasse,
+                            "verdict": self.context.last_verdict,
                         }),
                     );
                 }
@@ -868,6 +885,7 @@ impl AgentLoop {
                 }
                 // Streaming when a delta sink is attached (SSE chat); the
                 // buffered path otherwise — one contract, two transports.
+                let thinking_sink = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
                 let streamed = match &self.stream_tx {
                     Some(tx) => {
                         self.reason
@@ -876,6 +894,7 @@ impl AgentLoop {
                                 &self.run_config.reasoning_mode,
                                 &trace_id,
                                 tx.clone(),
+                                thinking_sink.as_ref(),
                             )
                             .await
                     }
@@ -887,6 +906,19 @@ impl AgentLoop {
                 };
                 match streamed {
                     Ok(output) => {
+                        // Private reasoning (ADR-0029): keep it on the context
+                        // and persist an `assistant/think` event (redacted on
+                        // write, display-only — criteria never sees it).
+                        self.context.reasoning_think =
+                            thinking_sink.lock().unwrap().clone();
+                        if let Some(ev) = self.session_events.as_mut() {
+                            let ts = crate::ledger::unix_secs_to_rfc3339(self.clock.now());
+                            let _ = ev.emit(
+                                &ts,
+                                crate::session_events::EventType::Think,
+                                serde_json::json!({ "text": self.context.reasoning_think }),
+                            );
+                        }
                         // Body trace (Engram join): record the round trip
                         // post-redaction/post-truncation. The trace id is the
                         // derived job id — the same key the pipeline events
@@ -1104,16 +1136,56 @@ impl AgentLoop {
                         };
                         pipeline.ledger.append(verdict);
                         pipeline.emit_event(&job_id, 6, "end", &format!("verdict={status}"));
-                        // Session event: the criteria verdict (MET/UNMET/
-                        // blocked) — the turn timeline's terminal judgement.
+                        // Session events (ADR-0029): one check/status row per
+                        // deterministic report (judge/gate/expect/actual/
+                        // reason — no bare labels), then the derived verdict
+                        // with its reason summary. END.success derives from
+                        // this status below.
                         if let Some(ev) = self.session_events.as_mut() {
                             let ts = crate::ledger::unix_secs_to_rfc3339(self.clock.now());
+                            for (i, rep) in reports.iter().enumerate() {
+                                let _ = ev.emit(
+                                    &ts,
+                                    crate::session_events::EventType::Check,
+                                    serde_json::json!({
+                                        "check_id": format!("{job_id}#c{i}"),
+                                        "check": rep.check,
+                                        "passed": rep.passed,
+                                        "judge": rep.judge,
+                                        "gate": rep.gate,
+                                        "expect": rep.expect,
+                                        "evidence_id": rep.evidence_id,
+                                        "actual": rep.detail,
+                                        "reason": rep.detail,
+                                    }),
+                                );
+                            }
+                            let reason = if reports.is_empty() {
+                                "no checks (no tool ran)".to_string()
+                            } else {
+                                let failed: Vec<&str> = reports
+                                    .iter()
+                                    .filter(|r| !r.passed)
+                                    .map(|r| r.check.as_str())
+                                    .collect();
+                                if failed.is_empty() {
+                                    "all checks passed".to_string()
+                                } else {
+                                    format!("failed: {}", failed.join(", "))
+                                }
+                            };
                             let _ = ev.emit(
                                 &ts,
                                 crate::session_events::EventType::Verdict,
-                                serde_json::json!({ "job_id": job_id, "status": status }),
+                                serde_json::json!({
+                                    "job_id": job_id,
+                                    "status": status,
+                                    "reason": reason,
+                                    "checks": reports.len(),
+                                }),
                             );
                         }
+                        self.context.last_verdict = Some(status.clone());
                         info!("[Reflection] Ledger verdict written for job {}", job_id);
                     }
                     // Human-readable reply: replace the plan JSON with the tool
@@ -1227,9 +1299,11 @@ impl AgentLoop {
                             crate::session_events::EventType::ToolResult,
                             serde_json::json!({
                                 "tool": r.tool,
+                                "index": r.call_index,
                                 "ok": r.ok,
                                 "duration_ms": r.duration_ms,
-                                "data": r.data,
+                                "outcome": r.data,
+                                "outcome_sha": crate::trace::short_sha(&r.data),
                             }),
                         );
                     }
