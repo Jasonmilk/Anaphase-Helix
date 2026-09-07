@@ -312,6 +312,17 @@ reasoning_redact_patterns = []                   # extra credential literals
   body + chain + verdict for one round
 - Timestamps from the injected Clock (deterministic replay)
 
+**Read-back endpoint (full-text replay, 2026-09-07)** — the cap_http server
+serves the bodies on demand (redacted on write, read-only, no hot index):
+
+```text
+GET /v1/trace?trace_id=run-...&limit=20   # one round's bodies (or newest N)
+```
+
+Cellrix's Engram detail panel calls this per selected row — click an audit
+entry and read the exact prompt + response of that round (silicon/carbon
+side by side, no ambiguity).
+
 ## Philosophy
 
 Anaphase implements the Helix Design Philosophy + 3 core exoskeleton axioms:

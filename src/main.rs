@@ -86,6 +86,42 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         None => Json(serde_json::json!({ "status": "no pipeline" })),
                     }
                 }
+            }))
+            .route("/v1/trace", get({
+                // Engram body half (2026-09-07): read-only, on-demand query
+                // over the reasoning trace file. `trace_id` filters one round
+                // (the join key the Tuck chain and the ledger share);
+                // `limit` bounds the newest-window read. Reads only what a
+                // query asks for — the file is append-only storage, never a
+                // hot index (按需加载). Unconfigured -> empty, never 500.
+                let trace_path = config.anaphase.reasoning_trace_path.clone();
+                move |Query(params): Query<HashMap<String, String>>| async move {
+                    let Some(path) = trace_path.as_deref() else {
+                        return Json(serde_json::json!({
+                            "configured": false, "count": 0, "entries": []
+                        }));
+                    };
+                    let tid = params
+                        .get("trace_id")
+                        .map(|s| s.as_str())
+                        .filter(|s| !s.is_empty());
+                    // Endpoint protocol default: 20 entries per query.
+                    let limit: usize = params
+                        .get("limit")
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(20);
+                    match anaphase::trace::query_file(std::path::Path::new(path), tid, limit) {
+                        Ok(entries) => Json(serde_json::json!({
+                            "configured": true,
+                            "count": entries.len(),
+                            "entries": entries
+                        })),
+                        Err(e) => Json(serde_json::json!({
+                            "configured": true, "count": 0, "entries": [],
+                            "error": e.to_string()
+                        })),
+                    }
+                }
             }));
         let addr = format!("0.0.0.0:{}", config.anaphase.cap_http_port);
         let listener = tokio::net::TcpListener::bind(&addr).await?;

@@ -26,3 +26,10 @@
 {"seq":5,"ts":"2026-09-07T06:37:51Z","trace_id":"run-8580fa8f91688134","stage":0,"phase":"state","detail":"{\"from\":\"Reasoning\",\"condition\":\"NoToolNeeded\",\"to\":\"Reflection\"}"}
 {"seq":6,"ts":"2026-09-07T06:37:51Z","trace_id":"run-8580fa8f91688134","stage":0,"phase":"state","detail":"{\"from\":\"Reflection\",\"condition\":\"Success\",\"to\":\"Perception\"}"}
 {"seq":7,"ts":"2026-09-07T06:37:51Z","trace_id":"run-8580fa8f91688134","stage":0,"phase":"end","detail":"{\"done\":true,\"success\":true,\"impasse\":false}"}
+{"seq":1,"ts":"2026-09-07T07:12:43Z","trace_id":"run-a430d84680aabd0b","stage":0,"phase":"begin","detail":"{\"input\":\"hello\",\"mode\":\"Partner\"}"}
+{"seq":2,"ts":"2026-09-07T07:12:43Z","trace_id":"run-a430d84680aabd0b","stage":0,"phase":"state","detail":"{\"from\":\"Perception\",\"condition\":\"Success\",\"to\":\"PreAssessment\"}"}
+{"seq":3,"ts":"2026-09-07T07:12:43Z","trace_id":"run-a430d84680aabd0b","stage":0,"phase":"state","detail":"{\"from\":\"PreAssessment\",\"condition\":\"Success\",\"to\":\"MemoryRetrieval\"}"}
+{"seq":4,"ts":"2026-09-07T07:12:43Z","trace_id":"run-a430d84680aabd0b","stage":0,"phase":"state","detail":"{\"from\":\"MemoryRetrieval\",\"condition\":\"Success\",\"to\":\"Reasoning\"}"}
+{"seq":5,"ts":"2026-09-07T07:12:44Z","trace_id":"run-a430d84680aabd0b","stage":0,"phase":"state","detail":"{\"from\":\"Reasoning\",\"condition\":\"NoToolNeeded\",\"to\":\"Reflection\"}"}
+{"seq":6,"ts":"2026-09-07T07:12:44Z","trace_id":"run-a430d84680aabd0b","stage":0,"phase":"state","detail":"{\"from\":\"Reflection\",\"condition\":\"Success\",\"to\":\"Perception\"}"}
+{"seq":7,"ts":"2026-09-07T07:12:44Z","trace_id":"run-a430d84680aabd0b","stage":0,"phase":"end","detail":"{\"done\":true,\"success\":true,\"impasse\":false}"}

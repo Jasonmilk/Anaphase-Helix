@@ -25,7 +25,7 @@
 //!   wired), so replay under a FakeClock is byte-identical.
 //! - `seq` is file-backed at open (line count), monotonic across restarts.
 
-use std::io::Write;
+use std::io::{BufRead, Write};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -181,6 +181,47 @@ impl ReasoningTrace {
     }
 }
 
+/// Read-only on-demand query over the append-only trace file (Engram body
+/// half — `/v1/trace`, 2026-09-07). Entries matching `trace_id`, or the
+/// newest `limit` entries when None. The file is append-only storage, never
+/// a hot index: a read loads only what a query asks for (按需加载); rows
+/// that fail to parse are skipped, never fatal.
+pub fn query_file(
+    path: &std::path::Path,
+    trace_id: Option<&str>,
+    limit: usize,
+) -> std::io::Result<Vec<ReasoningEntry>> {
+    let f = std::fs::File::open(path)?;
+    let reader = std::io::BufReader::new(f);
+    let mut out: Vec<ReasoningEntry> = Vec::new();
+    for line in reader.lines() {
+        let line = line?;
+        if line.trim().is_empty() {
+            continue;
+        }
+        let entry: ReasoningEntry = match serde_json::from_str(&line) {
+            Ok(e) => e,
+            Err(_) => continue, // a torn tail row must not break the query
+        };
+        if let Some(tid) = trace_id {
+            if entry.trace_id != tid {
+                continue;
+            }
+        }
+        out.push(entry);
+    }
+    // Newest-window semantics: unfiltered reads keep the tail `limit`;
+    // filtered reads are capped at `limit` (a runaway match set is bounded).
+    if out.len() > limit {
+        if trace_id.is_none() {
+            out.drain(..out.len() - limit);
+        } else {
+            out.truncate(limit);
+        }
+    }
+    Ok(out)
+}
+
 fn truncate(text: &str, max_chars: usize) -> String {
     if text.chars().count() <= max_chars {
         text.to_string()
@@ -254,6 +295,52 @@ mod tests {
         let last: ReasoningEntry =
             serde_json::from_str(content2.lines().last().unwrap()).unwrap();
         assert_eq!(last.seq, 1);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn query_file_filters_by_trace_id_and_tails_window() {
+        let dir = std::env::temp_dir().join(format!("trace-query-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("reasoning.jsonl");
+        let _ = std::fs::remove_file(&path);
+
+        let trace = ReasoningTrace::open(path.clone(), 4096, Redaction::default()).unwrap();
+        for i in 0..5u32 {
+            trace
+                .record(
+                    &format!("2026-09-07T06:0{i}:00Z"),
+                    &format!("run-a{i}"),
+                    "m",
+                    &format!("prompt {i}"),
+                    &format!("response {i}"),
+                )
+                .unwrap();
+        }
+        // One more with a shared id (a round with two bodies, e.g. retry).
+        trace
+            .record("2026-09-07T06:05:00Z", "run-shared", "m", "p1", "r1")
+            .unwrap();
+        trace
+            .record("2026-09-07T06:06:00Z", "run-shared", "m", "p2", "r2")
+            .unwrap();
+
+        // Filter: all entries with the shared trace id, in chain order.
+        let hits = query_file(&path, Some("run-shared"), 100).unwrap();
+        assert_eq!(hits.len(), 2, "filter must find both bodies: {hits:?}");
+        assert_eq!(hits[0].prompt, "p1");
+        assert_eq!(hits[1].prompt, "p2");
+
+        // Window: unfiltered reads keep the newest `limit`, chain order.
+        let tail = query_file(&path, None, 3).unwrap();
+        assert_eq!(tail.len(), 3);
+        assert_eq!(tail[0].trace_id, "run-a4", "tail must start at seq 4");
+        assert_eq!(tail[1].trace_id, "run-shared");
+        assert_eq!(tail[2].trace_id, "run-shared");
+
+        // Unknown id -> empty, never an error.
+        assert!(query_file(&path, Some("run-missing"), 10).unwrap().is_empty());
 
         let _ = std::fs::remove_dir_all(&dir);
     }

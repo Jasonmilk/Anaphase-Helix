@@ -168,3 +168,21 @@ README（对话 + ANAPHASE_CONFIG）｜ PLAN｜ ECOSYSTEM v1.56
 
 ### 状态
 🧬 已完成
+
+## 记录 32：全文回放端点——/v1/trace（2026-09-07）
+
+### 触发条件
+印痕两半体（正文 + 链）同键后，用户拍板①：全文回放——Engram 从"链完整性"升级为"每轮思考正文可查"。
+
+### 变更性质
+- **trace.rs `query_file`**：只读按需查询（trace_id 过滤 / 无参取最新 N 条尾部窗口；坏行跳过不致命）——append-only 存储不建热索引
+- **cap_http 加 `/v1/trace`**（axum）：`trace_id` + `limit`（端点协议默认 20）；未配置 trace path → `{"configured":false}` 永不 500
+- **Cellrix web `/api/trace` 代理**：透传 trace_id query → Anaphase；detail 面板加"正文回放"区（点击审计条目 → 该轮 prompt/response，脱敏由写入侧保证）
+- **测试**：query_file 1（过滤/尾部窗口/不存在→空），Anaphase 211→**212**；Cellrix web route +1
+- **真实全链路验证**：anaphase --input "hello" → 正文落盘 → `/v1/trace?trace_id=run-a430d84680aabd0b` → web `/api/trace` 代理 → 返回真实 prompt+response（物理成立）
+
+### 验收
+README（Read-back endpoint 节）｜ GROWTH｜ ECOSYSTEM v1.62（Anaphase 212）
+
+### 状态
+🧬 已完成
