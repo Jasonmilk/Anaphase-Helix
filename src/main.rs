@@ -197,10 +197,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // concern (L3 情景), not a v1 promise.
                 // Fail-closed: Tuck down = refuse to reason (gate_ok), the
                 // process stays alive to keep the panel honest.
+                // Two transports, one contract: `Accept: text/event-stream`
+                // yields live SSE deltas (typewriter chat, no timeout cliff);
+                // the plain JSON path stays for curl / old clients.
                 let cfg = config.clone();
                 let shared = shared.clone();
-                move |Json(body): Json<serde_json::Value>| async move {
+                move |headers: axum::http::HeaderMap, Json(body): Json<serde_json::Value>| async move {
                     use axum::http::StatusCode;
+                    use axum::response::IntoResponse;
                     let msg = body
                         .get("message")
                         .and_then(|v| v.as_str())
@@ -208,16 +212,77 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .trim()
                         .to_string();
                     if msg.is_empty() {
-                        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": "empty message" })));
+                        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": "empty message" }))).into_response();
                     }
                     if let Err(e) = anaphase::health::gate_ok(&cfg.anaphase) {
                         return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
                             "error": "tuck unreachable", "detail": e.to_string()
-                        })));
+                        }))).into_response();
                     }
-                    // build_agent already wires run_config / memory budget /
-                    // trace from the same config — one assembly, both faces.
+                    let wants_sse = headers
+                        .get(axum::http::header::ACCEPT)
+                        .and_then(|v| v.to_str().ok())
+                        .unwrap_or("")
+                        .contains("text/event-stream");
                     let mut built = build_agent(&cfg).await;
+                    if wants_sse {
+                        // Stream deltas live, then a final line carries the
+                        // full reply + done flag. The cycle itself is untouched
+                        // — streaming is transport only (judgement still runs
+                        // on the complete text).
+                        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+                        built.agent.stream_tx = Some(tx);
+                        let mut agent = built.agent;
+                        let (done_tx, done_rx) = tokio::sync::oneshot::channel();
+                        let msg2 = msg.clone();
+                        tokio::spawn(async move {
+                            let res = agent.run_cycle(&msg2).await;
+                            let reply = res.map(|_| agent.context.reasoning_output.clone());
+                            *shared.lock().unwrap() = Some(agent.capture());
+                            let _ = done_tx.send(reply);
+                        });
+                        let body = axum::body::Body::from_stream(futures_util::stream::unfold(
+                            (rx, Some(done_rx), false),
+                            |(mut rx, mut done, mut finished)| async move {
+                                if finished {
+                                    return None;
+                                }
+                                tokio::select! {
+                                    Some(d) = rx.recv() => {
+                                        let line = format!("data: {}\n\n", serde_json::json!({"delta": d}));
+                                        Some((Ok::<_, std::convert::Infallible>(axum::body::Bytes::from(line)), (rx, done, false)))
+                                    }
+                                    r = async {
+                                        match done.as_mut() {
+                                            Some(d) => d.await,
+                                            None => std::future::pending::<Result<Result<String, String>, _>>().await,
+                                        }
+                                    } => {
+                                        match r {
+                                            Ok(Ok(reply)) => {
+                                                let line = format!("data: {}\n\n", serde_json::json!({"done": true, "reply": reply}));
+                                                Some((Ok::<_, std::convert::Infallible>(axum::body::Bytes::from(line)), (rx, None, true)))
+                                            }
+                                            Ok(Err(e)) => {
+                                                let line = format!("data: {}\n\n", serde_json::json!({"error": e}));
+                                                Some((Ok::<_, std::convert::Infallible>(axum::body::Bytes::from(line)), (rx, None, true)))
+                                            }
+                                            Err(_) => None,
+                                        }
+                                    }
+                                }
+                            },
+                        ));
+                        return (
+                            StatusCode::OK,
+                            [
+                                (axum::http::header::CONTENT_TYPE, "text/event-stream"),
+                                (axum::http::header::CACHE_CONTROL, "no-cache"),
+                            ],
+                            body,
+                        )
+                            .into_response();
+                    }
                     match built.agent.run_cycle(&msg).await {
                         Ok(out) => {
                             *shared.lock().unwrap() = Some(built.agent.capture());
@@ -228,6 +293,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": e }))),
                     }
+                    .into_response()
                 }
             }))
             .layer(middleware::from_fn_with_state(

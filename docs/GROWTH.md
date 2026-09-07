@@ -236,3 +236,22 @@ README（fail-closed 节）｜ GROWTH｜ ECOSYSTEM v1.67（Anaphase 219）
 
 ### 状态
 🧬 已完成
+
+---
+## 记录 46：SSE 流式对话（打字机 + 超时根治）2026-09-07
+### 背景
+用户报 WebUI 偶发 `Resource temporarily unavailable (os error 35)` 与 `replayed nonce`。排查发现**真根因是旧进程残留**：pkill -f 未杀掉 18:32 旧 anaphase / 18:20 旧面板，新二进制因端口占用启动失败，面板一直在连旧版（无 SSE、连接池修复前行为）。按 PID 强杀后 SSE 端到端全通，5 连发无 EAGAIN / 无 replay。
+### 变更
+- `ReasoningAdapter` trait 新增 `reason_stream(..., deltas: mpsc::UnboundedSender<String>)`——channel 传输 delta，默认实现=缓冲（全部 adapter 兼容，极致解耦）
+- `HttpReasoningAdapter` 真流式：`stream=true` + SSE 行解析（`data:`/`[DONE]`），网关忽略 stream 时诚实回退 JSON 一次性输出
+- `run_cycle`：`stream_tx: Option<UnboundedSender>`——有 sink 走流式，无 sink 走缓冲（同一契约两种传输）
+- `/v1/chat`：`Accept: text/event-stream` 分流——SSE 分支 spawn run_cycle + unfold 流（delta 行 + done 行带全量 reply），JSON 路径保留兼容 curl/旧客户端
+- 测试 +2：SSE 解析顺序断言 + JSON 回退断言（mock 网关，字节级契约固定）
+### 验证
+- 直连 50061：`data: {"delta":"好"}` 逐字流式 + done 行 ✓
+- 面板 8080：`content-type: text/event-stream` + chunked 透传 ✓
+- 5 连发 chat：全成功，无 EAGAIN / replayed nonce
+- 测试：Anaphase 227 全绿
+
+### 状态
+🧬 已完成

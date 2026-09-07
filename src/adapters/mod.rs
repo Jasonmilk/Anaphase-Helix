@@ -116,6 +116,22 @@ pub trait ReasoningAdapter: Send + Sync {
     /// carried to the gateway (x-tuck-trace) so the Tuck audit chain, the
     /// Anaphase body trace and the ledger share one join key (Engram).
     async fn reason(&self, prompt: &str, model: &str, trace_id: &str) -> Result<String, String>;
+
+    /// Streaming variant: emits content deltas into `deltas` as they arrive
+    /// and returns the full text (same contract as `reason`). Default = the
+    /// buffered path (every adapter stays valid; only HTTP streams). The
+    /// channel keeps the callback out of the async trait — no lifetime glue.
+    async fn reason_stream(
+        &self,
+        prompt: &str,
+        model: &str,
+        trace_id: &str,
+        deltas: tokio::sync::mpsc::UnboundedSender<String>,
+    ) -> Result<String, String> {
+        let out = self.reason(prompt, model, trace_id).await?;
+        let _ = deltas.send(out.clone());
+        Ok(out)
+    }
 }
 
 pub struct NoopReasoningAdapter;

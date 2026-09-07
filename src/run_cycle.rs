@@ -106,6 +106,9 @@ pub struct AgentLoop {
     pub current_state: HelixState,
     /// Context carried through the cognitive cycle
     pub context: AgentContext,
+    /// Optional streaming deltas sink (SSE chat): when set, the reasoning
+    /// adapter emits content deltas here instead of buffering silently.
+    pub stream_tx: Option<tokio::sync::mpsc::UnboundedSender<String>>,
     /// HITL 人在回路审批通道（P10b T3，执行闸；默认 fail-closed）
     pub hitl: HITLApprover,
     /// M1.5-T6 (ADR-0004): optional real tool name resolved for Execution.
@@ -280,6 +283,7 @@ impl AgentLoop {
             transitions,
             current_state: HelixState::Perception,
             context: AgentContext::default(),
+            stream_tx: None,
             hitl: HITLApprover::default(),
             tool_command: None,
             run_config: RunCycleConfig::default(),
@@ -717,11 +721,26 @@ impl AgentLoop {
                 // (x-tuck-trace -> Tuck chain), to the body trace, and to the
                 // pipeline events — one join key across all three (Engram).
                 let trace_id = crate::contract::derive_job_id(&self.context.user_input);
-                match self
-                    .reason
-                    .reason(&prompt, &self.run_config.reasoning_mode, &trace_id)
-                    .await
-                {
+                // Streaming when a delta sink is attached (SSE chat); the
+                // buffered path otherwise — one contract, two transports.
+                let streamed = match &self.stream_tx {
+                    Some(tx) => {
+                        self.reason
+                            .reason_stream(
+                                &prompt,
+                                &self.run_config.reasoning_mode,
+                                &trace_id,
+                                tx.clone(),
+                            )
+                            .await
+                    }
+                    None => {
+                        self.reason
+                            .reason(&prompt, &self.run_config.reasoning_mode, &trace_id)
+                            .await
+                    }
+                };
+                match streamed {
                     Ok(output) => {
                         // Body trace (Engram join): record the round trip
                         // post-redaction/post-truncation. The trace id is the

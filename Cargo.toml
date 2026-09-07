@@ -8,7 +8,8 @@ edition = "2021"
 tokio = { version = "1", features = ["full"] }
 
 # FlowModus
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.12", features = ["json", "stream"] }
+futures-util = "0.3"
 
 # gRPC (for Helix-Mind / FlowModus / Tuck adapters)
 tonic = "0.10"           # <-- aligned with helix-mind-api (0.10)
