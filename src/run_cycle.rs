@@ -1204,6 +1204,9 @@ impl AgentLoop {
                     if !lines.is_empty() {
                         self.context.reasoning_output = lines.join("
 ");
+                        info!("[Reflection] reply replaced: evidence={} lines_first={}", self.context.evidence.len(), lines[0].chars().take(60).collect::<String>());
+                    } else {
+                        info!("[Reflection] reply NOT replaced: evidence empty");
                     }
                 }
                 // L3 episodic note (P10): the EXPERIENCE, not the bookkeeping.

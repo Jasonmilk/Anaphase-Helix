@@ -370,10 +370,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // full reply + done flag. The cycle itself is untouched
                         // — streaming is transport only (judgement still runs
                         // on the complete text).
-                        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<anaphase::adapters::StreamDelta>();
+                        let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<anaphase::adapters::StreamDelta>();
                         built.agent.stream_tx = Some(tx);
                         let mut agent = built.agent;
-                        let (done_tx, done_rx) = tokio::sync::oneshot::channel();
+                        // Reply channel: an mpsc pair, not a oneshot. A oneshot
+                        // Receiver polled again after completion panics
+                        // ("called after complete") when the select! races the
+                        // delta branch, which aborts the stream before the
+                        // terminal line — the client then sees the raw attempt
+                        // JSON with no final reply. mpsc recv() is safe to poll
+                        // repeatedly and returns None when the sender drops.
+                        let (done_tx, done_rx) = tokio::sync::mpsc::unbounded_channel::<Result<String, String>>();
                         let msg2 = msg.clone();
                         tokio::spawn(async move {
                             let res = agent.run_cycle(&msg2).await;
@@ -402,13 +409,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         }
                                         r = async {
                                             match done.as_mut() {
-                                                Some(d) => d.await,
-                                                None => std::future::pending::<Result<Result<String, String>, _>>().await,
+                                                Some(d) => d.recv().await,
+                                                None => std::future::pending::<Option<Result<String, String>>>().await,
                                             }
                                         } => {
                                             match r {
-                                                Ok(v) => v,
-                                                Err(_) => return None,
+                                                Some(v) => v,
+                                                // Sender dropped without a reply (cycle crashed):
+                                                // end the stream; the client keeps streamed
+                                                // content and finishes cleanly.
+                                                None => return None,
                                             }
                                         }
                                     },

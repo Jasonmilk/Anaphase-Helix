@@ -43,6 +43,11 @@ via the CommonIntents protocol stack with zero hard coupling.
   trace id (derived job id); pull via `GET /v1/agent/events?after=N`
   (incremental cursor, no push). Events = process, ledger = fact,
   evidence = support. Capacity from codex contract (zero hardcoding)
+- 🧾 **SSE Event Order Contract** (ADR-0030) — `/v1/chat` streams deltas
+  then exactly one terminal `done` line (reply is the authoritative full
+  text; the client overwrites typewriter accumulation). Terminal channel
+  is mpsc — safe to poll repeatedly — so the done line can never be lost
+  to a runtime race (oneshot panic), even under burst requests
 - 🚗 **CI-144 Transport Layer** (ADR-0017) — `--stdio` speaks the ecosystem's
   common dialect: CIB/1.0 handshake → MessagePack frames (LE u32 length prefix)
   → Manifest (first frame) → 1s snapshot push → ActionRequest/Response
