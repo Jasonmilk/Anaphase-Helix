@@ -4,7 +4,7 @@
 ![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)
 ![Build](https://img.shields.io/badge/Build-Passing-brightgreen.svg)
 ![Style](https://img.shields.io/badge/Code%20Style-Google-black.svg)
-[![Tests](https://img.shields.io/badge/tests-228%2F228%20passed-green)](#)
+[![Tests](https://img.shields.io/badge/tests-231%2F231%20passed-green)](#)
 
 **The silicon-based operating system & physical brain for digital lifeforms.
 Perceive, reason, act, remember, and immunize — the body that houses the soul.**
@@ -57,6 +57,7 @@ via the CommonIntents protocol stack with zero hard coupling.
   pipeline against a real `tentacle --transport grpc` + real fixture plugins
   (manifest+js, SHA-256 pinned); identity_labels / seen_entropy_bloom semantics
   (ADR-0004); run_cycle Execution resolves real tool names (echo fallback)
+- 🧬 **L0-L3 live (ADR-0025)** — identity_block (gene lock + tool list) injected; `parse_tool_fence` fallback; reply backfill shows tool results; `remember_node` writes L2 knowledge layer; calc + web_search tools live
 - 🌙 **P10 Cognitive Craft + Wake-up, live-verified** — `tests/mind_live.rs`
   drives the REAL `helix-mind-cli` binary over the real wire: `craft`
   (deterministic trace_id, 0-token synthesis), `ana_wakeup` agenda poll and

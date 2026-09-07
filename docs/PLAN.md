@@ -92,7 +92,8 @@ Cellrix）。事件流：Manifest 首帧 → 1s 节律 Snapshot 推流 → Actio
 | **P11b** 编排链路 | ✅ 完成（验证闭环） | OrchestrationAdapter 不建，链路已通 |
 | **P11c** OrchestrationCore | ⏸️ 暂缓 | trait 归属待 Mind 认知工艺显式化后裁决 |
 | **P11d** 双向复用 | ⏸️ 暂缓 | 依赖 P11c；模式同构+接口复用，职责不合并 |
+| **L0-L3 实弹** | ✅ 完成（ADR-0025） | identity_block 注入 + 工具链闭环 + L2 知识层写入 + 231 tests |
 
 ---
 
-*Anaphase-Helix PLAN v2.6（候选 G + G-4..G-7，2026-09-06）*
+*Anaphase-Helix PLAN v2.7（L0-L3 实弹 + 工具链闭环，2026-09-07）*

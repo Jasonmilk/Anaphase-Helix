@@ -494,6 +494,10 @@ async fn build_agent(config: &config::Config) -> BuiltAgent {
         // O-5 (ADR-0023): cognitive-injection budget from config (protocol
         // default 800 lives in config.rs, not here).
         agent.memory_inject_chars = config.anaphase.memory_inject_chars;
+        // L0 identity (gene lock) + L1 tool awareness (Tentacle manifests):
+        // assembled once per build — on-demand, never guessed. Any piece
+        // unavailable degrades to "absent from the block" (honest).
+        agent.identity_block = build_identity_block(&config).await;
         // Reasoning body trace (Engram join): opt-in via
         // `reasoning_trace_path`. Max chars: config override or the
         // documented protocol default (4096, README Engram section).
@@ -746,3 +750,49 @@ fn agent_offline_snapshot() -> anaphase::run_cycle::AgentSnapshot {
     }
 }
 
+
+/// Assemble the L0 + L1 identity block: gene_lock.md (immutable identity) and
+/// Tentacle's registered tool manifests (tool awareness). Every part is
+/// optional — a missing gene lock or unreachable Tentacle simply leaves that
+/// section out, so the block never fabricates identity or capability.
+async fn build_identity_block(config: &anaphase::config::Config) -> String {
+    use anaphase::adapters::tentacle::GrpcTentacleAdapter;
+    let mut parts: Vec<String> = Vec::new();
+
+    if let Some(path) = config.anaphase.gene_lock_path.as_deref() {
+        if let Ok(text) = std::fs::read_to_string(path) {
+            let trimmed = text.trim();
+            if !trimmed.is_empty() {
+                parts.push(format!(
+                    "[identity — gene lock, immutable]\n{}",
+                    trimmed
+                ));
+            }
+        }
+    }
+
+    if let Some(ep) = config.anaphase.tentacle_endpoint.as_deref() {
+        if !ep.is_empty() {
+            if let Ok(mut adapter) = GrpcTentacleAdapter::new(ep)
+                .await
+                .map_err(|e| e.to_string())
+            {
+                if let Ok(tools) = adapter.list_tools().await {
+                    if !tools.is_empty() {
+                        let lines: Vec<String> = tools
+                            .iter()
+                            .map(|(name, desc)| format!("- {}: {}", name, desc))
+                            .collect();
+                        parts.push(format!(
+                            "[tools available — use them before guessing; 0-token tools first, then few-token, then big LLM]\n{}\n\
+When you need a tool, end your reply with ONLY: {{\"calls\":[{{\"tool\":\"NAME\",\"args\":{{...}},\"expect\":\"ok\"}}]}} — no markdown, no prose.",
+                            lines.join("\n")
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    parts.join("\n\n")
+}

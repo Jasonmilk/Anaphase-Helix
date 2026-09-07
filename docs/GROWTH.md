@@ -288,3 +288,24 @@ README（fail-closed 节）｜ GROWTH｜ ECOSYSTEM v1.67（Anaphase 219）
 
 ### 状态
 🧬 已完成
+
+## 记录 26：L0-L3 全层实弹 + 工具链闭环（2026-09-07，ADR-0025）
+
+### 触发条件
+用户逐层核查：问"你姓什么"答没有姓（L0 失效）；大数次方必须工具算；L2 空（0 节点）；要有搜索能力。
+
+### 变更性质
+- `identity_block`（main.rs）：gene_lock + Tentacle ListManifests 合成 L0/L1 注入块（含哲学 + ONLY JSON 协议行）
+- `parse_tool_fence()`（contract）：```tool 围栏三形态兜底解析（+3 单测）
+- Reflection 回复回填：evidence → `{tool}: {data}` 用户可见
+- Mind proto `RememberRequest.node_type`（-1=默认 L3，0-3=L0-L3）+ handler 层路由；Anaphase `remember_node(content, layer)`
+- Tentacle 新插件：`calc`（白名单算术，argv 传参，python3 求值）+ `web_search`（Bing HTML 固定端点，白名单正则，只读）
+- 种子测试 `tests/knowledge_seed.rs`（#[ignore]）：3 条物理定律入 L2
+
+### 验收（物理实测）
+- `"你姓什么？"` → "我姓 Dash"（L0 生效）
+- `"用 calc 工具计算 7 的 9 次方"` → `calc: {"ok":true,"result":"40353607"}`（正确）
+- L2 三条定律入库（nodes: L1|24 L2|3 L3|72）
+- web_search 端到端通（LLM 生成调用 → Tentacle 执行 → 结果回填）
+- 全量：anaphase 231 passed（+3）/ tentacle 153+ passed，零失败
+- 已知待办：web_search 结果质量（Bing 首条偶现泛化）→ 解析微调；协议行若再违约 → prompt 断言

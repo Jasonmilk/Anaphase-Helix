@@ -160,6 +160,10 @@ pub struct AgentLoop {
     /// Source: config `[anaphase] memory_inject_chars` (protocol default
     /// const below, ADR-0023); main overrides from config.
     pub memory_inject_chars: usize,
+    /// L0 identity + L1 tool awareness (gene_lock.md + Tentacle manifests),
+    /// assembled once at build time, injected ahead of the user input every
+    /// cycle. Empty = honest degraded state (no identity, no tools).
+    pub identity_block: String,
     /// O-6 (ADR-0024): judge-point backend — complexity assessment for the
     /// Amygdala -> suggested_mode chain. Rules by default (zero tokens);
     /// SmallLlm (3B-class) when configured. Always returns 1/2/3.
@@ -277,6 +281,7 @@ impl AgentLoop {
         transitions.insert((HelixState::Reflection, TransitionCondition::Success), HelixState::Perception);
 
         Self {
+            identity_block: String::new(),
             memory,
             reason,
             tool,
@@ -714,22 +719,32 @@ impl AgentLoop {
                     self.memory_inject_chars,
                     self.context.memory_nodes.len()
                 );
+                // L0 (gene lock) + L1 (tool awareness): the immutable identity
+                // and the on-demand tool list lead every cycle, so Helix knows
+                // who it is and what it can do before it thinks.
+                let prompt = if !self.identity_block.is_empty() {
+                    format!("{}
+
+{}", self.identity_block, self.context.user_input)
+                } else {
+                    self.context.user_input.clone()
+                };
                 // O-5 (ADR-0023): on-demand injection — the request carries
                 // only what this round needs. Memory nodes (retrieved in
                 // MemoryRetrieval, previously never consumed by the LLM) are
                 // folded into the prompt up to the budget; 0 = stateless.
                 let prompt = if self.memory_inject_chars == 0 {
-                    self.context.user_input.clone()
+                    prompt
                 } else {
                     let inject = fold_memory_nodes(
                         &self.context.memory_nodes,
                         self.memory_inject_chars,
                     );
                     if inject.is_empty() {
-                        self.context.user_input.clone()
+                        prompt
                     } else {
                         format!("{}
-\n[memory: Helix's past experiences — true history, answer from them]\n{}", self.context.user_input, inject)
+\n[memory: Helix's past experiences — true history, answer from them]\n{}", prompt, inject)
                     }
                 };
                 // P10a (ADR-0031): fold the cognitive craft note (zero-token
@@ -973,6 +988,23 @@ impl AgentLoop {
                         pipeline.ledger.append(verdict);
                         pipeline.emit_event(&job_id, 6, "end", &format!("verdict={status}"));
                         info!("[Reflection] Ledger verdict written for job {}", job_id);
+                    }
+                    // Human-readable reply: replace the plan JSON with the tool
+                    // result summary — the user asked a question, not for a
+                    // call plan. The LLM's original output stays in the body
+                    // trace (Engram) for audit; this is the answer surface.
+                    let lines: Vec<String> = self
+                        .context
+                        .evidence
+                        .iter()
+                        .map(|e| {
+                            let body = if e.ok { &e.data } else { "execution failed" };
+                            format!("{}: {}", e.tool, body)
+                        })
+                        .collect();
+                    if !lines.is_empty() {
+                        self.context.reasoning_output = lines.join("
+");
                     }
                 }
                 // L3 episodic note (P10): the EXPERIENCE, not the bookkeeping.

@@ -72,17 +72,119 @@ pub struct ReasoningSignal {
 
 /// Parse structured Reasoning output into a plan signal (candidate E).
 pub fn parse_reasoning_output(response: &str) -> Result<ReasoningSignal, String> {
-    let value: serde_json::Value =
-        serde_json::from_str(response).map_err(|e| format!("invalid JSON from LLM: {e}"))?;
-    let impasse = value.get("impasse").and_then(|v| v.as_bool()).unwrap_or(false);
-    let calls: Vec<Call> = match value.get("calls") {
-        Some(arr) => serde_json::from_value(arr.clone())
-            .map_err(|e| format!("calls schema mismatch: {e}"))?,
-        None if value.is_array() => serde_json::from_value(value)
-            .map_err(|e| format!("calls schema mismatch: {e}"))?,
-        None => vec![], // structured object without calls: explicit no-plan
+    let json_err = match serde_json::from_str::<serde_json::Value>(response) {
+        Ok(value) => {
+            let impasse = value.get("impasse").and_then(|v| v.as_bool()).unwrap_or(false);
+            let calls: Vec<Call> = match value.get("calls") {
+                Some(arr) => serde_json::from_value(arr.clone())
+                    .map_err(|e| format!("calls schema mismatch: {e}"))?,
+                None if value.is_array() => serde_json::from_value(value)
+                    .map_err(|e| format!("calls schema mismatch: {e}"))?,
+                None => vec![], // structured object without calls: explicit no-plan
+            };
+            return Ok(ReasoningSignal { calls, impasse });
+        }
+        Err(e) => e.to_string(),
     };
-    Ok(ReasoningSignal { calls, impasse })
+    // Fence fallback: the LLM sometimes emits a ```tool block instead of the
+    // strict JSON protocol. Deterministic parse of `name(args)` / `name({json})`
+    // / `name("value")` — tolerant, never guessed.
+    parse_tool_fence(response).ok_or_else(|| format!("invalid JSON from LLM: {json_err}"))
+}
+
+/// Parse a ```tool fence into a single planned call (fence fallback).
+///
+/// Accepted shapes inside the fence:
+/// - `calc(expression="123**17")`        — key="value" pairs
+/// - `calc({"expression":"123**17"})`    — JSON object
+/// - `calc("123**17")`                   — bare value -> `value` arg
+///
+/// `expect` defaults to `ok` (structured execution success) for tools outside
+/// the M1 fixture set (numbers/rate/text).
+fn parse_tool_fence(response: &str) -> Option<ReasoningSignal> {
+    let start = response.find("```tool")?;
+    let after = &response[start + 7..];
+    let end = after.find("```").unwrap_or(after.len());
+    let block = after[..end].trim();
+    let open = block.find('(')?;
+    let name = block[..open].trim();
+    if name.is_empty() || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-') {
+        return None;
+    }
+    let inner = block[open + 1..]
+        .rsplit_once(')')
+        .map(|(head, _)| head)
+        .unwrap_or(&block[open + 1..])
+        .trim();
+    let mut args = BTreeMap::new();
+    let trimmed = inner.trim();
+    if trimmed.starts_with('{') {
+        let v: serde_json::Value = serde_json::from_str(trimmed).ok()?;
+        let obj = v.as_object()?;
+        for (k, val) in obj {
+            args.insert(k.clone(), val.clone());
+        }
+    } else if let Ok(v) = serde_json::from_str::<serde_json::Value>(trimmed) {
+        args.insert("value".to_string(), v);
+    } else if !trimmed.is_empty() {
+        // key="value", key=123, ... — comma split that respects quoted commas.
+        let mut key = String::new();
+        let mut val = String::new();
+        let mut in_quote = false;
+        let mut on_key = true;
+        let mut kv: Vec<String> = Vec::new();
+        let mut buf = String::new();
+        for ch in trimmed.chars() {
+            match ch {
+                '"' => {
+                    in_quote = !in_quote;
+                    buf.push(ch);
+                }
+                ',' if !in_quote => {
+                    kv.push(std::mem::take(&mut buf));
+                }
+                _ => buf.push(ch),
+            }
+        }
+        if !buf.is_empty() {
+            kv.push(buf);
+        }
+        for part in kv {
+            let part = part.trim();
+            if part.is_empty() {
+                continue;
+            }
+            key.clear();
+            val.clear();
+            for ch in part.chars() {
+                if on_key {
+                    if ch == '=' {
+                        on_key = false;
+                    } else {
+                        key.push(ch);
+                    }
+                } else {
+                    val.push(ch);
+                }
+            }
+            let key = key.trim().trim_matches('"').to_string();
+            let val = val.trim();
+            if key.is_empty() {
+                continue;
+            }
+            let parsed = serde_json::from_str::<serde_json::Value>(val)
+                .unwrap_or_else(|_| serde_json::Value::String(val.trim_matches('"').to_string()));
+            args.insert(key, parsed);
+        }
+    }
+    Some(ReasoningSignal {
+        calls: vec![Call {
+            tool: name.to_string(),
+            args,
+            expect: Expect::Ok,
+        }],
+        impasse: false,
+    })
 }
 
 /// FNV-1a 64-bit hash over an input (shared derivation primitive).
@@ -186,6 +288,29 @@ mod tests {
     }
 
     #[test]
+    #[test]
+    fn fence_fallback_parses_markdown_tool_block() {
+        let resp = "调用 calc 工具：\n\n```tool\ncalc(expr=\"7**9\")\n```";
+        let sig = parse_reasoning_output(resp).unwrap();
+        assert_eq!(sig.calls.len(), 1);
+        assert_eq!(sig.calls[0].tool, "calc");
+        assert_eq!(sig.calls[0].args.get("expr").unwrap().as_str().unwrap(), "7**9");
+    }
+
+    #[test]
+    fn fence_fallback_parses_json_object_inside() {
+        let resp = "```tool\ncalc({\"expression\":\"9**13\"})\n```";
+        let sig = parse_reasoning_output(resp).unwrap();
+        assert_eq!(sig.calls[0].args.get("expression").unwrap().as_str().unwrap(), "9**13");
+    }
+
+    #[test]
+    fn strict_json_still_preferred_over_fence() {
+        let resp = r#"{"calls":[{"tool":"rate","args":{"numerator":10},"expect":"rate"}]}"#;
+        let sig = parse_reasoning_output(resp).unwrap();
+        assert_eq!(sig.calls[0].expect, Expect::Rate);
+    }
+
     fn parse_llm_calls_accepts_wrapped_object() {
         let resp = r#"{"calls":[{"tool":"rate","args":{"numerator":10},"expect":"rate"}]}"#;
         let calls = parse_llm_calls(resp).unwrap();

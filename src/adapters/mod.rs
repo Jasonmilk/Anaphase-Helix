@@ -45,6 +45,11 @@ pub struct WakeupAlarm {
 pub trait MemoryAdapter: Send + Sync {
     async fn query(&self, query: &str, include_recessive: bool) -> Result<QueryResult, String>;
     async fn remember(&self, content: &str) -> Result<(), String>;
+    /// Explicit-layer write (L0-L3). Default = plain remember (protocol L3).
+    /// Adapters that understand layers override; the trait stays minimal.
+    async fn remember_node(&self, _content: &str, _node_type: i32) -> Result<(), String> {
+        Err("layer-aware remember not supported".to_string())
+    }
     /// 状态驱动钩子（P10b T2）：Amygdala PreAssessment 输出复杂度（1=简单/2=中等/3=复杂），
     /// adapter 据此调整 `suggested_mode`。默认实现为空操作（Noop 等忽略）。
     fn set_complexity(&self, _level: u8) {}
@@ -83,6 +88,13 @@ impl MemoryAdapter for NoopMemoryAdapter {
     }
     async fn remember(&self, _content: &str) -> Result<(), String> {
         Ok(())
+    }
+    async fn remember_node(&self, content: &str, node_type: i32) -> Result<(), String> {
+        if node_type == -1 || node_type == 3 {
+            self.remember(content).await
+        } else {
+            Ok(())
+        }
     }
 }
 

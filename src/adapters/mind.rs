@@ -96,8 +96,16 @@ impl MemoryAdapter for GrpcMindAdapter {
     }
 
     async fn remember(&self, content: &str) -> Result<(), String> {
+        self.remember_node(content, -1).await
+    }
+
+    /// Write a memory node at an explicit layer (L0-L3; -1 = protocol default
+    /// L3). One adapter method, any layer: the orchestrator names the layer,
+    /// Mind enforces the meaning (ADR-0033 layer semantics).
+    async fn remember_node(&self, content: &str, node_type: i32) -> Result<(), String> {
         let request = tonic::Request::new(RememberRequest {
             content: content.to_string(),
+            node_type,
         });
         self.client
             .clone()

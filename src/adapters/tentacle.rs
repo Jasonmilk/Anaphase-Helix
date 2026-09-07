@@ -2,7 +2,9 @@ use async_trait::async_trait;
 use std::collections::HashMap;
 use tonic::transport::Channel;
 use crate::tentacle_api::tentacle_service_client::TentacleServiceClient;
-use crate::tentacle_api::{ExecuteToolRequest, ExecuteToolResponse};
+use crate::tentacle_api::{
+    ExecuteToolRequest, ExecuteToolResponse, ListManifestsRequest,
+};
 use super::ToolAdapter;
 
 /// gRPC adapter for the Helix-Tentacle execution layer (Tentacle v1 protocol).
@@ -22,6 +24,22 @@ impl GrpcTentacleAdapter {
             .await?;
         let client = TentacleServiceClient::new(channel);
         Ok(Self { client })
+    }
+
+    /// List registered tool manifests (name + description) for L1 tool
+    /// awareness injection — Helix must know what it can do, on demand.
+    pub async fn list_tools(&mut self) -> Result<Vec<(String, String)>, String> {
+        let resp = self
+            .client
+            .list_manifests(ListManifestsRequest {})
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(resp
+            .into_inner()
+            .manifests
+            .into_iter()
+            .map(|m| (m.name, m.description))
+            .collect())
     }
 
     /// Execute a tool with a raw JSON params string (M1 pipeline entry point).

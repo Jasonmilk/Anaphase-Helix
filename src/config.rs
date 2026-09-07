@@ -67,6 +67,11 @@ pub struct AnaphaseConfig {
     /// Extra credential literals to redact (project-specific secrets),
     /// in addition to the built-in shapes (sk- / Bearer / api_key= / ...).
     pub reasoning_redact_patterns: Option<Vec<String>>,
+    /// L0 identity source: path to gene_lock.md (Lineage + immutable
+    /// principles). None = no identity injection (honest degraded state).
+    #[serde(default)]
+    pub gene_lock_path: Option<String>,
+
     /// O-5 (ADR-0023): cognitive-injection budget — memory nodes folded into
     /// the Reasoning prompt, capped at this many chars. 0 = no injection
     /// (pure stateless). Protocol default 800 (ADR-0023).
@@ -272,6 +277,7 @@ impl Default for AnaphaseConfig {
             reasoning_trace_path: None,
             reasoning_trace_max_chars: None,
             reasoning_redact_patterns: None,
+            gene_lock_path: None,
             memory_inject_chars: DEFAULT_MEMORY_INJECT_CHARS,
             smoke_input: None,
             judge_backend: crate::judge::JudgeBackend::default(),
@@ -353,6 +359,7 @@ mod tests {
                 reasoning_trace_path: None,
                 reasoning_trace_max_chars: None,
                 reasoning_redact_patterns: None,
+                gene_lock_path: None,
                 memory_inject_chars: DEFAULT_MEMORY_INJECT_CHARS,
                 smoke_input: None,
                 judge_backend: crate::judge::JudgeBackend::default(),

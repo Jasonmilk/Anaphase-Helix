@@ -42,6 +42,9 @@ message QueryResponse {
 
 message RememberRequest {
   string content = 1;
+  // Node layer: 0=L0, 1=L1, 2=L2, 3=L3. Absent or -1 = protocol default (L3
+  // episodic). L2 is the knowledge layer — rails/facts land here.
+  int32 node_type = 2;
 }
 
 message RememberResponse {
