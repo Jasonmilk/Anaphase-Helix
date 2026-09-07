@@ -73,7 +73,7 @@ impl RecordingReasoning {
 
 #[async_trait::async_trait]
 impl ReasoningAdapter for RecordingReasoning {
-    async fn reason(&self, prompt: &str, _model: &str) -> Result<String, String> {
+    async fn reason(&self, prompt: &str, _model: &str, _trace_id: &str) -> Result<String, String> {
         self.prompts.lock().unwrap().push(prompt.to_string());
         Ok("no plan, no tool".to_string())
     }

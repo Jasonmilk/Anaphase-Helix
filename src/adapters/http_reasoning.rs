@@ -23,7 +23,7 @@ impl HttpReasoningAdapter {
 
 #[async_trait]
 impl ReasoningAdapter for HttpReasoningAdapter {
-    async fn reason(&self, prompt: &str, _model: &str) -> Result<String, String> {
+    async fn reason(&self, prompt: &str, _model: &str, trace_id: &str) -> Result<String, String> {
         let body = serde_json::json!({
             "model": self.model,
             "messages": [{"role": "user", "content": prompt}],
@@ -31,6 +31,11 @@ impl ReasoningAdapter for HttpReasoningAdapter {
         });
         let url = format!("{}/chat/completions", self.endpoint.trim_end_matches('/'));
         let mut req = self.client.post(&url).json(&body);
+
+        // Carry the derived trace id to the gateway: the Tuck audit chain
+        // records it as the trace_id, so chain + body trace + ledger share
+        // one join key in Cellrix's Engram view (missing header = "local").
+        req = req.header("x-tuck-trace", trace_id);
 
         if let Some(ref key) = self.api_key {
             req = req.header("Authorization", format!("Bearer {}", key));

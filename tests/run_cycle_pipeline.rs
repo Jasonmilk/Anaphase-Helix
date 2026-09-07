@@ -219,7 +219,7 @@ struct ModeRecordingReasoning {
 
 #[async_trait::async_trait]
 impl ReasoningAdapter for ModeRecordingReasoning {
-    async fn reason(&self, _prompt: &str, mode: &str) -> Result<String, String> {
+    async fn reason(&self, _prompt: &str, mode: &str, _trace_id: &str) -> Result<String, String> {
         *self.seen_mode.lock().unwrap() = Some(mode.to_string());
         Ok("no plan".to_string())
     }

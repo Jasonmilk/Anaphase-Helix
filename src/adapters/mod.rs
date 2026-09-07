@@ -112,14 +112,17 @@ pub async fn resolve_memory_adapter(config: &crate::config::AnaphaseConfig) -> A
 // ---------- Reasoning Adapter ----------
 #[async_trait]
 pub trait ReasoningAdapter: Send + Sync {
-    async fn reason(&self, prompt: &str, model: &str) -> Result<String, String>;
+    /// Run one reasoning round trip. `trace_id` is the derived job id —
+    /// carried to the gateway (x-tuck-trace) so the Tuck audit chain, the
+    /// Anaphase body trace and the ledger share one join key (Engram).
+    async fn reason(&self, prompt: &str, model: &str, trace_id: &str) -> Result<String, String>;
 }
 
 pub struct NoopReasoningAdapter;
 
 #[async_trait]
 impl ReasoningAdapter for NoopReasoningAdapter {
-    async fn reason(&self, _prompt: &str, _model: &str) -> Result<String, String> {
+    async fn reason(&self, _prompt: &str, _model: &str, _trace_id: &str) -> Result<String, String> {
         Ok("No reasoning available".to_string())
     }
 }

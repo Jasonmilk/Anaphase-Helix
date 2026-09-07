@@ -40,7 +40,7 @@ async fn test_noop_memory_adapter() {
 #[tokio::test]
 async fn test_noop_reasoning_adapter() {
     let adapter = NoopReasoningAdapter;
-    let result = adapter.reason("test", "left_brain").await.unwrap();
+    let result = adapter.reason("test", "left_brain", "t-test").await.unwrap();
     assert_eq!(result, "No reasoning available");
 }
 
@@ -184,7 +184,7 @@ struct TriggerToolReasoning;
 
 #[async_trait::async_trait]
 impl ReasoningAdapter for TriggerToolReasoning {
-    async fn reason(&self, _query: &str, _mode: &str) -> Result<String, String> {
+    async fn reason(&self, _query: &str, _mode: &str, _trace_id: &str) -> Result<String, String> {
         Ok(r#"{"calls":[{"tool":"numbers","args":{},"expect":"numbers"}]}"#.to_string())
     }
 }

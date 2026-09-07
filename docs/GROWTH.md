@@ -138,6 +138,13 @@ Cellrix Engram（印痕）面板落地后，审计链只有元数据（正文不
 ### 验收
 `cargo test` 211/211 全绿（0 failed）｜ trace 文件脱敏实测（sk-4056 不落盘）
 
+### 补丁（同日）：三键合一——x-tuck-trace 头
+- **物理发现**：真实联调时审计链 trace_id 为 `local`（请求未带头），与正文 trace 的
+  `run-{fnv}` 对不上——印痕 join 断裂
+- **修复**：`ReasoningAdapter::reason(prompt, model, trace_id)` 签名加 trace_id
+  （10 处实现机械同步）；HttpReasoningAdapter 注入 `x-tuck-trace` 头
+- **验证**：真实调用后审计链 seq 4/5 = `run-8580fa8f91688134` == 正文 trace_id（同键）
+
 ### 状态
 🧬 已完成（Cellrix Engram 正文 join 为下一步）
 ## 记录 29：驾驶舱真对话——send_message 输入 + 真实 LLM 回复（2026-09-06）

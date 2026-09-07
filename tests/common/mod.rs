@@ -81,7 +81,7 @@ pub struct StructuredReasoning {
 
 #[async_trait::async_trait]
 impl ReasoningAdapter for StructuredReasoning {
-    async fn reason(&self, _prompt: &str, _model: &str) -> Result<String, String> {
+    async fn reason(&self, _prompt: &str, _model: &str, _trace_id: &str) -> Result<String, String> {
         Ok(self.output.clone())
     }
 }

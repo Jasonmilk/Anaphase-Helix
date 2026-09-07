@@ -713,7 +713,15 @@ impl AgentLoop {
 \n[think-first (deterministic, 0 tokens)]\n{}", prompt, note.synthesis),
                     None => prompt,
                 };
-                match self.reason.reason(&prompt, &self.run_config.reasoning_mode).await {
+                // One derived trace id for this round: carried to the gateway
+                // (x-tuck-trace -> Tuck chain), to the body trace, and to the
+                // pipeline events — one join key across all three (Engram).
+                let trace_id = crate::contract::derive_job_id(&self.context.user_input);
+                match self
+                    .reason
+                    .reason(&prompt, &self.run_config.reasoning_mode, &trace_id)
+                    .await
+                {
                     Ok(output) => {
                         // Body trace (Engram join): record the round trip
                         // post-redaction/post-truncation. The trace id is the
@@ -724,8 +732,6 @@ impl AgentLoop {
                         // non-fatal: the cognitive loop must not die on a
                         // trace write.
                         if let Some(trace) = self.trace.as_ref() {
-                            let trace_id =
-                                crate::contract::derive_job_id(&self.context.user_input);
                             let ts = crate::ledger::unix_secs_to_rfc3339(self.clock.now());
                             let model = self.run_config.reasoning_mode.clone();
                             let _ = trace.record(&ts, &trace_id, &model, &prompt, &output);
@@ -1019,7 +1025,7 @@ mod tests {
 
     #[async_trait::async_trait]
     impl crate::adapters::ReasoningAdapter for CountingReasoning {
-        async fn reason(&self, input: &str, _mode: &str) -> Result<String, String> {
+        async fn reason(&self, input: &str, _mode: &str, _trace_id: &str) -> Result<String, String> {
             self.0.fetch_add(1, Ordering::Relaxed);
             Ok(format!("{{\"calls\":[],\"impasse\":false}} // {}", input))
         }
@@ -1031,7 +1037,7 @@ mod tests {
 
     #[async_trait::async_trait]
     impl crate::adapters::ReasoningAdapter for SpyReasoning {
-        async fn reason(&self, input: &str, _mode: &str) -> Result<String, String> {
+        async fn reason(&self, input: &str, _mode: &str, _trace_id: &str) -> Result<String, String> {
             self.0.lock().unwrap().push(input.to_string());
             Ok("{\"calls\":[],\"impasse\":false}".to_string())
         }

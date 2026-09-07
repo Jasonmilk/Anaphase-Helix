@@ -131,7 +131,7 @@ async fn run_live_loop(llm_content: &str, job_id: &str, clock_now: u64) -> anaph
         ..AnaphaseConfig::default()
     };
     let llm = HttpReasoningAdapter::new(&cfg);
-    let content = llm.reason("plan", "left_brain").await.unwrap();
+    let content = llm.reason("plan", "left_brain", "t-test").await.unwrap();
 
     // Real Tentacle.
     let port = free_port();

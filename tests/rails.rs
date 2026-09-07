@@ -174,7 +174,7 @@ async fn run_cycle_lands_rail_nodes_and_sets_rail_mode() {
     struct CountingReasoning(std::sync::Arc<std::sync::atomic::AtomicUsize>);
     #[async_trait]
     impl anaphase::adapters::ReasoningAdapter for CountingReasoning {
-        async fn reason(&self, _input: &str, _mode: &str) -> Result<String, String> {
+        async fn reason(&self, _input: &str, _mode: &str, _trace_id: &str) -> Result<String, String> {
             self.0.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             Ok("unused LLM output".to_string())
         }

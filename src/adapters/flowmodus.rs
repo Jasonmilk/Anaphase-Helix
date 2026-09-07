@@ -25,7 +25,7 @@ impl FlowModusAdapter {
 
 #[async_trait]
 impl ReasoningAdapter for FlowModusAdapter {
-    async fn reason(&self, _prompt: &str, _model: &str) -> Result<String, String> {
+    async fn reason(&self, _prompt: &str, _model: &str, _trace_id: &str) -> Result<String, String> {
         // Legacy HTTP implementation placeholder
         Ok("HTTP FlowModus is deprecated, use gRPC instead".to_string())
     }
@@ -51,7 +51,7 @@ impl GrpcFlowModusAdapter {
 
 #[async_trait]
 impl ReasoningAdapter for GrpcFlowModusAdapter {
-    async fn reason(&self, prompt: &str, model: &str) -> Result<String, String> {
+    async fn reason(&self, prompt: &str, model: &str, _trace_id: &str) -> Result<String, String> {
         let request = tonic::Request::new(ReasonRequest {
             prompt: prompt.to_string(),
             model: model.to_string(),

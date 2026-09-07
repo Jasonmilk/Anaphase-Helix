@@ -74,7 +74,7 @@ async fn run_closed_loop(
         ..AnaphaseConfig::default()
     };
     let llm = HttpReasoningAdapter::new(&cfg);
-    let content = llm.reason("plan", "left_brain").await.unwrap();
+    let content = llm.reason("plan", "left_brain", "t-test").await.unwrap();
 
     // Tentacle mock
     let (tent_endpoint, _captured, _tx, _handle) = spawn_mock_tentacle(tentacle_mock).await;
