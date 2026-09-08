@@ -295,3 +295,53 @@ async fn run_config_execution_placeholder() {
         "placeholder from config"
     );
 }
+
+/// Time-anchor injection (2026-09-09): the physical clock must reach the
+/// prompt with a full date — user-message arrival + current period — at
+/// zero tokens, from the single injected clock (ADR-0021).
+struct PromptRecordingReasoning {
+    pub seen_prompt: Arc<Mutex<Option<String>>>,
+}
+
+#[async_trait::async_trait]
+impl ReasoningAdapter for PromptRecordingReasoning {
+    async fn reason(&self, prompt: &str, _mode: &str, _trace_id: &str) -> Result<String, String> {
+        *self.seen_prompt.lock().unwrap() = Some(prompt.to_string());
+        Ok("no plan".to_string())
+    }
+}
+
+#[tokio::test]
+async fn time_anchor_injected_with_full_date() {
+    let seen = Arc::new(Mutex::new(None));
+    let mut agent = AgentLoop::new(
+        Arc::new(NoopMemoryAdapter),
+        Arc::new(PromptRecordingReasoning { seen_prompt: seen.clone() }),
+        Arc::new(NoopToolAdapter),
+        Arc::new(NoopSafetyAdapter),
+        Arc::new(NoopUiAdapter),
+        Arc::new(NoopFearAdapter),
+        ReflexArc { safety_rules: vec![] },
+    )
+    .with_clock(std::sync::Arc::new(FakeClock(1788393600))); // 2026-09-03T00:00:00Z
+    agent.identity_block = "GENE-LOCK\n".to_string();
+
+    agent.run_cycle("hello").await.unwrap();
+    let prompt = seen.lock().unwrap().clone().expect("prompt captured");
+    assert!(
+        prompt.contains("[time anchor — physical clock, 0 tokens]"),
+        "anchor section present: {prompt}"
+    );
+    assert!(
+        prompt.contains("user message at 2026-09-03 "),
+        "arrival anchor carries full date (host-local): {prompt}"
+    );
+    assert!(
+        prompt.contains("now: 2026-09-03 "),
+        "now anchor carries full date (host-local): {prompt}"
+    );
+    assert!(
+        prompt.contains("2026-09-03"),
+        "year/month/day must never collapse: {prompt}"
+    );
+}

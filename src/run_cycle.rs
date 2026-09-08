@@ -223,6 +223,12 @@ fn fold_memory_nodes(nodes: &[MemoryNode], budget: usize) -> String {
 #[derive(Debug, Clone, Default)]
 pub struct AgentContext {
     pub user_input: String,
+    /// Physical-clock time anchor (2026-09-09): when the user message
+    /// arrived (epoch secs from the single injected clock, ADR-0021).
+    /// Injected into the prompt at zero tokens so Helix never loses the
+    /// temporal anchor — memories without time misorder. Rendering reuses
+    /// `ledger::unix_secs_to_rfc3339` (one time source, one format).
+    pub input_at: u64,
     pub amygdala_vector: (f64, f64, f64),  // (heliotropism, pulse, vigilance)
     pub memory_nodes: Vec<MemoryNode>,
     /// Explicit continuation (2026-09-07): when the panel asks to resume a
@@ -550,6 +556,9 @@ impl AgentLoop {
 
     pub async fn run_cycle(&mut self, user_input: &str) -> Result<CycleOutcome, String> {
         self.context.user_input = user_input.to_string();
+        // Time anchor (2026-09-09): the user-message arrival instant, read
+        // from the single injected clock — physical fact, zero tokens.
+        self.context.input_at = self.clock.now();
         // Black box (ADR-0021): a cycle begins regardless of assembly.
         self.emit_cycle(
             "begin",
@@ -802,15 +811,31 @@ impl AgentLoop {
                     self.memory_inject_chars,
                     self.context.memory_nodes.len()
                 );
+                // Time anchor (2026-09-09, 0 tokens): the message-arrival
+                // instant and the current period instant, rendered in the
+                // host's local time with a numeric offset — the human's
+                // physical clock is the anchor (UTC would misorder days for
+                // an Asia/Shanghai user). Helix answers with a temporal
+                // anchor ("when did they say it", "when am I answering"),
+                // so memories stay ordered by physical time.
+                let anchor = format!(
+                    "\n[time anchor — physical clock, 0 tokens]\nuser message at {}\nnow: {}",
+                    crate::ledger::unix_secs_to_human_local(self.context.input_at),
+                    crate::ledger::unix_secs_to_human_local(self.clock.now()),
+                );
                 // L0 (gene lock) + L1 (tool awareness): the immutable identity
                 // and the on-demand tool list lead every cycle, so Helix knows
                 // who it is and what it can do before it thinks.
                 let prompt = if !self.identity_block.is_empty() {
                     format!("{}
 
-{}", self.identity_block, self.context.user_input)
+{}
+
+{}", self.identity_block, anchor, self.context.user_input)
                 } else {
-                    self.context.user_input.clone()
+                    format!("{}
+
+{}", anchor, self.context.user_input)
                 };
                 // O-5 (ADR-0023): on-demand injection — the request carries
                 // only what this round needs. Memory nodes (retrieved in
@@ -892,7 +917,7 @@ impl AgentLoop {
                 // budget plus a bounded direct-answer retry). Retry budget
                 // comes from RunCycleConfig (0 = never retry).
                 let retries = self.run_config.empty_reply_retries;
-                let mut output = String::new();
+                let output: String;
                 let mut attempt = 0u32;
                 let mut effective_prompt = prompt;
                 let thinking_sink = std::sync::Arc::new(std::sync::Mutex::new(String::new()));

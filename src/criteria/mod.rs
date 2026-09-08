@@ -149,14 +149,60 @@ pub fn ratio_band(numerator: f64, denominator: f64, min: f64) -> CheckReport {
     }
 }
 
-/// Passes when the executor reported structured success and echoed args back.
-/// Zero thresholds: structural contract only (D'-4).
-pub fn exec_ok(ok_flag: bool, echoed: bool) -> CheckReport {
-    let passed = ok_flag && echoed;
+/// Passes when the executor reported structured success (tool layer).
+/// Zero thresholds: structural contract only (D'-4). The delivery question
+/// ("did the answer reach the human") is a separate check — exec_ok must
+/// not conflate tool success with answer delivery (2026-09-09: the mcp
+/// wrapper echo check made flat-contract tools like calc fail every run).
+pub fn exec_ok(ok_flag: bool) -> CheckReport {
     CheckReport {
         check: "exec_ok".into(),
-        passed,
-        detail: format!("ok={ok_flag} echo={echoed}"),
+        passed: ok_flag,
+        detail: format!("ok={ok_flag}"),
+        judge: "rule".into(),
+        gate: "hard".into(),
+        expect: String::new(),
+        evidence_id: String::new(),
+    }
+}
+
+/// Passes when the tool produced a business result (delivery layer, judged
+/// at the tool boundary — the strongest fact the criteria layer can see).
+/// Detects a non-empty result field across both known contracts:
+/// flat `{"ok":true,"result":...}` (Tentacle tools: calc/numbers/rate/text)
+/// and the mcp_proxy wrapper `{"ok":true,"data":{"params":...}}`. The SSE
+/// delivery itself is a transport fact owned by the /v1/chat handler; this
+/// check closes the loop at the tool edge without guessing beyond it.
+pub fn answer_delivered(ok_flag: bool, data: &serde_json::Value) -> CheckReport {
+    let has_result = [
+        "result",
+        "series",
+        "numerator",
+        "denominator",
+        "trend_a",
+        "trend_b",
+    ]
+    .iter()
+    .any(|k| {
+        data.get(*k)
+            .map(|v| !v.is_null() && v != &serde_json::Value::String(String::new()))
+            .unwrap_or(false)
+    });
+    let mcp_echo = data
+        .get("data")
+        .and_then(|d| d.get("params"))
+        .map(|p| !p.is_null())
+        .unwrap_or(false);
+    let delivered = ok_flag && (has_result || mcp_echo);
+    let detail = if delivered {
+        "result produced, delivery confirmed at tool edge".to_string()
+    } else {
+        "no business result in tool return".to_string()
+    };
+    CheckReport {
+        check: "answer.delivered".into(),
+        passed: delivered,
+        detail,
         judge: "rule".into(),
         gate: "hard".into(),
         expect: String::new(),
@@ -205,15 +251,14 @@ pub fn run_for_expect(expect: &Expect, data: &serde_json::Value, params: &RulePa
             attach(vec![divergence(trend_a, trend_b)])
         }
         Expect::Ok => {
-            // D'-4: structured execution success. The executor contract echoes
-            // `{"ok": true, "data": {"tool", "params", ...}}` (mcp_proxy.js).
+            // D'-4: structured execution success — two checks, one per layer
+            // (2026-09-09 split, ADR-0015 Engram review): exec_ok owns the
+            // tool layer (did the tool run), answer.delivered owns the
+            // delivery layer (did it produce a business result). Both
+            // contracts pass: flat `{"ok":true,"result":...}` (Tentacle
+            // calc/numbers/rate) and mcp_proxy `{"ok":true,"data":{...}}`.
             let ok_flag = data.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
-            let echoed = data
-                .get("data")
-                .and_then(|d| d.get("params"))
-                .map(|p| !p.is_null())
-                .unwrap_or(false);
-            attach(vec![exec_ok(ok_flag, echoed)])
+            attach(vec![exec_ok(ok_flag), answer_delivered(ok_flag, data)])
         }
     }
 }
@@ -285,23 +330,37 @@ mod tests {
 
     #[test]
     fn ok_mapping_full_pass() {
+        // mcp_proxy wrapper contract: data.params echo present.
         let data = serde_json::json!({"ok": true, "data": {"tool": "t", "params": {"x": 1}}});
         let reports = run_for_expect(&Expect::Ok, &data, &params());
-        assert_eq!(reports.len(), 1);
-        assert!(reports[0].passed, "{reports:?}");
+        assert_eq!(reports.len(), 2, "two checks: exec_ok + answer.delivered");
+        assert!(reports.iter().all(|r| r.passed), "{reports:?}");
     }
 
     #[test]
-    fn ok_mapping_fails_closed_on_missing_echo() {
+    fn ok_mapping_flat_contract_passes() {
+        // Tentacle flat contract: {"ok": true, "result": ...} — the calc
+        // bug (2026-09-09): exec_ok must not require the mcp wrapper.
+        let data = serde_json::json!({"ok": true, "result": "40353607"});
+        let reports = run_for_expect(&Expect::Ok, &data, &params());
+        assert_eq!(reports.len(), 2);
+        assert!(reports.iter().all(|r| r.passed), "{reports:?}");
+        assert_eq!(reports[0].check, "exec_ok");
+        assert_eq!(reports[1].check, "answer.delivered");
+    }
+
+    #[test]
+    fn ok_mapping_fails_closed_on_missing_result() {
         let data = serde_json::json!({"ok": true});
         let reports = run_for_expect(&Expect::Ok, &data, &params());
-        assert!(!reports[0].passed, "missing params echo must fail");
+        assert!(reports[0].passed, "tool ran ok");
+        assert!(!reports[1].passed, "no business result must fail delivery");
     }
 
     #[test]
     fn ok_mapping_fails_closed_on_ok_false() {
         let data = serde_json::json!({"ok": false, "data": {"tool": "t", "params": {}}});
         let reports = run_for_expect(&Expect::Ok, &data, &params());
-        assert!(!reports[0].passed, "ok=false must fail");
+        assert!(reports.iter().all(|r| !r.passed), "ok=false must fail all");
     }
 }

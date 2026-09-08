@@ -127,6 +127,27 @@ pub fn unix_secs_to_rfc3339(secs: u64) -> String {
         .unwrap_or_else(|| "1970-01-01T00:00:00Z".to_string())
 }
 
+/// Render unix seconds as a human-readable UTC timestamp for prompt
+/// injection (2026-09-09): full date `2026-09-09 03:01:51 UTC` — the
+/// year/month/day must never collapse to HH:MM (cross-day misorder).
+/// Same single time source as `unix_secs_to_rfc3339`; deterministic.
+pub fn unix_secs_to_human_utc(secs: u64) -> String {
+    chrono::DateTime::from_timestamp(secs as i64, 0)
+        .map(|dt| dt.format("%Y-%m-%d %H:%M:%S UTC").to_string())
+        .unwrap_or_else(|| "1970-01-01 00:00:00 UTC".to_string())
+}
+
+/// Render unix seconds in the host's local timezone with a numeric offset
+/// (2026-09-09): the human's physical clock is the anchor — injecting UTC
+/// when the user lives in Asia/Shanghai misorders days (UTC 20:59 is local
+/// next-day 04:59). Full date + numeric offset: `2026-09-09 04:59:08 +08:00`
+/// — unambiguous, deterministic per host timezone.
+pub fn unix_secs_to_human_local(secs: u64) -> String {
+    chrono::DateTime::from_timestamp(secs as i64, 0)
+        .map(|dt| dt.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M:%S %z").to_string())
+        .unwrap_or_else(|| "1970-01-01 00:00:00 +0000".to_string())
+}
+
 /// Append-only ledger. Records are never mutated or removed.
 pub struct Ledger {
     records: Vec<LedgerRecord>,
@@ -244,5 +265,36 @@ mod tests {
         assert_eq!(unix_secs_to_rfc3339(1000), "1970-01-01T00:16:40Z");
         // A realistic moment (2026-09-03T00:00:00Z) — deterministic UTC rendering.
         assert_eq!(unix_secs_to_rfc3339(1788393600), "2026-09-03T00:00:00Z");
+    }
+
+    #[test]
+    fn unix_secs_to_human_utc_carries_full_date() {
+        // 2026-09-03T00:00:00Z — the full year/month/day must survive
+        // (2026-09-09 requirement: never collapse to HH:MM).
+        assert_eq!(unix_secs_to_human_utc(1788393600), "2026-09-03 00:00:00 UTC");
+        assert_eq!(unix_secs_to_human_utc(0), "1970-01-01 00:00:00 UTC");
+        // Deterministic: same seconds → same string.
+        assert_eq!(unix_secs_to_human_utc(1788393600), unix_secs_to_human_utc(1788393600));
+    }
+
+    #[test]
+    fn unix_secs_to_human_local_carries_full_date_and_offset() {
+        let s = unix_secs_to_human_local(1788393600);
+        // Full date survives regardless of host timezone (worst offset
+        // cannot move 2026-09-03T00:00:00Z out of September 3rd... except
+        // UTC-12: keep the assertion on structure, not the day).
+        assert!(s.starts_with("2026-09-"), "date prefix survives: {s}");
+        // HH:MM:SS present.
+        assert_eq!(&s[11..13].parse::<u32>().unwrap_or(99) < &24, true, "hour range: {s}");
+        assert_eq!(s.chars().nth(10), Some(' '), "date/time separator: {s}");
+        // Numeric offset suffix: +HHMM / -HHMM (5 chars).
+        let tail: String = s.chars().skip(19).take(6).collect();
+        assert_eq!(tail.len(), 6, "HH:MM:SS + offset: {s}");
+        assert!(
+            tail.chars().all(|c| c.is_ascii_digit() || c == ':' || c == '+' || c == '-' || c == ' '),
+            "offset shape: {s}"
+        );
+        // Deterministic per host timezone.
+        assert_eq!(unix_secs_to_human_local(1788393600), unix_secs_to_human_local(1788393600));
     }
 }
