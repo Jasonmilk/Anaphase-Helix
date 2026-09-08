@@ -26,21 +26,24 @@ impl GrpcTentacleAdapter {
         Ok(Self { client })
     }
 
-    /// List registered tool manifests (name + description) for L1 tool
-    /// awareness injection — Helix must know what it can do, on demand.
-    pub async fn list_tools(&mut self) -> Result<Vec<(String, String)>, String> {
-        let resp = self
-            .client
-            .list_manifests(ListManifestsRequest {})
-            .await
-            .map_err(|e| e.to_string())?;
-        Ok(resp
-            .into_inner()
-            .manifests
-            .into_iter()
-            .map(|m| (m.name, m.description))
-            .collect())
-    }
+    /// List registered tool manifests (name + description + parameter names +
+/// source tags) for L1 tool awareness injection — Helix must know what it
+/// can do and how to call each tool, on demand. Parameter names come from
+/// the tool schema (single source of truth, 2026-09-09: no guessing `city`
+/// vs `location`); tags classify the source tier (fixture / mcp).
+pub async fn list_tools(&mut self) -> Result<Vec<(String, String, Vec<String>, Vec<String>)>, String> {
+    let resp = self
+        .client
+        .list_manifests(ListManifestsRequest {})
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(resp
+        .into_inner()
+        .manifests
+        .into_iter()
+        .map(|m| (m.name, m.description, m.parameter_names, m.tags))
+        .collect())
+}
 
     /// Execute a tool with a raw JSON params string (M1 pipeline entry point).
     ///

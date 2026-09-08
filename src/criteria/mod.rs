@@ -168,26 +168,23 @@ pub fn exec_ok(ok_flag: bool) -> CheckReport {
 
 /// Passes when the tool produced a business result (delivery layer, judged
 /// at the tool boundary — the strongest fact the criteria layer can see).
-/// Detects a non-empty result field across both known contracts:
-/// flat `{"ok":true,"result":...}` (Tentacle tools: calc/numbers/rate/text)
-/// and the mcp_proxy wrapper `{"ok":true,"data":{"params":...}}`. The SSE
-/// delivery itself is a transport fact owned by the /v1/chat handler; this
-/// check closes the loop at the tool edge without guessing beyond it.
+/// Delivers whenever the tool return carries any non-protocol field with a
+/// real value. Exclusion list (protocol meta) instead of a business-field
+/// whitelist: new tools keep working without a criteria patch (0 硬编码,
+/// 2026-09-09: calc result / web_search results / weather weather all pass
+/// without enumeration).
+const PROTO_META_FIELDS: [&str; 4] = ["ok", "error", "note", "duration_ms"];
 pub fn answer_delivered(ok_flag: bool, data: &serde_json::Value) -> CheckReport {
-    let has_result = [
-        "result",
-        "series",
-        "numerator",
-        "denominator",
-        "trend_a",
-        "trend_b",
-    ]
-    .iter()
-    .any(|k| {
-        data.get(*k)
-            .map(|v| !v.is_null() && v != &serde_json::Value::String(String::new()))
-            .unwrap_or(false)
-    });
+    let has_result = data
+        .as_object()
+        .map(|o| {
+            o.iter().any(|(k, v)| {
+                !PROTO_META_FIELDS.contains(&k.as_str())
+                    && !v.is_null()
+                    && v != &serde_json::Value::String(String::new())
+            })
+        })
+        .unwrap_or(false);
     let mcp_echo = data
         .get("data")
         .and_then(|d| d.get("params"))
@@ -347,6 +344,15 @@ mod tests {
         assert!(reports.iter().all(|r| r.passed), "{reports:?}");
         assert_eq!(reports[0].check, "exec_ok");
         assert_eq!(reports[1].check, "answer.delivered");
+    }
+
+    #[test]
+    fn ok_mapping_web_search_results_pass() {
+        // web_search contract: {"ok": true, "results": [...]} (2026-09-09:
+        // answer.delivered must not reject the plural results field).
+        let data = serde_json::json!({"ok": true, "results": [{"title": "t", "url": "u"}]});
+        let reports = run_for_expect(&Expect::Ok, &data, &params());
+        assert!(reports.iter().all(|r| r.passed), "{reports:?}");
     }
 
     #[test]

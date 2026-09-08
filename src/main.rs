@@ -958,10 +958,37 @@ async fn build_identity_block(config: &anaphase::config::Config) -> String {
             {
                 if let Ok(tools) = adapter.list_tools().await {
                     if !tools.is_empty() {
-                        let lines: Vec<String> = tools
-                            .iter()
-                            .map(|(name, desc)| format!("- {}: {}", name, desc))
-                            .collect();
+                        // Group by source tag (fixture / mcp, schema-declared):
+                        // source = trust tier — Helix sees where a tool comes
+                        // from, on demand (2026-09-09, 按需加载·按需驱动).
+                        let mut fixture: Vec<String> = Vec::new();
+                        let mut mcp: Vec<String> = Vec::new();
+                        let mut other: Vec<String> = Vec::new();
+                        for (name, desc, params, tags) in tools {
+                            let sig = if params.is_empty() {
+                                name.clone()
+                            } else {
+                                format!("{}({})", name, params.join(","))
+                            };
+                            let line = format!("{}: {}", sig, desc);
+                            if tags.iter().any(|t| t == "fixture") {
+                                fixture.push(line);
+                            } else if tags.iter().any(|t| t == "mcp") {
+                                mcp.push(line);
+                            } else {
+                                other.push(line);
+                            }
+                        }
+                        let mut lines: Vec<String> = Vec::new();
+                        if !fixture.is_empty() {
+                            lines.push(format!("tentacle·fixture: {}", fixture.join(" | ")));
+                        }
+                        if !mcp.is_empty() {
+                            lines.push(format!("tentacle·mcp: {}", mcp.join(" | ")));
+                        }
+                        if !other.is_empty() {
+                            lines.push(format!("tentacle: {}", other.join(" | ")));
+                        }
                         parts.push(format!(
                             "[tools available — use them before guessing; 0-token tools first, then few-token, then big LLM]\n{}\n\
 When you need a tool, end your reply with ONLY: {{\"calls\":[{{\"tool\":\"NAME\",\"args\":{{...}},\"expect\":\"ok\"}}]}} — no markdown, no prose.",
