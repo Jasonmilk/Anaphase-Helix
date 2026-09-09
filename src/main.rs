@@ -1000,5 +1000,57 @@ When you need a tool, end your reply with ONLY: {{\"calls\":[{{\"tool\":\"NAME\"
         }
     }
 
+    // ---- runtime environment: physical facts of the machine I run on ----
+    // (0 tokens, probed once at startup — survival knowledge, not a guess).
+    let mut env_lines: Vec<String> = Vec::new();
+    if let Some(h) = sysinfo::System::host_name() {
+        env_lines.push(format!("host: {}", h));
+    }
+    if let Some(os) = sysinfo::System::long_os_version() {
+        env_lines.push(format!("os: {}", os));
+    }
+    {
+        let mut sys = sysinfo::System::new_all();
+        sys.refresh_cpu_usage();
+        sys.refresh_memory();
+        let cpus = sys.cpus();
+        if let Some(first) = cpus.first() {
+            let brand = first.brand().trim().to_string();
+            if !brand.is_empty() {
+                env_lines.push(format!("cpu: {} ({} cores)", brand, cpus.len()));
+            } else {
+                env_lines.push(format!("cpu: {} cores", cpus.len()));
+            }
+        }
+        let mem_gb = sys.total_memory() as f64 / (1024.0 * 1024.0 * 1024.0);
+        env_lines.push(format!("mem: {:.1} GB total", mem_gb));
+    }
+    // Local ecosystem services running beside me (from config, not probing —
+    // the endpoints I was told to talk to; deterministic, no network calls).
+    let mut svc: Vec<String> = Vec::new();
+    for (name, ep) in [
+        ("mind", &config.anaphase.mind_endpoint),
+        ("flowmodus", &config.anaphase.flowmodus_endpoint),
+        ("tentacle", &config.anaphase.tentacle_endpoint),
+        ("tuck", &config.anaphase.tuck_endpoint),
+        ("cellrix", &config.anaphase.cellrix_endpoint),
+    ] {
+        if let Some(e) = ep {
+            let e = e.trim();
+            if !e.is_empty() {
+                svc.push(format!("{}@{}", name, e));
+            }
+        }
+    }
+    if !svc.is_empty() {
+        env_lines.push(format!("local services: {}", svc.join(" | ")));
+    }
+    if !env_lines.is_empty() {
+        parts.push(format!(
+            "[runtime environment — physical facts, 0 tokens]\n{}",
+            env_lines.join("\n")
+        ));
+    }
+
     parts.join("\n\n")
 }
