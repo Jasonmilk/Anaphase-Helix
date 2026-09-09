@@ -48,6 +48,9 @@ pub struct AnaphaseConfig {
     pub reasoning_endpoint: Option<String>,
     pub reasoning_model: Option<String>,
     pub reasoning_api_key: Option<String>,
+    /// Tuck multi-upstream route tier (`X-Route-Tier` header). Empty = default
+    /// upstream (paid/单上游兼容). e.g. "free" for the free API pool.
+    pub reasoning_route_tier: Option<String>,
     pub reasoning_max_tokens: Option<u32>,
 
     /// 纪元会话笔记路径（P10c T1 强制苏醒/认知脱水）：默认 "session_notes.json"
@@ -290,6 +293,7 @@ impl Default for AnaphaseConfig {
             reasoning_endpoint: None,
             reasoning_model: None,
             reasoning_api_key: None,
+            reasoning_route_tier: None,
             reasoning_max_tokens: None,
 
             session_notes_path: None,
@@ -374,6 +378,7 @@ mod tests {
                 reasoning_endpoint: None,
                 reasoning_model: None,
                 reasoning_api_key: None,
+                reasoning_route_tier: None,
                 reasoning_max_tokens: None,
                 session_notes_path: None,
                 events_log_path: None,

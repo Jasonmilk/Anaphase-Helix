@@ -6,6 +6,7 @@ pub struct HttpReasoningAdapter {
     endpoint: String,
     model: String,
     api_key: Option<String>,
+    route_tier: Option<String>,
     max_tokens: u32,
     client: reqwest::Client,
 }
@@ -16,6 +17,7 @@ impl HttpReasoningAdapter {
             endpoint: config.reasoning_endpoint.clone().unwrap_or_default(),
             model: config.reasoning_model.clone().unwrap_or_default(),
             api_key: config.reasoning_api_key.clone(),
+            route_tier: config.reasoning_route_tier.clone(),
             max_tokens: config.reasoning_max_tokens.unwrap_or(2048),
             // No idle connection reuse: a gateway-closed keep-alive makes the
             // second call fail with EAGAIN (os error 35). Fresh connect per
@@ -47,6 +49,9 @@ impl HttpReasoningAdapter {
         // records it as the trace_id, so chain + body trace + ledger share
         // one join key in Cellrix's Engram view (missing header = "local").
         req = req.header("x-tuck-trace", trace_id);
+        if let Some(ref tier) = self.route_tier {
+            req = req.header("X-Route-Tier", tier);
+        }
         if let Some(ref key) = self.api_key {
             req = req.header("Authorization", format!("Bearer {}", key));
         }
