@@ -354,6 +354,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // true history so the new period continues the
                     // conversation instead of meeting a stranger.
                     if let Some(job) = body.get("job_id").and_then(|v| v.as_str()) {
+                        // Machine-readable parent for Engram threading
+                        // (session list aggregation).
+                        built.agent.context.resume_job = Some(job.to_string());
                         if let Some(dir) = &cfg.anaphase.session_events_path {
                             let resume = anaphase::session_events::read_summary(
                                 &std::path::PathBuf::from(dir),
@@ -398,14 +401,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // final `done`/`error` line. The client always sees
                         // events before the verdict, in order.
                         let body = axum::body::Body::from_stream(futures_util::stream::unfold(
-                            (rx, Some(done_rx), None),
-                            |(mut rx, mut done, pending)| async move {
+                            (rx, Some(done_rx), None, anaphase::contract::derive_job_id(&msg)),
+                            |(mut rx, mut done, pending, job_id)| async move {
                                 let pending = match pending {
                                     Some(p) => p,
                                     None => tokio::select! {
                                         Some(d) = rx.recv() => {
                                             let line = format!("data: {}\n\n", serde_json::json!({"delta": d.content, "think": d.thinking}));
-                                            return Some((Ok::<_, std::convert::Infallible>(axum::body::Bytes::from(line)), (rx, done, None)));
+                                            return Some((Ok::<_, std::convert::Infallible>(axum::body::Bytes::from(line)), (rx, done, None, job_id)));
                                         }
                                         r = async {
                                             match done.as_mut() {
@@ -426,14 +429,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 // Draining: flush buffered deltas first.
                                 if let Some(d) = rx.recv().await {
                                     let line = format!("data: {}\n\n", serde_json::json!({"delta": d.content, "think": d.thinking}));
-                                    return Some((Ok::<_, std::convert::Infallible>(axum::body::Bytes::from(line)), (rx, done, Some(pending))));
+                                    return Some((Ok::<_, std::convert::Infallible>(axum::body::Bytes::from(line)), (rx, done, Some(pending), job_id)));
                                 }
                                 // Channel drained: emit the terminal line once.
+                                // job_id anchors the continuation thread: the
+                                // client sets it as the next resume_from, so
+                                // consecutive messages stay one conversation.
                                 let (line, next) = match pending {
-                                    Ok(reply) => (format!("data: {}\n\n", serde_json::json!({"done": true, "reply": reply})), None),
+                                    Ok(reply) => (format!(
+                                        "data: {}\n\n",
+                                        serde_json::json!({
+                                            "done": true,
+                                            "reply": reply,
+                                            "job_id": job_id,
+                                        })
+                                    ), None),
                                     Err(e) => (format!("data: {}\n\n", serde_json::json!({"error": e})), None),
                                 };
-                                Some((Ok::<_, std::convert::Infallible>(axum::body::Bytes::from(line)), (rx, done, next)))
+                                Some((Ok::<_, std::convert::Infallible>(axum::body::Bytes::from(line)), (rx, done, next, job_id)))
                             },
                         ));
                         return (
@@ -451,7 +464,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             *shared.lock().unwrap() = Some(built.agent.capture());
                             (StatusCode::OK, Json(serde_json::json!({
                                 "reply": built.agent.context.reasoning_output,
-                                "done": out.done
+                                "done": out.done,
+                                "job_id": anaphase::contract::derive_job_id(&msg),
                             })))
                         }
                         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": e }))),

@@ -46,6 +46,11 @@ pub enum EventType {
     Check,
     /// The criteria verdict (MET / UNMET / blocked).
     Verdict,
+    /// The assistant's final answer of the period (the deliverable that
+    /// closes the Engram chain: user → think → attempt → tools → verdict →
+    /// reply → end). Empty reply = the honest zero-length answer, emitted
+    /// anyway so the chain never silently loses the deliverable.
+    AssistantReply,
     /// The period ended and returned to Perception.
     TurnEnd,
 }
@@ -62,6 +67,7 @@ impl EventType {
             EventType::ToolResult => "tool/result",
             EventType::Check => "check/status",
             EventType::Verdict => "verdict/status",
+            EventType::AssistantReply => "assistant/reply",
             EventType::TurnEnd => "turn/end",
         }
     }
@@ -96,9 +102,16 @@ impl SessionEventStream {
     pub fn open(dir: PathBuf, job_id: &str, redact: Redaction) -> io::Result<Self> {
         fs::create_dir_all(&dir)?;
         let path = dir.join(format!("{job_id}.events.jsonl"));
+        // One period = one event file (truncate). job_id derives from the
+        // input (ADR-0006 deterministic replay), so a re-sent identical
+        // input lands in the same file — the period ledger holds the LATEST
+        // execution, and the full history lives in the Tuck audit chain.
+        // Appending would interleave two periods in one stream and break
+        // the Engram chain (verified: duplicate turn groups).
         let file = fs::OpenOptions::new()
             .create(true)
-            .append(true)
+            .write(true)
+            .truncate(true)
             .open(&path)?;
         Ok(SessionEventStream {
             seq: 0,
@@ -320,6 +333,7 @@ mod tests {
         assert_eq!(EventType::ToolCall.as_str(), "tool/call");
         assert_eq!(EventType::ToolResult.as_str(), "tool/result");
         assert_eq!(EventType::Verdict.as_str(), "verdict/status");
+        assert_eq!(EventType::AssistantReply.as_str(), "assistant/reply");
         assert_eq!(EventType::TurnEnd.as_str(), "turn/end");
     }
 
@@ -455,6 +469,12 @@ pub struct PeriodSummary {
     pub count: u64,
     /// Bounded first-human-prompt preview (protocol default 120 chars).
     pub preview: String,
+    /// Bounded assistant reply preview (protocol default 200 chars) — the
+    /// deliverable of the period, so a session list is never blind.
+    pub reply: String,
+    /// Continuation parent (`context/inject.resume_from`): this period is a
+    /// direct continuation of that one. Null = a fresh conversation root.
+    pub parent: Option<String>,
     /// Human-chosen experience name (`{job_id}.name` sidecar), if any.
     pub name: Option<String>,
 }
@@ -516,6 +536,8 @@ pub fn list_periods(dir: &std::path::Path, limit: usize) -> io::Result<Vec<Perio
         let mut first_ts = String::new();
         let mut last_ts = String::new();
         let mut preview = String::new();
+        let mut reply = String::new();
+        let mut parent = None;
         let mut count: u64 = 0;
         for line in body.lines() {
             if line.trim().is_empty() {
@@ -538,6 +560,21 @@ pub fn list_periods(dir: &std::path::Path, limit: usize) -> io::Result<Vec<Perio
                     preview = t.chars().take(120).collect();
                 }
             }
+            // Reply preview = the first assistant/reply deliverable. Bounded
+            // (protocol default 200 chars) — the list answers "what did it
+            // say?", not a full transcript.
+            if reply.is_empty() && row.event_type == EventType::AssistantReply.as_str() {
+                if let Some(t) = row.data.get("text").and_then(|v| v.as_str()) {
+                    reply = t.chars().take(200).collect();
+                }
+            }
+            // Continuation parent: context/inject carries resume_from when
+            // this period was resumed from a previous one (session thread).
+            if parent.is_none() && row.event_type == EventType::ContextInject.as_str() {
+                if let Some(r) = row.data.get("resume_from").and_then(|v| v.as_str()) {
+                    parent = Some(r.to_string());
+                }
+            }
             last_ts = row.time;
         }
         if count == 0 {
@@ -549,6 +586,8 @@ pub fn list_periods(dir: &std::path::Path, limit: usize) -> io::Result<Vec<Perio
             last_ts,
             count,
             preview,
+            reply,
+            parent,
             name: period_name(dir, job_id),
         });
     }

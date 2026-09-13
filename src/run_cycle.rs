@@ -232,6 +232,11 @@ pub struct AgentContext {
     /// here as true history — the new period opens as a continuation, not a
     /// fresh stranger.
     pub resume: Option<String>,
+    /// Continuation parent (2026-09-14): the machine-readable job id of the
+    /// resumed period. Engram threads periods on THIS (session list
+    /// aggregation), while `resume` carries the human-readable summary for
+    /// prompt injection. One continuation, two carriers.
+    pub resume_job: Option<String>,
     pub reasoning_output: String,
     /// Private reasoning (thinking) accumulated from the streaming sink
     /// (ADR-0029). Persisted as `assistant/think` (redacted, display-only).
@@ -625,6 +630,18 @@ impl AgentLoop {
                 // Session event: the period ended (back to Perception).
                 if let Some(ev) = self.session_events.as_mut() {
                     let ts = crate::ledger::unix_secs_to_rfc3339(self.clock.now());
+                    // The deliverable closes the Engram chain: user → think →
+                    // attempt → tools → verdict → REPLY → end. Emitted even
+                    // when empty (honest zero-length answer), so the chain
+                    // never silently loses what Helix actually said.
+                    let _ = ev.emit(
+                        &ts,
+                        crate::session_events::EventType::AssistantReply,
+                        serde_json::json!({
+                            "text": self.context.reasoning_output,
+                            "chars": self.context.reasoning_output.chars().count(),
+                        }),
+                    );
                     let _ = ev.emit(
                         &ts,
                         crate::session_events::EventType::TurnEnd,
@@ -633,6 +650,7 @@ impl AgentLoop {
                             "success": outcome.success,
                             "impasse": outcome.impasse,
                             "verdict": self.context.last_verdict,
+                            "reply": self.context.reasoning_output,
                         }),
                     );
                 }
@@ -888,12 +906,21 @@ impl AgentLoop {
                 let detail = self.memory_choice_detail();
                 if let Some(ev) = self.session_events.as_mut() {
                     let ts = crate::ledger::unix_secs_to_rfc3339(self.clock.now());
+                    // resume_from = machine-readable parent job id when this
+                    // period continues a previous one (Engram threading);
+                    // legacy fallback keeps the human summary for old
+                    // callers that never sent a job_id.
+                    let resume_from = self
+                        .context
+                        .resume_job
+                        .as_deref()
+                        .or(self.context.resume.as_deref());
                     let _ = ev.emit_period_start(
                         &ts,
                         &self.context.user_input,
                         self.context.memory_nodes.len(),
                         self.memory_inject_chars,
-                        self.context.resume.as_deref(),
+                        resume_from,
                         detail.as_ref(),
                     );
                 }
