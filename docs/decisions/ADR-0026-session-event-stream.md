@@ -33,14 +33,21 @@ Anaphase run_cycle 每轮（一个认知周期）向 `session_events_path` 目�
 |---|---|---|
 | `turn/start` | `{}` | 认知周期开始（进入状态机） |
 | `user/message` | `{text}` | 人类原始输入（写前脱敏） |
-| `context/inject` | `{nodes, chars}` | 记忆/认知注入摘要（正文在 trace） |
+| `context/inject` | `{nodes, chars, resume_from}` | 记忆/认知注入摘要（正文在 trace）；`resume_from` = 续接父 job_id（机器可读，Engram 线程化）或旧格式摘要文本 |
+| `assistant/think` | `{text}` | 私有推理（脱敏，仅展示） |
 | `assistant/attempt` | `{text}` | Reasoning 输出（脱敏） |
 | `tool/call` | `{tool, index, expect}` | 确定性工具调用 |
 | `tool/result` | `{tool, ok, duration_ms, data}` | 执行结果（evidence 行摘要） |
+| `check/status` | `{check_id, check, expect, actual, gate}` | 判据执行（hard/soft，judge=谁判的） |
 | `verdict/status` | `{job_id, status}` | criteria 判据（MET/UNMET/blocked） |
-| `turn/end` | `{done, success, impasse}` | 周期结束，回 Perception |
+| `assistant/reply` | `{text, chars}` | 交付物：最终回答（verdict 与 turn/end 之间；空回答也诚实发出） |
+| `turn/end` | `{done, success, impasse, reply}` | 周期结束，回 Perception；`reply` = 最终回答冗余字段（消费端可直接取） |
 
 每行 `{type, seq, time, data}`：`seq` 周期内单调（确定性重放），`time` 注入时钟的 RFC3339（可重放）。
+
+### D2b: 会话线程化（2026-09-14 修订）
+
+连续对话 = 一个根周期 + 一串续接：`/v1/chat` 的 done 事件携带 `job_id`（`derive_job_id(input)`），客户端将其设为下一次的 resume 锚点；后端把该 job 写入 `context.resume_job`，`context/inject.resume_from` 优先携带 job_id（机器可读父链），`resume` 字段仍承载人读摘要用于 prompt 注入。会话列表按 `resume_from` 聚合（根卡片 + 续接子条目）。事件文件按周期 truncate：同输入重发 = 同 job（ADR-0006 确定性），周期账本保留**最近一次执行**，完整历史在 Tuck 审计链。
 
 ### D3: 写前脱敏（不建敏感数据湖）
 
