@@ -153,6 +153,15 @@ pub struct StreamDelta {
 
 #[async_trait]
 pub trait ReasoningAdapter: Send + Sync {
+    /// The physical model that actually served the last round trip
+    /// (ADR-0036): the upstream OpenAI-compatible response's `model` field —
+    /// the routed fact, not the config's declared name. Default None: only
+    /// adapters that see the upstream response override this. Zero tokens —
+    /// it is response metadata already on the wire, never a prompt cost.
+    fn last_model(&self) -> Option<String> {
+        None
+    }
+
     /// Run one reasoning round trip. `trace_id` is the derived job id —
     /// carried to the gateway (x-tuck-trace) so the Tuck audit chain, the
     /// Anaphase body trace and the ledger share one join key (Engram).

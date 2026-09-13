@@ -30,6 +30,10 @@ pub struct HttpReasoningAdapter {
     /// OpenAI-compatible channel contract, not a prompt trick.
     system_prompt: Option<String>,
     client: reqwest::Client,
+    /// Physical model that served the last round trip (ADR-0036): captured
+    /// from the upstream response `model` field. Shared across the buffered
+    /// and streaming paths; read by run_cycle via `last_model()`.
+    last_model: std::sync::Arc<std::sync::Mutex<Option<String>>>,
 }
 
 impl HttpReasoningAdapter {
@@ -41,6 +45,7 @@ impl HttpReasoningAdapter {
             route_tier: config.reasoning_route_tier.clone(),
             max_tokens: config.reasoning_max_tokens.unwrap_or(2048),
             system_prompt,
+            last_model: std::sync::Arc::new(std::sync::Mutex::new(None)),
             // No idle connection reuse: a gateway-closed keep-alive makes the
             // second call fail with EAGAIN (os error 35). Fresh connect per
             // call is deterministic — the cheap local-LLM path pays no TLS,
@@ -52,6 +57,13 @@ impl HttpReasoningAdapter {
         }
     }
 
+    fn capture_model(&self, json: &serde_json::Value) {
+        if let Some(m) = json.get("model").and_then(|v| v.as_str()) {
+            if !m.is_empty() {
+                *self.last_model.lock().unwrap() = Some(m.to_string());
+            }
+        }
+    }
     /// Shared chat-completions request: streaming flag + trace header + auth.
     async fn post_chat(
         &self,
@@ -83,9 +95,17 @@ impl HttpReasoningAdapter {
 
 #[async_trait]
 impl ReasoningAdapter for HttpReasoningAdapter {
+    /// Physical model that served the last round trip (ADR-0036): the
+    /// upstream response's model field — the routed fact. Read via the
+    /// trait object by run_cycle (inherent impl would never be reached).
+    fn last_model(&self) -> Option<String> {
+        self.last_model.lock().unwrap().clone()
+    }
+
     async fn reason(&self, prompt: &str, _model: &str, trace_id: &str) -> Result<String, String> {
         let resp = self.post_chat(prompt, trace_id, false).await?;
         let json: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+        self.capture_model(&json);
         json["choices"][0]["message"]["content"]
             .as_str()
             .map(|s| s.to_string())
@@ -116,6 +136,7 @@ impl ReasoningAdapter for HttpReasoningAdapter {
         // fallback: buffer, emit once.
         if !ct.contains("text/event-stream") {
             let json: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+            self.capture_model(&json);
             let full = json["choices"][0]["message"]["content"]
                 .as_str()
                 .unwrap_or("")
@@ -152,6 +173,7 @@ impl ReasoningAdapter for HttpReasoningAdapter {
                             break 'outer;
                         }
                         if let Ok(v) = serde_json::from_str::<serde_json::Value>(payload) {
+                            self.capture_model(&v);
                             let delta = &v["choices"][0]["delta"];
                             let content = delta["content"].as_str().unwrap_or("");
                             let think = delta["reasoning_content"].as_str().unwrap_or("");

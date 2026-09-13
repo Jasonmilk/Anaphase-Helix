@@ -630,6 +630,10 @@ impl AgentLoop {
                 // Session event: the period ended (back to Perception).
                 if let Some(ev) = self.session_events.as_mut() {
                     let ts = crate::ledger::unix_secs_to_rfc3339(self.clock.now());
+                    // The physical model that served this period (ADR-0036):
+                    // from the upstream response — the routed fact. Zero
+                    // tokens; absent when the adapter never saw a response.
+                    let model = self.reason.last_model();
                     // The deliverable closes the Engram chain: user → think →
                     // attempt → tools → verdict → REPLY → end. Emitted even
                     // when empty (honest zero-length answer), so the chain
@@ -640,6 +644,7 @@ impl AgentLoop {
                         serde_json::json!({
                             "text": self.context.reasoning_output,
                             "chars": self.context.reasoning_output.chars().count(),
+                            "model": model,
                         }),
                     );
                     let _ = ev.emit(
@@ -651,6 +656,7 @@ impl AgentLoop {
                             "impasse": outcome.impasse,
                             "verdict": self.context.last_verdict,
                             "reply": self.context.reasoning_output,
+                            "model": model,
                         }),
                     );
                 }
@@ -1282,9 +1288,38 @@ impl AgentLoop {
                         })
                         .collect();
                     if !lines.is_empty() {
-                        self.context.reasoning_output = lines.join("
-");
-                        info!("[Reflection] reply replaced: evidence={} lines_first={}", self.context.evidence.len(), lines[0].chars().take(60).collect::<String>());
+                        // Finalize (ADR-0036): tool evidence is NOT the
+                        // deliverable — the deliverable is Helix's answer
+                        // built from it. One cheap final call organizes the
+                        // facts into a natural-language reply; on any failure
+                        // we degrade to the raw evidence echo (never
+                        // fabricate, never go silent).
+                        let finalize_prompt = format!(
+                            "Original question: {}\nTool results:\n{}\n\nAnswer the user's question directly in natural language, concise, no JSON, no internal format.",
+                            self.context.user_input,
+                            lines.join("\n")
+                        );
+                        match self
+                            .reason
+                            .reason(
+                                &finalize_prompt,
+                                &self.run_config.reasoning_mode,
+                                &self.context.job.as_ref().map(|j| j.job_id.clone()).unwrap_or_default(),
+                            )
+                            .await
+                        {
+                            Ok(answer) if !answer.trim().is_empty() => {
+                                self.context.reasoning_output = answer;
+                                info!(
+                                    "[Reflection] finalize ok: chars={}",
+                                    self.context.reasoning_output.chars().count()
+                                );
+                            }
+                            _ => {
+                                self.context.reasoning_output = lines.join("\n");
+                                info!("[Reflection] finalize degraded to evidence echo");
+                            }
+                        }
                     } else {
                         info!("[Reflection] reply NOT replaced: evidence empty");
                     }

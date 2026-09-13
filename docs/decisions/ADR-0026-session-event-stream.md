@@ -40,8 +40,8 @@ Anaphase run_cycle 每轮（一个认知周期）向 `session_events_path` 目�
 | `tool/result` | `{tool, ok, duration_ms, data}` | 执行结果（evidence 行摘要） |
 | `check/status` | `{check_id, check, expect, actual, gate}` | 判据执行（hard/soft，judge=谁判的） |
 | `verdict/status` | `{job_id, status}` | criteria 判据（MET/UNMET/blocked） |
-| `assistant/reply` | `{text, chars}` | 交付物：最终回答（verdict 与 turn/end 之间；空回答也诚实发出） |
-| `turn/end` | `{done, success, impasse, reply}` | 周期结束，回 Perception；`reply` = 最终回答冗余字段（消费端可直接取） |
+| `assistant/reply` | `{text, chars, model}` | 交付物：最终回答（verdict 与 turn/end 之间；空回答也诚实发出）；`model` = 上游真实路由模型（ADR-0036，非 config 声明值，可为 null） |
+| `turn/end` | `{done, success, impasse, reply, model}` | 周期结束，回 Perception；`reply` = 最终回答冗余字段（消费端可直接取）；`model` 同 `assistant/reply` |
 
 每行 `{type, seq, time, data}`：`seq` 周期内单调（确定性重放），`time` 注入时钟的 RFC3339（可重放）。
 
@@ -91,3 +91,8 @@ Anaphase run_cycle 每轮（一个认知周期）向 `session_events_path` 目�
 
 > Tuck 审计链是"网关看见了什么"，reasoning trace 是"Helix 想了什么"，
 > 会话事件流是"Helix 经历了什么"——判据与行动、输入与注入，都在一条可回放的时间线上。
+
+### D6: 模型标签与 finalize（ADR-0036，2026-09-14）
+
+1. **模型标签 = 物理事实**：`model` 字段取自上游 OpenAI 兼容响应的 `model` 字段（http_reasoning 在 buffered / JSON 降级 / SSE 三路径捕获），由 `ReasoningAdapter::last_model()` 默认 None、HTTP 适配器覆盖——**显示的是真实路由结果，不是 config 声明的名字**。会话列表（`PeriodSummary.model`）同样捕获，前端消息头与列表卡片显示 `Helix · <model>`。
+2. **finalize 交付物**：工具轮执行后，证据回显**不是**回答。Reflection 用一次轻量 finalize 调用（原始问题 + 工具结果 → 自然语言回答）组织交付物；失败降级为证据回显（绝不编造、绝不沉默）。工具成功 ≠ 任务完成（answer.delivered 判据语义）。

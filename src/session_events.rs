@@ -475,6 +475,9 @@ pub struct PeriodSummary {
     /// Continuation parent (`context/inject.resume_from`): this period is a
     /// direct continuation of that one. Null = a fresh conversation root.
     pub parent: Option<String>,
+    /// Physical model that served the period (ADR-0036): from the upstream
+    /// response, not the config declaration. Null = adapter saw no model.
+    pub model: Option<String>,
     /// Human-chosen experience name (`{job_id}.name` sidecar), if any.
     pub name: Option<String>,
 }
@@ -538,6 +541,7 @@ pub fn list_periods(dir: &std::path::Path, limit: usize) -> io::Result<Vec<Perio
         let mut preview = String::new();
         let mut reply = String::new();
         let mut parent = None;
+        let mut model = None;
         let mut count: u64 = 0;
         for line in body.lines() {
             if line.trim().is_empty() {
@@ -567,6 +571,13 @@ pub fn list_periods(dir: &std::path::Path, limit: usize) -> io::Result<Vec<Perio
                 if let Some(t) = row.data.get("text").and_then(|v| v.as_str()) {
                     reply = t.chars().take(200).collect();
                 }
+                if model.is_none() {
+                    model = row
+                        .data
+                        .get("model")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                }
             }
             // Continuation parent: context/inject carries resume_from when
             // this period was resumed from a previous one (session thread).
@@ -588,6 +599,7 @@ pub fn list_periods(dir: &std::path::Path, limit: usize) -> io::Result<Vec<Perio
             preview,
             reply,
             parent,
+            model,
             name: period_name(dir, job_id),
         });
     }
