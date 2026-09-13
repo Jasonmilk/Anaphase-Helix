@@ -73,7 +73,7 @@ async fn run_closed_loop(
         reasoning_max_tokens: Some(16),
         ..AnaphaseConfig::default()
     };
-    let llm = HttpReasoningAdapter::new(&cfg);
+    let llm = HttpReasoningAdapter::new(&cfg, None);
     let content = llm.reason("plan", "left_brain", "t-test").await.unwrap();
 
     // Tentacle mock

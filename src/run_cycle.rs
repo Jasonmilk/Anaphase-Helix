@@ -160,10 +160,6 @@ pub struct AgentLoop {
     /// Source: config `[anaphase] memory_inject_chars` (protocol default
     /// const below, ADR-0023); main overrides from config.
     pub memory_inject_chars: usize,
-    /// L0 identity + L1 tool awareness (gene_lock.md + Tentacle manifests),
-    /// assembled once at build time, injected ahead of the user input every
-    /// cycle. Empty = honest degraded state (no identity, no tools).
-    pub identity_block: String,
     /// O-6 (ADR-0024): judge-point backend — complexity assessment for the
     /// Amygdala -> suggested_mode chain. Rules by default (zero tokens);
     /// SmallLlm (3B-class) when configured. Always returns 1/2/3.
@@ -344,7 +340,6 @@ impl AgentLoop {
         transitions.insert((HelixState::Reflection, TransitionCondition::Success), HelixState::Perception);
 
         Self {
-            identity_block: String::new(),
             memory,
             reason,
             tool,
@@ -823,20 +818,14 @@ impl AgentLoop {
                     crate::ledger::unix_secs_to_human_local(self.context.input_at),
                     crate::ledger::unix_secs_to_human_local(self.clock.now()),
                 );
-                // L0 (gene lock) + L1 (tool awareness): the immutable identity
-                // and the on-demand tool list lead every cycle, so Helix knows
-                // who it is and what it can do before it thinks.
-                let prompt = if !self.identity_block.is_empty() {
-                    format!("{}
+                // Identity (L0 gene lock + L1 tools) rides the reasoning
+                // **system** channel — assembled once at build time, sent by
+                // the adapter as the system message (authoritative identity).
+                // The user channel carries only this round's cognition:
+                // time anchor + memory + resume + craft + the input itself.
+                let prompt = format!("{}
 
-{}
-
-{}", self.identity_block, anchor, self.context.user_input)
-                } else {
-                    format!("{}
-
-{}", anchor, self.context.user_input)
-                };
+{}", anchor, self.context.user_input);
                 // O-5 (ADR-0023): on-demand injection — the request carries
                 // only what this round needs. Memory nodes (retrieved in
                 // MemoryRetrieval, previously never consumed by the LLM) are

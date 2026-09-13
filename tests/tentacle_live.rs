@@ -130,7 +130,7 @@ async fn run_live_loop(llm_content: &str, job_id: &str, clock_now: u64) -> anaph
         reasoning_max_tokens: Some(16),
         ..AnaphaseConfig::default()
     };
-    let llm = HttpReasoningAdapter::new(&cfg);
+    let llm = HttpReasoningAdapter::new(&cfg, None);
     let content = llm.reason("plan", "left_brain", "t-test").await.unwrap();
 
     // Real Tentacle.

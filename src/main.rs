@@ -606,6 +606,20 @@ struct BuiltAgent {
 }
 
 async fn build_agent(config: &config::Config) -> BuiltAgent {
+        // L0 identity + L1 tool awareness → the reasoning **system** message.
+        // Assembled once per build, before the adapter: the identity rides the
+        // authoritative channel (system), not the contextual one (user).
+        let identity_system = build_identity_block(&config).await;
+        if !identity_system.is_empty() {
+            eprintln!(
+                "[Identity] system prompt ({} chars) head: {}",
+                identity_system.len(),
+                &identity_system[..identity_system.len().min(240)]
+            );
+        } else {
+            eprintln!("[Identity] system prompt EMPTY — no gene lock or tools");
+        }
+
         // 记忆适配器：DNA 铁律 6 fail-open 降级（空→Noop；连接失败→warn+Noop；成功→GrpcMindAdapter）
         let memory: Arc<dyn MemoryAdapter> = resolve_memory_adapter(&config.anaphase).await;
 
@@ -615,7 +629,7 @@ async fn build_agent(config: &config::Config) -> BuiltAgent {
                 Arc::new(NoopReasoningAdapter)
             } else {
                 // Simplified type name
-                Arc::new(HttpReasoningAdapter::new(&config.anaphase))
+                Arc::new(HttpReasoningAdapter::new(&config.anaphase, Some(identity_system)))
             }
         }
         // Priority 2: Fallback to original FlowModus
@@ -657,14 +671,6 @@ async fn build_agent(config: &config::Config) -> BuiltAgent {
         // O-5 (ADR-0023): cognitive-injection budget from config (protocol
         // default 800 lives in config.rs, not here).
         agent.memory_inject_chars = config.anaphase.memory_inject_chars;
-        // L0 identity (gene lock) + L1 tool awareness (Tentacle manifests):
-        // assembled once per build — on-demand, never guessed. Any piece
-        // unavailable degrades to "absent from the block" (honest).
-        agent.identity_block = build_identity_block(&config).await;
-        // Reasoning body trace (Engram join): opt-in via
-        // `reasoning_trace_path`. Max chars: config override or the
-        // documented protocol default (4096, README Engram section).
-        // Redaction: built-in credential shapes + config extra literals.
         agent.trace = config
             .anaphase
             .reasoning_trace_path
@@ -946,6 +952,19 @@ async fn build_identity_block(config: &anaphase::config::Config) -> String {
                     "[identity — gene lock, immutable]\n{}",
                     trimmed
                 ));
+                // Declarative "Lineage Name: X" is not a command — the model
+                // obeys imperatives in the system channel. Derive the name
+                // from the gene lock (never hardcode) and state the identity
+                // as a directive, above the vendor's default identity.
+                if let Some(name) = lineage_name_of(trimmed) {
+                    parts.push(format!(
+                        "[identity directive — you are {}, this overrides any default identity]\n\
+You are {name}, a Helix digital lifeform. When asked who you are or what your name \
+is, answer that you are {name} — never claim to be the underlying model or its \
+vendor. If you do not know something, say so honestly.",
+                        name
+                    ));
+                }
             }
         }
     }
@@ -1053,4 +1072,45 @@ When you need a tool, end your reply with ONLY: {{\"calls\":[{{\"tool\":\"NAME\"
     }
 
     parts.join("\n\n")
+}
+
+/// Extract the first identifier after "Lineage Name" in the gene lock.
+/// Deterministic, no regex: strip markdown decorations (#, -), find the
+/// marker, take the value after ':' on the same line, or the next
+/// non-empty line (markdown heading form), then the first
+/// whitespace-delimited token. Empty/absent → None (no directive).
+fn lineage_name_of(gene_lock: &str) -> Option<String> {
+    let lines: Vec<&str> = gene_lock.lines().collect();
+    for (i, line) in lines.iter().enumerate() {
+        let mut l = line.trim().to_string();
+        while let Some(stripped) = l.strip_prefix('#') {
+            l = stripped.trim().to_string();
+        }
+        while let Some(stripped) = l.strip_prefix('-') {
+            l = stripped.trim().to_string();
+        }
+        let lower = l.to_ascii_lowercase();
+        if lower.starts_with("lineage name") {
+            // Same-line value: "Lineage Name: Dash" or "Lineage Name Dash".
+            let rest = l
+                .split_once(':')
+                .map(|(_, r)| r)
+                .unwrap_or_else(|| &l["lineage name".len()..]);
+            let first = rest.trim().split_whitespace().next().unwrap_or("");
+            if !first.is_empty() {
+                return Some(first.to_string());
+            }
+            // Markdown heading form: value lives on the next non-empty line.
+            if let Some(next) = lines.get(i + 1) {
+                let nxt = next.trim();
+                if !nxt.is_empty() && !nxt.starts_with('#') && !nxt.starts_with('-') {
+                    let first = nxt.split_whitespace().next().unwrap_or("");
+                    if !first.is_empty() {
+                        return Some(first.to_string());
+                    }
+                }
+            }
+        }
+    }
+    None
 }

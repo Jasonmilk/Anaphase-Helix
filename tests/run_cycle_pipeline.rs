@@ -324,8 +324,6 @@ async fn time_anchor_injected_with_full_date() {
         ReflexArc { safety_rules: vec![] },
     )
     .with_clock(std::sync::Arc::new(FakeClock(1788393600))); // 2026-09-03T00:00:00Z
-    agent.identity_block = "GENE-LOCK\n".to_string();
-
     agent.run_cycle("hello").await.unwrap();
     let prompt = seen.lock().unwrap().clone().expect("prompt captured");
     assert!(

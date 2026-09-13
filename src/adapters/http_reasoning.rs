@@ -1,6 +1,21 @@
 use async_trait::async_trait;
 use futures_util::StreamExt;
+use serde_json::json;
 use super::ReasoningAdapter;
+
+/// Identity rides the system channel: `[{system}, {user}]` — the vendor's
+/// default identity is replaced, not argued with. No system = user-only
+/// (honest degraded state, e.g. no gene lock configured).
+fn messages_with_system(system: Option<&str>, prompt: &str) -> serde_json::Value {
+    let mut msgs = Vec::new();
+    if let Some(s) = system {
+        if !s.trim().is_empty() {
+            msgs.push(json!({"role": "system", "content": s}));
+        }
+    }
+    msgs.push(json!({"role": "user", "content": prompt}));
+    serde_json::Value::Array(msgs)
+}
 
 pub struct HttpReasoningAdapter {
     endpoint: String,
@@ -8,17 +23,24 @@ pub struct HttpReasoningAdapter {
     api_key: Option<String>,
     route_tier: Option<String>,
     max_tokens: u32,
+    /// L0 identity + L1 tool awareness — sent as the **system** message so
+    /// it overrides the model vendor's default identity ("I am Agnes…").
+    /// A user-role identity claim is context, not authority; a system-role
+    /// identity claim is who the model IS for this session. This is the
+    /// OpenAI-compatible channel contract, not a prompt trick.
+    system_prompt: Option<String>,
     client: reqwest::Client,
 }
 
 impl HttpReasoningAdapter {
-    pub fn new(config: &crate::config::AnaphaseConfig) -> Self {
+    pub fn new(config: &crate::config::AnaphaseConfig, system_prompt: Option<String>) -> Self {
         Self {
             endpoint: config.reasoning_endpoint.clone().unwrap_or_default(),
             model: config.reasoning_model.clone().unwrap_or_default(),
             api_key: config.reasoning_api_key.clone(),
             route_tier: config.reasoning_route_tier.clone(),
             max_tokens: config.reasoning_max_tokens.unwrap_or(2048),
+            system_prompt,
             // No idle connection reuse: a gateway-closed keep-alive makes the
             // second call fail with EAGAIN (os error 35). Fresh connect per
             // call is deterministic — the cheap local-LLM path pays no TLS,
@@ -39,7 +61,7 @@ impl HttpReasoningAdapter {
     ) -> Result<reqwest::Response, String> {
         let body = serde_json::json!({
             "model": self.model,
-            "messages": [{"role": "user", "content": prompt}],
+            "messages": messages_with_system(self.system_prompt.as_deref(), prompt),
             "max_tokens": self.max_tokens,
             "stream": stream
         });
@@ -203,7 +225,7 @@ mod tests {
         let mut cfg = crate::config::AnaphaseConfig::default();
         cfg.reasoning_endpoint = Some(format!("http://{}", gw.addr));
         cfg.reasoning_model = Some("fake".into());
-        let adapter = HttpReasoningAdapter::new(&cfg);
+        let adapter = HttpReasoningAdapter::new(&cfg, None);
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<crate::adapters::StreamDelta>();
         let full = adapter
             .reason_stream("hi", "fake", "t1", tx, &std::sync::Mutex::new(String::new()))
@@ -246,7 +268,7 @@ mod tests {
         let mut cfg = crate::config::AnaphaseConfig::default();
         cfg.reasoning_endpoint = Some(format!("http://{addr}"));
         cfg.reasoning_model = Some("fake".into());
-        let adapter = HttpReasoningAdapter::new(&cfg);
+        let adapter = HttpReasoningAdapter::new(&cfg, None);
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<crate::adapters::StreamDelta>();
         let full = adapter
             .reason_stream("hi", "fake", "t1", tx, &std::sync::Mutex::new(String::new()))
