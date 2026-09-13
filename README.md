@@ -68,7 +68,7 @@ via the CommonIntents protocol stack with zero hard coupling.
   pipeline against a real `tentacle --transport grpc` + real fixture plugins
   (manifest+js, SHA-256 pinned); identity_labels / seen_entropy_bloom semantics
   (ADR-0004); run_cycle Execution resolves real tool names (echo fallback)
-- 🧬 **L0-L3 live (ADR-0025)** — identity_block (gene lock + tool list) injected; `parse_tool_fence` fallback; reply backfill shows tool results; `remember_node` writes L2 knowledge layer; calc + web_search tools live
+- 🧬 **L0-L3 live (ADR-0025)** — identity (gene lock + tool list) rides the **system channel** (adapter builds `[{system},{user}]`; `lineage_name_of` derives the name from gene_lock.md, never hardcoded), so the vendor's default identity can't win; `parse_tool_fence` fallback; reply backfill shows tool results; `remember_node` writes L2 knowledge layer; calc + web_search tools live
 - 🌙 **P10 Cognitive Craft + Wake-up, live-verified** — `tests/mind_live.rs`
   drives the REAL `helix-mind-cli` binary over the real wire: `craft`
   (deterministic trace_id, 0-token synthesis), `ana_wakeup` agenda poll and
