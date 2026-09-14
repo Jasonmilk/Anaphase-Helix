@@ -249,6 +249,32 @@ pub fn read_summary(dir: &PathBuf, job_id: &str, max_chars: usize) -> Option<Str
     Some(out)
 }
 
+/// Scratch directory for tests.
+///
+/// A fixed name is a race: `cargo test` runs tests in parallel, and a test that
+/// removes its directory at the end will remove a *sibling's* files mid-run if
+/// both picked the same name. The name is therefore derived from the process id
+/// and a per-process sequence number, so every call owns its own directory and
+/// no two tests can disturb each other.
+#[cfg(test)]
+mod test_support {
+    use std::path::PathBuf;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static SEQ: AtomicUsize = AtomicUsize::new(0);
+
+    pub fn tmp_dir(tag: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!(
+            "se-test-{}-{}-{}",
+            std::process::id(),
+            SEQ.fetch_add(1, Ordering::Relaxed),
+            tag
+        ));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -258,17 +284,7 @@ mod tests {
     }
 
     fn tmp_dir() -> std::path::PathBuf {
-        let d = std::env::temp_dir().join(format!(
-            "se-test-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|x| x.subsec_nanos())
-                .unwrap_or(0)
-        ));
-        let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(&d).unwrap();
-        d
+        super::test_support::tmp_dir("tests")
     }
 
     #[test]
@@ -351,8 +367,7 @@ mod tests {
 
     #[test]
     fn emits_monotonic_seq_and_roundtrips() {
-        let dir = std::env::temp_dir().join("anaphase-session-events-test-1");
-        let _ = fs::remove_dir_all(&dir);
+        let dir = tmp_dir();
         let mut stream = SessionEventStream::open(dir.clone(), "job-a", Redaction::default()).unwrap();
         let t = ts();
         stream.emit(&t, EventType::TurnStart, json!({})).unwrap();
@@ -374,8 +389,7 @@ mod tests {
 
     #[test]
     fn period_start_carries_resume_and_choice_detail() {
-        let dir = std::env::temp_dir().join("anaphase-session-events-test-3");
-        let _ = fs::remove_dir_all(&dir);
+        let dir = tmp_dir();
         let mut stream = SessionEventStream::open(dir.clone(), "job-c", Redaction::default()).unwrap();
         let t = ts();
         let detail = json!({
@@ -403,8 +417,7 @@ mod tests {
 
     #[test]
     fn read_summary_flattens_last_round_as_history() {
-        let dir = std::env::temp_dir().join("anaphase-session-events-test-4");
-        let _ = fs::remove_dir_all(&dir);
+        let dir = tmp_dir();
         let mut stream = SessionEventStream::open(dir.clone(), "job-d", Redaction::default()).unwrap();
         let t = ts();
         stream.emit(&t, EventType::TurnStart, json!({})).unwrap();
@@ -421,8 +434,7 @@ mod tests {
     }
 
     fn redacts_strings_recursively() {
-        let dir = std::env::temp_dir().join("anaphase-session-events-test-2");
-        let _ = fs::remove_dir_all(&dir);
+        let dir = tmp_dir();
         let mut stream = SessionEventStream::open(
             dir.clone(),
             "job-b",
@@ -628,9 +640,7 @@ mod query_tests {
 
     #[test]
     fn lists_periods_newest_first() {
-        let dir = std::env::temp_dir().join("anaphase-session-events-test-3");
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
+        let dir = test_support::tmp_dir("lists_periods_newest_first");
         // Two periods written out of time order (b first, a second).
         let mut b = SessionEventStream::open(dir.clone(), "job-b", Redaction::default()).unwrap();
         let mut a = SessionEventStream::open(dir.clone(), "job-a", Redaction::default()).unwrap();
@@ -649,8 +659,7 @@ mod query_tests {
 
     #[test]
     fn reads_one_period_by_id() {
-        let dir = std::env::temp_dir().join("anaphase-session-events-test-4");
-        let _ = fs::remove_dir_all(&dir);
+        let dir = test_support::tmp_dir("read_one_period_by_id");
         let mut s = SessionEventStream::open(dir.clone(), "job-x", Redaction::default()).unwrap();
         s.emit("2026-09-07T00:00:00Z", EventType::TurnStart, json!({})).unwrap();
         s.emit("2026-09-07T00:00:01Z", EventType::UserMessage, json!({ "text": "hi" })).unwrap();
