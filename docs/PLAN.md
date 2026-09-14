@@ -78,6 +78,15 @@ Cellrix）。事件流：Manifest 首帧 → 1s 节律 Snapshot 推流 → Actio
 
 ### 下一阶段候选
 
+- **候选 H：判断点单一来源 + 生态灯语义收敛**（`ADR-0039` / `ADR-0040`，Accepted 2026-09-15，**T0 未做**）
+  - 判断点收敛到 FlowModus 判定面，Anaphase 侧退为消费方。**顺序硬约束**：`FlowModus:ADR-0102`
+    必先于本候选的 T2（没有判定面就无源可收）。
+  - 阈值 10/40 → 48/192 是**约 4.8 倍行为变更**，改写模型路由 / 预算 / 成本 ⇒ **T0 shadow run 为强制前置**。
+  - 负载**不并入** `budget_tier`：改独立 `load_gate` + 具名纯函数 `apply_gate(tier, gate)`；
+    降级必须有底（`one_step_down(Endogenous) == Endogenous`）。
+  - 降级可见：日志 + 证轨五元组 `{input, flowmodus_verdict, rule_version, load_gate, effective}` + 面板提示。
+  - 生态灯语义：灰（`Unknown`）只留给「未配置」与「未探测」；**已配置但探不到 = 红**（配额耗尽 / 认证
+    失败 / 端点拒绝连接一律归红）。**状态不进 prompt** —— 运行时非确定值进 prompt 会让证轨不可回放。
 - **候选 D' 剩余**：无（四项全部完成；真实 MCP 执行体升级属 ECOSYSTEM 第二优先级 #4）
 - **候选 G：Anaphase 驾驶舱**（完成：G-T2 ✅ / G-T3..T5 ✅ / G-T6 ✅ / G-3 transport 契约修复 ✅ / G-4 bootstrap ✅）——Cellrix 白盒驾驶舱（模式栏 + 经历时间线 + Ledger 审查视图 + 生态状态板）；TUI 先行，Web 面板（G2）后续；**bootstrap `up`（ADR-0011）：一条命令起全栈（tentacle→anaphase→探测→可选 --cockpit）**；**G-5 易用引导 UX 完成**（ADR-0012：欢迎/前置检查/启动/下一步四段式，缺失项带构建提示，首跑零困惑）；**G-6 交互菜单**（ADR-0013：一条命令之后只有选择题——开驾驶舱/看状态/配置说明/退出）
 - **候选 A：Tentacle Rust 重构**（P10b 后自然启动）——凭证标签流转（Tuck 注入）/ 异步协程沙箱（ARM 端侧）/ 动态共识适配层 / 多传输层扩展
