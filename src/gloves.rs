@@ -126,10 +126,7 @@ impl EcosystemGloves {
 pub async fn probe_ecosystem(cfg: &crate::config::AnaphaseConfig) -> EcosystemGloves {
     let mut g = EcosystemGloves::new();
     // Cellrix：优先显式端点；否则 cap_http（驾驶舱）就绪即点亮。
-    if let Some(ep) = cfg.cellrix_endpoint.as_deref() {
-        g.register("cellrix", GloveTier::Native, probe_endpoint(ep));
-    } else if cfg.cap_http_enabled {
-        let ep = format!("127.0.0.1:{}", cfg.cap_http_port);
+    if let Some(ep) = cellrix_probe_target(cfg) {
         g.register("cellrix", GloveTier::Native, probe_endpoint(&ep));
     }
     // 生态组件（Standard）：配置即探测，未配置 = 未点亮。
@@ -145,6 +142,26 @@ pub async fn probe_ecosystem(cfg: &crate::config::AnaphaseConfig) -> EcosystemGl
         }
     }
     g
+}
+
+/// Resolve the endpoint the Cellrix (Native) probe will actually target.
+///
+/// One decision, one place: `probe_ecosystem` probes whatever this returns, so
+/// the empty-string rule and the cap_http fallback are assertable without a
+/// live socket — the connect itself is covered separately by
+/// `endpoint_tcp_parse_probes_localhost`.
+///
+/// "Configured to empty" means "not configured", the same rule the Standard
+/// loop applies below (and `health::check_endpoint`). Without it, an empty
+/// `cellrix_endpoint` counted as an explicit endpoint: the probe ran against
+/// the empty string and the cap_http fallback was skipped, so the Native glove
+/// stayed dark while the cockpit was actually up.
+fn cellrix_probe_target(cfg: &crate::config::AnaphaseConfig) -> Option<String> {
+    match cfg.cellrix_endpoint.as_deref().filter(|s| !s.is_empty()) {
+        Some(ep) => Some(ep.to_string()),
+        None if cfg.cap_http_enabled => Some(format!("127.0.0.1:{}", cfg.cap_http_port)),
+        None => None,
+    }
 }
 
 /// 单端点物理探测：解析协议前缀后，TCP 连接或 socket 文件存在性。
@@ -239,42 +256,89 @@ mod tests {
         assert_eq!(st, GloveStatus::Unavailable);
     }
 
-    #[test]
-    fn unconfigured_components_are_unavailable() {
+    #[tokio::test]
+    async fn unconfigured_components_are_unavailable() {
         let cfg = crate::config::AnaphaseConfig::default();
-        let g = probe_ecosystem_block(cfg);
+        let g = probe_ecosystem(&cfg).await;
         assert_eq!(g.status("tentacle"), Some(GloveStatus::Unavailable));
         assert_eq!(g.status("mind"), Some(GloveStatus::Unavailable));
         assert_eq!(g.status("tuck"), Some(GloveStatus::Unavailable));
-        assert_eq!(g.status("cellrix"), None, "未配置且 cap_http 关闭 → 不注册");
+        assert_eq!(g.status("cellrix"), None, "unconfigured + cap_http off -> not registered");
     }
 
-    #[test]
-    fn configured_components_probe_physically() {
-        // 配置了不可达端点 → Unavailable（物理事实）。
+    #[tokio::test]
+    async fn configured_components_probe_physically() {
+        // Unreachable endpoints stay Unavailable — a physical fact, not a guess.
         let mut cfg = crate::config::AnaphaseConfig::default();
         cfg.tentacle_endpoint = Some("http://127.0.0.1:9".to_string());
         cfg.mind_endpoint = Some("unix:///tmp/definitely-absent-helix.sock".to_string());
-        let g = probe_ecosystem_block(cfg);
+        let g = probe_ecosystem(&cfg).await;
         assert_eq!(g.status("tentacle"), Some(GloveStatus::Unavailable));
         assert_eq!(g.status("mind"), Some(GloveStatus::Unavailable));
     }
 
-    /// 无 tokio runtime 的测试环境：probe_ecosystem 内部全同步，
-    /// async 壳仅为对齐调用方形态——直接同步构造等价结果。
-    fn probe_ecosystem_block(cfg: crate::config::AnaphaseConfig) -> EcosystemGloves {
-        let mut g = EcosystemGloves::new();
-        for (name, ep) in [
-            ("tentacle", cfg.tentacle_endpoint.as_deref()),
-            ("mind", cfg.mind_endpoint.as_deref()),
-            ("tuck", cfg.tuck_endpoint.as_deref()),
-            ("flowmodus", cfg.flowmodus_endpoint.as_deref()),
-        ] {
-            match ep {
-                Some(e) if !e.is_empty() => g.register(name, GloveTier::Standard, probe_endpoint(e)),
-                _ => g.register(name, GloveTier::Standard, GloveStatus::Unavailable),
-            }
+    /// Derived invariant: "configured to empty" means "not configured" for
+    /// EVERY endpoint field. The rule may not diverge between the Native
+    /// branch and the Standard loop — exercising all five fields with the same
+    /// input is what makes a divergence visible (the empty-string shadow in
+    /// the Native branch lived here undetected).
+    #[tokio::test]
+    async fn empty_endpoint_is_unconfigured_for_every_field() {
+        let mut cfg = crate::config::AnaphaseConfig::default();
+        cfg.cellrix_endpoint = Some(String::new());
+        cfg.tentacle_endpoint = Some(String::new());
+        cfg.mind_endpoint = Some(String::new());
+        cfg.tuck_endpoint = Some(String::new());
+        cfg.flowmodus_endpoint = Some(String::new());
+        cfg.cap_http_enabled = false;
+        let g = probe_ecosystem(&cfg).await;
+        assert_eq!(g.status("cellrix"), None, "empty cellrix endpoint + cap_http off -> not registered");
+        for name in ["tentacle", "mind", "tuck", "flowmodus"] {
+            assert_eq!(
+                g.status(name),
+                Some(GloveStatus::Unavailable),
+                "{name}: empty endpoint -> Unavailable"
+            );
         }
-        g
+    }
+
+    /// Regression (2026-09-14): an explicitly empty endpoint must not shadow
+    /// the cap_http fallback. Asserts the resolved probe *target*, not the
+    /// connect result — the connect is environment-sensitive (a cargo-spawned
+    /// test binary cannot complete a loopback connect on this machine) and is
+    /// covered separately by `endpoint_tcp_parse_probes_localhost`.
+    #[test]
+    fn empty_cellrix_endpoint_falls_back_to_cap_http() {
+        let mut cfg = crate::config::AnaphaseConfig::default();
+        cfg.cellrix_endpoint = Some(String::new());
+        cfg.cap_http_enabled = true;
+        cfg.cap_http_port = 51234;
+        assert_eq!(
+            cellrix_probe_target(&cfg).as_deref(),
+            Some("127.0.0.1:51234"),
+            "empty endpoint must not shadow the cap_http fallback"
+        );
+    }
+
+    /// The other three branches of the same decision, so the fallback above is
+    /// not the only path under test: explicit wins, unset + cap_http off stays
+    /// unregistered, unset + cap_http on uses the configured port.
+    #[test]
+    fn cellrix_probe_target_precedence() {
+        let mut cfg = crate::config::AnaphaseConfig::default();
+        cfg.cellrix_endpoint = Some("http://127.0.0.1:18932".to_string());
+        assert_eq!(
+            cellrix_probe_target(&cfg).as_deref(),
+            Some("http://127.0.0.1:18932"),
+            "explicit endpoint wins over cap_http"
+        );
+
+        let mut cfg = crate::config::AnaphaseConfig::default();
+        cfg.cap_http_enabled = true;
+        cfg.cap_http_port = 50061;
+        assert_eq!(cellrix_probe_target(&cfg).as_deref(), Some("127.0.0.1:50061"));
+
+        let cfg = crate::config::AnaphaseConfig::default();
+        assert_eq!(cellrix_probe_target(&cfg), None, "unset + cap_http off -> no target");
     }
 }
