@@ -383,13 +383,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // terminal line — the client then sees the raw attempt
                         // JSON with no final reply. mpsc recv() is safe to poll
                         // repeatedly and returns None when the sender drops.
-                        let (done_tx, done_rx) = tokio::sync::mpsc::unbounded_channel::<Result<String, String>>();
+                        // One round's terminal payload: the reply plus the
+                        // physical model that served it (ADR-0036). One name
+                        // for the channel and the pending placeholder, so the
+                        // two can never drift apart.
+                        type TurnDone = (Result<String, String>, Option<String>);
+                        let (done_tx, done_rx) = tokio::sync::mpsc::unbounded_channel::<TurnDone>();
                         let msg2 = msg.clone();
                         tokio::spawn(async move {
                             let res = agent.run_cycle(&msg2).await;
                             let reply = res.map(|_| agent.context.reasoning_output.clone());
+                            // ADR-0036: the physical model that served this
+                            // period, read from the upstream response (never
+                            // from config). It rides the terminal line so the
+                            // live chat can name the LLM it just talked to —
+                            // the same fact the event stream records for
+                            // history replay.
+                            let model = agent.reason.last_meta().model.clone();
                             *shared.lock().unwrap() = Some(agent.capture());
-                            let _ = done_tx.send(reply);
+                            let _ = done_tx.send((reply, model));
                         });
                         // Deterministic event ordering (2026-09-08): the cycle
                         // may complete while deltas are still buffered in the
@@ -413,7 +425,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         r = async {
                                             match done.as_mut() {
                                                 Some(d) => d.recv().await,
-                                                None => std::future::pending::<Option<Result<String, String>>>().await,
+                                                None => std::future::pending::<Option<TurnDone>>().await,
                                             }
                                         } => {
                                             match r {
@@ -436,15 +448,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 // client sets it as the next resume_from, so
                                 // consecutive messages stay one conversation.
                                 let (line, next) = match pending {
-                                    Ok(reply) => (format!(
+                                    (Ok(reply), model) => (format!(
                                         "data: {}\n\n",
                                         serde_json::json!({
                                             "done": true,
                                             "reply": reply,
                                             "job_id": job_id,
+                                            "model": model,
                                         })
                                     ), None),
-                                    Err(e) => (format!("data: {}\n\n", serde_json::json!({"error": e})), None),
+                                    (Err(e), _) => (format!("data: {}\n\n", serde_json::json!({"error": e})), None),
                                 };
                                 Some((Ok::<_, std::convert::Infallible>(axum::body::Bytes::from(line)), (rx, done, next, job_id)))
                             },
@@ -461,11 +474,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     match built.agent.run_cycle(&msg).await {
                         Ok(out) => {
+                            // Same physical fact as the SSE terminal line: the
+                            // model read from the upstream response (ADR-0036).
+                            let model = built.agent.reason.last_meta().model.clone();
                             *shared.lock().unwrap() = Some(built.agent.capture());
                             (StatusCode::OK, Json(serde_json::json!({
                                 "reply": built.agent.context.reasoning_output,
                                 "done": out.done,
                                 "job_id": anaphase::contract::derive_job_id(&msg),
+                                "model": model,
                             })))
                         }
                         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": e }))),
