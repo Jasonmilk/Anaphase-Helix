@@ -4,8 +4,8 @@
 
 ## 规范
 
-1. **文件命名**：`NNNN-<kebab-case-title>.md`（序号递增，如 `0001-mind-contract-alignment.md`）。
-2. **状态**：每个 ADR 顶部声明 `Status: Draft | Active | Superseded`。
+1. **文件命名**：`ADR-NNNN-<kebab-case-title>.md`（序号递增，如 `ADR-0001-contract-alignment.md`）。
+2. **状态**：每个 ADR 顶部声明状态。法定两态为 `Draft` / `Active`；本仓历史文件另用 `Accepted` / `Proposed` / `Superseded` —— **索引如实标注，历史不回改**。
 3. **生命周期**：
    - `Draft` → 讨论/草拟，可修改。
    - `Active` → 已生效冻结，不可覆写；发现错误 → 新建 ADR 标记旧者 `Superseded`。
@@ -17,7 +17,46 @@
 
 | # | 标题 | 状态 | 日期 |
 |---|---|---|---|
-| 0001 | 契约对齐 + 方法论迁移（budget_tier/traceparent/activation_vector 补全 + P10a 触发链路） | Active | 2026-08-28 |
+| 0001 | Anaphase-Helix 契约对齐 + 方法论迁移 | Active | 2026-08-28 |
+| 0002 | DNA 原则 11 零硬编码（Zero Hardcoding）新增 | Active | 2026-09-03 |
+| 0003 | M1 里程碑执行架构（确定性流水线 + 引擎归属 + 重入语义） | Active | 2026-09-03 |
+| 0004 | M1.5 生态合流（真实连通 + 语义定义 + run_cycle 渐进接线） | Active | 2026-09-03 |
+| 0005 | 候选 E——Reasoning 结构化 + run_cycle ↔ pipeline 完整 merge | Active | 2026-09-03 |
+| 0006 | 会话即经历——Episode 边界与三模式参与度 | Active | 2026-09-05 |
+| 0007 | 重放守卫指纹 + 启动接线（候选 D'-1 / D'-3） | Active | 2026-09-05 |
+| 0008 | Tuck 深度集成——SecurityGate 接线点（候选 D'-2） | Accepted | 2026-09-06 |
+| 0009 | 真实场景插件——MCP-Learner 产物接入确定性执行（候选 D'-4） | Accepted | 2026-09-06 |
+| 0010 | Anaphase 驾驶舱快照投影（候选 G-T2） | Accepted | 2026-09-06 |
+| 0011 | 一条命令起全栈（bootstrap）——`up` 与 env 覆盖 | Accepted | 2026-09-06 |
+| 0012 | 易用引导 UX（G-5）——`up` 首跑引导 | Accepted | 2026-09-06 |
+| 0013 | 交互菜单（G-6）——一条命令之后只有选择题 | Accepted | 2026-09-06 |
+| 0015 | 配置向导（up 菜单选项 4）——LLM 引导输入 | Accepted | 2026-09-06 |
+| 0016 | 编排哲学——确定性优先分诊 + 认知工艺挂点 + 按需感知 | Proposed | 2026-09-06 |
+| 0017 | Anaphase CI-144 传输层（驾驶舱闭环咽喉） | Accepted | 2026-09-06 |
+| 0018 | Rails——心智外铁轨（人类知识 DAG · Helix 只读引用） | Accepted | 2026-09-06 |
+| 0019 | Stage 事件总线——过程白盒（append-only 事件环 + 增量拉取） | Accepted | 2026-09-06 |
+| 0020 | O-3 事件轨迹持久化——跨重启可回放的过程白盒 | Accepted | 2026-09-06 |
+| 0021 | 模式无关事件环——驾驶模式黑匣子 | Accepted | 2026-09-06 |
+| 0022 | 认知工艺触发接线验证 + Mind 适配器零硬编码收口 | Accepted | 2026-09-06 |
+| 0023 | 按需认知注入——记忆折叠进推理请求（O-5） | Accepted | 2026-09-06 |
+| 0024 | 判断点后端可配化——复杂度评估的 Rules / SmallLlm 双后端（O-6） | Accepted | 2026-09-06 |
+| 0025 | L0-L3 全层打通 + 工具链确定性执行（认知层实弹） | Accepted | 2026-09-07 |
+| 0026 | 会话事件流——经历的确定性落盘 | Accepted | 2026-09-07 |
+| 0027 | 记忆决策白盒 + 显式续聊 | Accepted | 2026-09-07 |
+| 0028 | SSE 确定性排空与会话即经历的命名管理 | Accepted | 2026-09-08 |
+| 0029 | 证轨链条完整性——物理事实 → 确定性判据 → 可审计记账 | Accepted | 2026-09-08 |
+| 0030 | SSE 事件序契约的运行时焊死（oneshot → mpsc） | Accepted | 2026-09-08 |
+| 0034 | 回答被思考吞掉——token 预算共享与有界直答重试 | Accepted | 2026-09-08 |
+| 0035 | 判据契约修复——exec_ok 与 answer.delivered 分层 | Accepted | 2026-09-09 |
+| 0036 | 时间锚注入——物理时钟，0 tokens，本地时区 | Accepted | 2026-09-09 |
+| 0037 | 术语更名——印痕 → 证轨 / Engram → ProveTrack | Accepted | 2026-09-14 |
+| 0038 | 上游计量捕获——按次落盘，按需派生 | Accepted | 2026-09-14 |
+| 0039 | 判断点单一来源——规则归 FlowModus，Anaphase 不再自算 | Accepted | 2026-09-14 |
+| 0040 | 生态灯四态语义 + 生态事实单一来源 + 工具索引式披露 | Accepted | 2026-09-14 |
+
+**编号缺口（不是丢文件）**：`0014` 无对应文件，但 `ADR-0015` 引用了「ADR-0014（Web 面板）」—— 待查（见生态缺陷登记表）。
+`0031`–`0033` 属 helix-mind：**ADR 编号是生态共享序列，不是每仓自增**。
+跨仓引用一律仓名限定：`anaphase:ADR-0016`（编排哲学）≠ `Cellrix:ADR-0016`（证轨资产解耦）；`ADR-0017` 同理。
 
 ---
 
