@@ -10,7 +10,7 @@
 
 真实联调（`run-1dc862da882521dc`）复现用户观察："回答被思考吞掉了"。
 
-印痕事件链物理事实：
+证轨事件链物理事实：
 
 ```
 [user/message]   "你猜猜我我在做什么?"
@@ -85,7 +85,7 @@ attempt 事件新增 `empty: bool`（`output.trim().is_empty()`）：
 - `cargo test` 全绿（200 passed，含新测试 `empty_reply_retries_with_direct_answer_directive`：
   第一次空、第二次直答——断言调 2 次、retry prompt 含直答指令）；
 - 浏览器实测复现问题 → 回答正常显示（见 D1 后果）；
-- 印痕事件链：`assistant/attempt` 带 `empty=false`。
+- 证轨事件链：`assistant/attempt` 带 `empty=false`。
 
 ## 6. 一句话总结
 

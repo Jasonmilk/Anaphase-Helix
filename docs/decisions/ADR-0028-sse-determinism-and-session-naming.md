@@ -28,9 +28,9 @@ preview 改为**全文件扫描**取第一条 `user/message` 文本（120 字符
 `rename_period` 写 `{job_id}.name` sidecar（空名=删除 sidecar 回退自动 preview），
 main.rs 提供 POST `/v1/sessions/rename`。命名是**显式动作**，续接亦然（点"续接"才带 job_id），
 心智连续靠显式选择，不隐式猜测。
-### D5: 印痕形态纠错——turn 大纲，不是时间轴甘特
+### D5: 证轨形态纠错——turn 大纲，不是时间轴甘特
 对照 DSH 实现（session-turn-outline：turn 编号 + prompt 预览 + response 预览的纵向堆叠），
-确认其"轨迹"不是时间轴甘特图。印痕采用紧凑 turn 大纲（每事件一行：徽标 + 时间 + 摘要，
+确认其"轨迹"不是时间轴甘特图。证轨采用紧凑 turn 大纲（每事件一行：徽标 + 时间 + 摘要，
 工具耗时行内标注），SA-Core 选择 / L1-L3 记忆节点以 chip 标签化（`L1·{id} heat phase`），
 只写 provenance 不写节点正文。
 
@@ -46,5 +46,5 @@ main.rs 提供 POST `/v1/sessions/rename`。命名是**显式动作**，续接�
 ## 4. 验证
 - Anaphase 237 全绿（lib + 集成；`reason_stream_parses_sse_deltas_in_order` 增 thinking 断言；
   `lists_periods` 按新 preview 语义修正）；
-- Cellrix 341 全绿；浏览器实测：连发两条消息均完整回复、思考折叠行出现、印痕 chip 标签化、
+- Cellrix 341 全绿；浏览器实测：连发两条消息均完整回复、思考折叠行出现、证轨 chip 标签化、
   续接下拉列出 8 条经历、重命名设置/清空回退全通。

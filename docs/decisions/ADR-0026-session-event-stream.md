@@ -2,7 +2,7 @@
 
 - **状态**: Accepted
 - **日期**: 2026-09-07
-- **决策范围**: Anaphase（事件流写入）/ Cellrix（Engram turn 时间线渲染）
+- **决策范围**: Anaphase（事件流写入）/ Cellrix（ProveTrack turn 时间线渲染）
 - **关联**: ADR-0023（会话即经历）、ADR-0019（stage events）、ADR-0003（ledger/trace_id）
 
 ## 1. 背景与问题
@@ -25,7 +25,7 @@ Anaphase run_cycle 每轮（一个认知周期）向 `session_events_path` 目�
 {dir}/{job_id}.events.jsonl
 ```
 
-`job_id` 是 `derive_job_id(user_input)`（`run-<12hex>`）——与 reasoning trace、Tuck 审计链**同一 join key**（Engram 三源一键）。
+`job_id` 是 `derive_job_id(user_input)`（`run-<12hex>`）——与 reasoning trace、Tuck 审计链**同一 join key**（ProveTrack 三源一键）。
 
 ### D2: 事件词汇表（协议值，消费者精确匹配）
 
@@ -33,7 +33,7 @@ Anaphase run_cycle 每轮（一个认知周期）向 `session_events_path` 目�
 |---|---|---|
 | `turn/start` | `{}` | 认知周期开始（进入状态机） |
 | `user/message` | `{text}` | 人类原始输入（写前脱敏） |
-| `context/inject` | `{nodes, chars, resume_from}` | 记忆/认知注入摘要（正文在 trace）；`resume_from` = 续接父 job_id（机器可读，Engram 线程化）或旧格式摘要文本 |
+| `context/inject` | `{nodes, chars, resume_from}` | 记忆/认知注入摘要（正文在 trace）；`resume_from` = 续接父 job_id（机器可读，ProveTrack 线程化）或旧格式摘要文本 |
 | `assistant/think` | `{text}` | 私有推理（脱敏，仅展示） |
 | `assistant/attempt` | `{text}` | Reasoning 输出（脱敏） |
 | `tool/call` | `{tool, index, expect}` | 确定性工具调用 |
@@ -79,7 +79,7 @@ Anaphase run_cycle 每轮（一个认知周期）向 `session_events_path` 目�
 ## 5. 后果
 
 **正面**：
-- Engram 可渲染 DSH 式 turn 时间线（USER/CONTEXT/ATTEMPT/TOOL/VERDICT 徽标）单一来源
+- ProveTrack 可渲染 DSH 式 turn 时间线（USER/CONTEXT/ATTEMPT/TOOL/VERDICT 徽标）单一来源
 - 判据（verdict）与行动（tool）首次进入同一可回放时间线——DSH 没有判据维度
 - 确定性：同输入同轮 → 同事件序列（seq/ts 注入可重放）
 

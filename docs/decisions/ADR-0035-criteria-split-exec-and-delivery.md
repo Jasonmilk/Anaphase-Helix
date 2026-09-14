@@ -3,7 +3,7 @@
 - **状态**: Accepted
 - **日期**: 2026-09-09
 - **决策范围**: Anaphase（criteria / Expect::Ok 映射）
-- **关联**: Cellrix ADR-0015（Engram 判据审查）、ADR-0029（判据不读思考）
+- **关联**: Cellrix ADR-0015（ProveTrack 判据审查）、ADR-0029（判据不读思考）
 - **取代**: 原 `exec_ok(ok_flag, echoed)` 单判据
 
 ## 1. 背景与问题
@@ -22,7 +22,7 @@ calc 返回 {"ok":true,"result":"40353607"}   ← Tentacle 平面契约，无 da
 ```
 
 判据把"工具执行成功"与"答案交付"耦合，且用错误的代理指标（mcp 包装）
-检测交付——正是用户审查 Engram 时预言的"判据名实不符"。
+检测交付——正是用户审查 ProveTrack 时预言的"判据名实不符"。
 
 ## 2. 决策
 

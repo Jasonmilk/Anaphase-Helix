@@ -1,4 +1,4 @@
-# ADR-0029: 印痕链条完整性——物理事实 → 确定性判据 → 可审计记账
+# ADR-0029: 证轨链条完整性——物理事实 → 确定性判据 → 可审计记账
 
 - **状态**: Accepted
 - **日期**: 2026-09-08
@@ -7,7 +7,7 @@
 
 ## 1. 背景与问题
 
-印痕（Engram）已能渲染一轮经历的时间线（USER / CONTEXT / ATTEMPT / TOOL / VERDICT），
+证轨（ProveTrack）已能渲染一轮经历的时间线（USER / CONTEXT / ATTEMPT / TOOL / VERDICT），
 但链条存在三处"断点"，导致**无法从账本复演一轮经历**：
 
 1. **产出物丢失**：`tool/result` 只记 `ok + duration_ms`，不记工具返回的**物理结果**（如计算器输出
@@ -36,7 +36,7 @@
 ### D2: tool/result 携带产出物
 
 `tool/result` 事件补 `outcome`（执行返回全文）与 `outcome_sha`（SHA-256 前 4 字节 hex，
-8 字符指纹，`trace::short_sha`）。同一产出物有稳定短引用，印痕行无需二次存正文。
+8 字符指纹，`trace::short_sha`）。同一产出物有稳定短引用，证轨行无需二次存正文。
 
 ### D3: 新增 check/status 事件
 
@@ -65,7 +65,7 @@ criteria 的每个确定性报告写一条 `check/status`：
 
 `turn/end` 事件补 `verdict` 字段，派生链对客户端可见。
 
-### D5: 思考进印痕——assistant/think 事件
+### D5: 思考进证轨——assistant/think 事件
 
 模型的私有推理（thinking）流式送前端的同时，经 sink 聚合为 `assistant/think` 事件落盘。
 - 脱敏写入（复用 trace 红action），**显示专用——判据永不消费思考**（判据只看物理产出）。
@@ -109,7 +109,7 @@ think 全文、check 依据、tool 产出物、长 reason——**一个能力，
 |---|---|
 | RESULT 里塞完整 trace 引用 | outcome 就地在事件里，引用反而要二次读取；sha 是给对合用的短引用 |
 | success 由模型/状态机自报 | 自报无法审计；铁律 `success ≡ verdict` 让账本自洽 |
-| 思考只在 trace 不落事件 | 用户明确要求思考进印痕可点展；trace 与事件同源但事件是白盒主视图 |
+| 思考只在 trace 不落事件 | 用户明确要求思考进证轨可点展；trace 与事件同源但事件是白盒主视图 |
 | 结晶自动注入 Tuck | 机器自决策改变生产行为，违背"人审核"安全边界 |
 
 ## 5. 后果
@@ -121,10 +121,10 @@ think 全文、check 依据、tool 产出物、长 reason——**一个能力，
 
 **负面/代价**：
 - 事件流新增 2 个事件类型（think/check）+ 3 个字段（outcome/outcome_sha/verdict），
-  历史印痕文件不兼容（旧轮无这些字段——前端已做缺失容错）。
+  历史证轨文件不兼容（旧轮无这些字段——前端已做缺失容错）。
 - CheckReport 结构变化影响 ledger 序列化，确定性测试已同步。
 
 ## 6. 一句话总结
 
-> 印痕不是标签流水账——它是"物理事实 → 确定性判据 → 可审计记账"的闭环，
+> 证轨不是标签流水账——它是"物理事实 → 确定性判据 → 可审计记账"的闭环，
 > 思考可点展，产出可对合，判决有身份证，失败是矿。
