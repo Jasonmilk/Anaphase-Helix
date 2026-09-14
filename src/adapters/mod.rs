@@ -164,7 +164,7 @@ pub trait ReasoningAdapter: Send + Sync {
 
     /// Run one reasoning round trip. `trace_id` is the derived job id —
     /// carried to the gateway (x-tuck-trace) so the Tuck audit chain, the
-    /// Anaphase body trace and the ledger share one join key (Engram).
+    /// Anaphase body trace and the ledger share one join key (ProveTrack).
     async fn reason(&self, prompt: &str, model: &str, trace_id: &str) -> Result<String, String>;
 
     /// Streaming variant: emits content/thinking deltas into `deltas` as they

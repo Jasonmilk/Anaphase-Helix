@@ -249,7 +249,7 @@ pub fn run_for_expect(expect: &Expect, data: &serde_json::Value, params: &RulePa
         }
         Expect::Ok => {
             // D'-4: structured execution success — two checks, one per layer
-            // (2026-09-09 split, ADR-0015 Engram review): exec_ok owns the
+            // (2026-09-09 split, ADR-0015 ProveTrack review): exec_ok owns the
             // tool layer (did the tool run), answer.delivered owns the
             // delivery layer (did it produce a business result). Both
             // contracts pass: flat `{"ok":true,"result":...}` (Tentacle

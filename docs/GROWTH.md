@@ -177,10 +177,10 @@ PLAN（旁路焊死段）｜ ECOSYSTEM v1.61（Tuck 369 + 全生态物理核对�
 ### 状态
 🧬 已完成（key 轮换待用户执行后更新 Tuck config）
 
-## 记录 31：Engram 正文轨迹——推理 round trip 落盘（2026-09-07）
+## 记录 31：ProveTrack 正文轨迹——推理 round trip 落盘（2026-09-07）
 
 ### 触发条件
-Cellrix Engram（印痕）面板落地后，审计链只有元数据（正文不落盘是 ADR-0004 安全决策）——
+Cellrix ProveTrack（证轨）面板落地后，审计链只有元数据（正文不落盘是 ADR-0004 安全决策）——
 "以适配 ai 的输入输出展示轨迹"需要正文半体，记录在构造 prompt 的一侧（Anaphase）。
 
 ### 变更性质
@@ -199,13 +199,13 @@ Cellrix Engram（印痕）面板落地后，审计链只有元数据（正文不
 
 ### 补丁（同日）：三键合一——x-tuck-trace 头
 - **物理发现**：真实联调时审计链 trace_id 为 `local`（请求未带头），与正文 trace 的
-  `run-{fnv}` 对不上——印痕 join 断裂
+  `run-{fnv}` 对不上——证轨 join 断裂
 - **修复**：`ReasoningAdapter::reason(prompt, model, trace_id)` 签名加 trace_id
   （10 处实现机械同步）；HttpReasoningAdapter 注入 `x-tuck-trace` 头
 - **验证**：真实调用后审计链 seq 4/5 = `run-8580fa8f91688134` == 正文 trace_id（同键）
 
 ### 状态
-🧬 已完成（Cellrix Engram 正文 join 为下一步）
+🧬 已完成（Cellrix ProveTrack 正文 join 为下一步）
 ## 记录 29：驾驶舱真对话——send_message 输入 + 真实 LLM 回复（2026-09-06）
 
 ### 触发条件
@@ -231,7 +231,7 @@ README（对话 + ANAPHASE_CONFIG）｜ PLAN｜ ECOSYSTEM v1.56
 ## 记录 32：全文回放端点——/v1/trace（2026-09-07）
 
 ### 触发条件
-印痕两半体（正文 + 链）同键后，用户拍板①：全文回放——Engram 从"链完整性"升级为"每轮思考正文可查"。
+证轨两半体（正文 + 链）同键后，用户拍板①：全文回放——ProveTrack 从"链完整性"升级为"每轮思考正文可查"。
 
 ### 变更性质
 - **trace.rs `query_file`**：只读按需查询（trace_id 过滤 / 无参取最新 N 条尾部窗口；坏行跳过不致命）——append-only 存储不建热索引
@@ -341,7 +341,7 @@ README（fail-closed 节）｜ GROWTH｜ ECOSYSTEM v1.67（Anaphase 219）
 ### 变更性质
 - **新增 `src/session_events.rs`**：每认知周期一个 JSONL（`{dir}/{job_id}.events.jsonl`），事件 `{type, seq, time, data}`，词汇表（协议值）：turn/start · user/message · context/inject · assistant/attempt · tool/call · tool/result · verdict/status · turn/end
 - **run_cycle 五处挂钩**：周期头（turn/start+user/message+context/inject）→ attempt → tool/call+tool/result（evidence 行）→ verdict（criteria 判据）→ turn/end
-- **join key 统一**：与 reasoning trace、Tuck 审计链同一 `run-<12hex>`（Engram 三源一键）
+- **join key 统一**：与 reasoning trace、Tuck 审计链同一 `run-<12hex>`（ProveTrack 三源一键）
 - **写前脱敏**：payload 递归红act（复用 trace Redaction），凭证永不落盘
 - **DSH 轨迹结构参考**（deepseek-harness session-format 实证），**不借其命名**（生态词汇自定）
 
@@ -351,7 +351,7 @@ README（fail-closed 节）｜ GROWTH｜ ECOSYSTEM v1.67（Anaphase 219）
 - 非致命写入（写失败不终止认知循环）
 
 ### 待办
-- Cellrix Engram v2：turn 时间线渲染（读事件流，角色徽标 + 统计条）——下一步
+- Cellrix ProveTrack v2：turn 时间线渲染（读事件流，角色徽标 + 统计条）——下一步
 
 ## 记录 49：记忆决策白盒 + 显式续聊（2026-09-07，ADR-0027）
 
@@ -378,7 +378,7 @@ README（fail-closed 节）｜ GROWTH｜ ECOSYSTEM v1.67（Anaphase 219）
 - 236 passed（+2 query 测试）
 - 实弹（走 8080 代理）：sessions 列出 3 段经历；events 返回质量守恒轮的完整 5 事件时间线
 
-## 记录 50：SSE 确定性排空 + 会话命名 + 印痕形态纠错（2026-09-08，ADR-0028）
+## 记录 50：SSE 确定性排空 + 会话命名 + 证轨形态纠错（2026-09-08，ADR-0028）
 
 ### 关键动作
 - **SSE 三阶段 unfold**：`tokio::select!` 等 delta/done 的随机丢包根因修复——done 后先
@@ -388,27 +388,27 @@ README（fail-closed 节）｜ GROWTH｜ ECOSYSTEM v1.67（Anaphase 219）
   思考仅展示、永不参与判据。
 - **会话命名**：preview 全文件扫第一条 user/message 作自动名；`rename_period` sidecar
   落盘 + POST `/v1/sessions/rename`（空名=回退自动 preview）。
-- **印痕形态纠错**：对照 DSH session-turn-outline 确认轨迹= turn 大纲非时间轴甘特；
+- **证轨形态纠错**：对照 DSH session-turn-outline 确认轨迹= turn 大纲非时间轴甘特；
   SA-Core 选择 / L1-L3 节点 chip 标签化（ADR-0028 D5）。
 
 ### 验收
 - 237 passed（+SSE thinking 断言、preview 新语义、rename 测试）
 - 实弹（浏览器走 8080）：连发两条消息均完整回复（无截断/空回复）；思考折叠行流式出现；
-  印痕 chip 标签化（SA-Core 选择 L1×1 L3×19 + mnode chips）；续接下拉 8 条经历；
+  证轨 chip 标签化（SA-Core 选择 L1×1 L3×19 + mnode chips）；续接下拉 8 条经历；
   重命名设置/清空回退全通
 
-## 记录 51（2026-09-08）印痕链条完整性（ADR-0029）
+## 记录 51（2026-09-08）证轨链条完整性（ADR-0029）
 
 ### 目标
-把印痕从"标签流水"升级为"物理事实 → 确定性判据 → 可审计记账"闭环；
-修复对话中途 `⚠ origin ended mid-line` 断连；思考进印痕（点展/关闭/悬浮预览）。
+把证轨从"标签流水"升级为"物理事实 → 确定性判据 → 可审计记账"闭环；
+修复对话中途 `⚠ origin ended mid-line` 断连；思考进证轨（点展/关闭/悬浮预览）。
 
 ### 健康快照
 - **链条补齐**：tool/result 补 `outcome + outcome_sha`（产出物字节可对合）；
   CheckReport 扩 judge/gate/expect/evidence_id（判决自带身份证）；
   新增 `check/status` 事件（每判据一条）+ VERDICT 补 reason/checks；
   END.success 立铁律 `success ≡ (verdict ≠ Met)`（有工具轮时），禁止状态机自报。
-- **思考落印痕**：reason_stream 增加 thinking sink 聚合 → `assistant/think` 事件
+- **思考落证轨**：reason_stream 增加 thinking sink 聚合 → `assistant/think` 事件
   （脱敏、显示专用、判据永不消费）；前端统一 fold 原语（点击展开/再点关闭/悬浮预览）
   服务 think/check/outcome 所有可折叠行——一个能力，处处复用。
 - **结晶闭环**：`crystallize(dir, limit)` 扫 Unmet 轮析出规则建议
@@ -423,7 +423,7 @@ README（fail-closed 节）｜ GROWTH｜ ECOSYSTEM v1.67（Anaphase 219）
 ### 验收
 - 239 passed（+crystallize 蒸馏/跳过 Met 两测试；health 并行稳定）
 - Cellrix 341 passed（前端 fold/think/check/outcome 分支 + proxy EOF 测试）
-- 印痕详情：THINK 折叠行（点击展开全文/悬浮预览）、CHECK gate/judge/PASS-FAIL/依据、
+- 证轨详情：THINK 折叠行（点击展开全文/悬浮预览）、CHECK gate/judge/PASS-FAIL/依据、
   RESULT sha+结果 fold、VERDICT reason、END verdict 派生
 - 续接经历：下拉选中即把该经历历史加载进会话空间（user/attempt/tool 结果消息化），
   下一句延续该经历

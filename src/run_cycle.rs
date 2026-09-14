@@ -164,14 +164,14 @@ pub struct AgentLoop {
     /// Amygdala -> suggested_mode chain. Rules by default (zero tokens);
     /// SmallLlm (3B-class) when configured. Always returns 1/2/3.
     pub judge: std::sync::Arc<dyn crate::judge::Judge>,
-    /// Reasoning body trace (Engram join, 2026-09-07): append-only JSONL of
+    /// Reasoning body trace (ProveTrack join, 2026-09-07): append-only JSONL of
     /// every reasoning round trip (prompt + response, redacted + truncated).
     /// The audit chain stores metadata; this stores the *body*, on the side
     /// that constructs the prompt. None = trace off (opt-in, config
     /// `reasoning_trace_path`). `trace_id` = the derived job id, joining
-    /// body + chain + ledger in Cellrix's Engram view.
+    /// body + chain + ledger in Cellrix's ProveTrack view.
     pub trace: Option<crate::trace::ReasoningTrace>,
-    /// Session event stream directory (Engram turn timeline, ADR-0023):
+    /// Session event stream directory (ProveTrack turn timeline, ADR-0023):
     /// one append-only JSONL per cognitive period, keyed by the derived
     /// job id. Opened at period start (the id exists only then); None =
     /// stream off. Non-fatal: a failed open degrades to no stream.
@@ -233,7 +233,7 @@ pub struct AgentContext {
     /// fresh stranger.
     pub resume: Option<String>,
     /// Continuation parent (2026-09-14): the machine-readable job id of the
-    /// resumed period. Engram threads periods on THIS (session list
+    /// resumed period. ProveTrack threads periods on THIS (session list
     /// aggregation), while `resume` carries the human-readable summary for
     /// prompt injection. One continuation, two carriers.
     pub resume_job: Option<String>,
@@ -280,7 +280,7 @@ pub struct AgentContext {
 }
 
 impl AgentLoop {
-    /// SA-Core choice detail for the Engram cockpit (ADR-0033): which layers
+    /// SA-Core choice detail for the ProveTrack cockpit (ADR-0033): which layers
     /// were picked and the top-heat nodes — provenance only (id/tier/heat/
     /// phase), never node content. Empty when no memory was retrieved.
     fn memory_choice_detail(&self) -> Option<serde_json::Value> {
@@ -634,7 +634,7 @@ impl AgentLoop {
                     // from the upstream response — the routed fact. Zero
                     // tokens; absent when the adapter never saw a response.
                     let model = self.reason.last_model();
-                    // The deliverable closes the Engram chain: user → think →
+                    // The deliverable closes the ProveTrack chain: user → think →
                     // attempt → tools → verdict → REPLY → end. Emitted even
                     // when empty (honest zero-length answer), so the chain
                     // never silently loses what Helix actually said.
@@ -891,9 +891,9 @@ impl AgentLoop {
                 };
                 // One derived trace id for this round: carried to the gateway
                 // (x-tuck-trace -> Tuck chain), to the body trace, and to the
-                // pipeline events — one join key across all three (Engram).
+                // pipeline events — one join key across all three (ProveTrack).
                 let trace_id = crate::contract::derive_job_id(&self.context.user_input);
-                // Session event stream (Engram turn timeline): open the
+                // Session event stream (ProveTrack turn timeline): open the
                 // per-period stream and emit the period header — turn/start,
                 // user/message, context/inject (summary only). The stream is
                 // keyed by the same derived job id as the body trace and the
@@ -913,7 +913,7 @@ impl AgentLoop {
                 if let Some(ev) = self.session_events.as_mut() {
                     let ts = crate::ledger::unix_secs_to_rfc3339(self.clock.now());
                     // resume_from = machine-readable parent job id when this
-                    // period continues a previous one (Engram threading);
+                    // period continues a previous one (ProveTrack threading);
                     // legacy fallback keeps the human summary for old
                     // callers that never sent a job_id.
                     let resume_from = self
@@ -1003,7 +1003,7 @@ impl AgentLoop {
                                 serde_json::json!({ "text": self.context.reasoning_think }),
                             );
                         }
-                        // Body trace (Engram join): record the round trip
+                        // Body trace (ProveTrack join): record the round trip
                         // post-redaction/post-truncation. The trace id is the
                         // derived job id — the same key the pipeline events
                         // and the Tuck audit chain carry, so Cellrix joins
@@ -1277,7 +1277,7 @@ impl AgentLoop {
                     // Human-readable reply: replace the plan JSON with the tool
                     // result summary — the user asked a question, not for a
                     // call plan. The LLM's original output stays in the body
-                    // trace (Engram) for audit; this is the answer surface.
+                    // trace (ProveTrack) for audit; this is the answer surface.
                     let lines: Vec<String> = self
                         .context
                         .evidence

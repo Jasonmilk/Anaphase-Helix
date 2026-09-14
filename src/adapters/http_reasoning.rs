@@ -81,7 +81,7 @@ impl HttpReasoningAdapter {
         let mut req = self.client.post(&url).json(&body);
         // Carry the derived trace id to the gateway: the Tuck audit chain
         // records it as the trace_id, so chain + body trace + ledger share
-        // one join key in Cellrix's Engram view (missing header = "local").
+        // one join key in Cellrix's ProveTrack view (missing header = "local").
         req = req.header("x-tuck-trace", trace_id);
         if let Some(ref tier) = self.route_tier {
             req = req.header("X-Route-Tier", tier);

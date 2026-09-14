@@ -336,7 +336,7 @@ Edit `config.toml` to connect real services:
 - Models, safety rules, and thresholds all configurable
 - Criteria rules & retry policy: `knowledge_base/fixture-codex.json` (zero hardcoding)
 
-### Engram session event stream (turn timeline, 2026-09-07, ADR-0026/0027)
+### ProveTrack session event stream (turn timeline, 2026-09-07, ADR-0026/0027)
 
 The session-as-experience body: every cognitive period appends its
 structured events to one JSONL keyed by the derived job id:
@@ -365,7 +365,7 @@ the previous round is flattened into "true history" and injected as
 are experiences — a conversation can be continued by choosing it, never
 silently bled across periods.
 
-### Engram body trace (reasoning round trips, 2026-09-07)
+### ProveTrack body trace (reasoning round trips, 2026-09-07)
 
 The Tuck audit chain stores *metadata* (it never touches bodies — that would
 be a sensitive data lake). The **body** of every reasoning call (prompt +
@@ -381,7 +381,7 @@ reasoning_redact_patterns = []                   # extra credential literals
 - **Redacted before disk** (sk- / Bearer / api_key= / token= / password= +
   config extras) — the 2026-09-07 key-leak audit is the reason this exists
 - **Keyed by the derived job id** (`trace_id = derive_job_id(input)`) — the
-  same key the audit chain and ledger carry, so Cellrix's Engram view joins
+  same key the audit chain and ledger carry, so Cellrix's ProveTrack view joins
   body + chain + verdict for one round
 - Timestamps from the injected Clock (deterministic replay)
 
@@ -392,7 +392,7 @@ serves the bodies on demand (redacted on write, read-only, no hot index):
 GET /v1/trace?trace_id=run-...&limit=20   # one round's bodies (or newest N)
 ```
 
-Cellrix's Engram detail panel calls this per selected row — click an audit
+Cellrix's ProveTrack detail panel calls this per selected row — click an audit
 entry and read the exact prompt + response of that round (silicon/carbon
 side by side, no ambiguity).
 

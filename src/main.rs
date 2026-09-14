@@ -121,7 +121,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }))
             .route("/v1/trace", get({
-                // Engram body half (2026-09-07): read-only, on-demand query
+                // ProveTrack body half (2026-09-07): read-only, on-demand query
                 // over the reasoning trace file. `trace_id` filters one round
                 // (the join key the Tuck chain and the ledger share);
                 // `limit` bounds the newest-window read. Reads only what a
@@ -157,7 +157,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }))
             .route("/v1/sessions", get({
-                // Session-management sidebar (Engram v2): one summary per
+                // Session-management sidebar (ProveTrack v2): one summary per
                 // cognitive period, newest first. Reads only each file's
                 // first/last row — on-demand, never a hot index. Unconfigured
                 // or empty dir -> empty list, never 500 (按需加载).
@@ -243,7 +243,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }))
             .route("/v1/events", get({
-                // One period's full event stream (Engram turn timeline):
+                // One period's full event stream (ProveTrack turn timeline):
                 // the session-as-experience body (ADR-0026). `job_id` is the
                 // derived run id — the same join key the Tuck audit chain
                 // and the reasoning trace carry. Unknown id -> 404-style
@@ -354,7 +354,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // true history so the new period continues the
                     // conversation instead of meeting a stranger.
                     if let Some(job) = body.get("job_id").and_then(|v| v.as_str()) {
-                        // Machine-readable parent for Engram threading
+                        // Machine-readable parent for ProveTrack threading
                         // (session list aggregation).
                         built.agent.context.resume_job = Some(job.to_string());
                         if let Some(dir) = &cfg.anaphase.session_events_path {
@@ -706,7 +706,7 @@ async fn build_agent(config: &config::Config) -> BuiltAgent {
                 )
                 .expect("reasoning trace path must be openable")
             });
-        // Session event stream (Engram turn timeline, ADR-0023): opt-in via
+        // Session event stream (ProveTrack turn timeline, ADR-0023): opt-in via
         // `session_events_path`. The stream opens per period inside
         // run_cycle (the derived job id exists only then); this wires the
         // directory and the redactor (same credential shapes as trace).

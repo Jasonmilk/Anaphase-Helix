@@ -60,7 +60,7 @@ pub struct AnaphaseConfig {
     /// (trail persistence on, cross-restart replay; same pattern as
     /// session_notes_path). Set an explicit path to relocate.
     pub events_log_path: Option<String>,
-    /// Reasoning body trace path (Engram join). `None` = trace off (opt-in).
+    /// Reasoning body trace path (ProveTrack join). `None` = trace off (opt-in).
     /// When set, every reasoning round trip (prompt + response) is appended
     /// redacted + truncated to this JSONL file, keyed by the derived job id.
     pub reasoning_trace_path: Option<String>,
@@ -70,7 +70,7 @@ pub struct AnaphaseConfig {
     /// Extra credential literals to redact (project-specific secrets),
     /// in addition to the built-in shapes (sk- / Bearer / api_key= / ...).
     pub reasoning_redact_patterns: Option<Vec<String>>,
-    /// Session event stream directory (Engram turn timeline, ADR-0023).
+    /// Session event stream directory (ProveTrack turn timeline, ADR-0023).
     /// `None` = stream off (opt-in). When set, every cognitive period
     /// appends its structured events (turn/start, user/message,
     /// context/inject, attempt, tool/call, tool/result, verdict,

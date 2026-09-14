@@ -5,7 +5,7 @@
 //   {"type":"turn/start","seq":0,"time":"<rfc3339>","data":{...}}
 //
 // The job id is the same join key the body trace and the Tuck audit chain
-// carry (Engram), so a client renders one period as a turn timeline
+// carry (ProveTrack), so a client renders one period as a turn timeline
 // (USER / CONTEXT / ATTEMPT / TOOL / VERDICT badges) from this one source.
 //
 // Events carry summaries only: the full prompt/response bodies live in the
@@ -47,7 +47,7 @@ pub enum EventType {
     /// The criteria verdict (MET / UNMET / blocked).
     Verdict,
     /// The assistant's final answer of the period (the deliverable that
-    /// closes the Engram chain: user → think → attempt → tools → verdict →
+    /// closes the ProveTrack chain: user → think → attempt → tools → verdict →
     /// reply → end). Empty reply = the honest zero-length answer, emitted
     /// anyway so the chain never silently loses the deliverable.
     AssistantReply,
@@ -107,7 +107,7 @@ impl SessionEventStream {
         // input lands in the same file — the period ledger holds the LATEST
         // execution, and the full history lives in the Tuck audit chain.
         // Appending would interleave two periods in one stream and break
-        // the Engram chain (verified: duplicate turn groups).
+        // the ProveTrack chain (verified: duplicate turn groups).
         let file = fs::OpenOptions::new()
             .create(true)
             .write(true)
@@ -458,7 +458,7 @@ pub fn read_period(dir: &std::path::Path, job_id: &str) -> io::Result<Vec<Sessio
     Ok(events)
 }
 
-/// One period's list summary (session-management sidebar, Engram v2).
+/// One period's list summary (session-management sidebar, ProveTrack v2).
 /// Reads only each file's first row (user/message preview + start time)
 /// and last row (end time) — on-demand, never a hot index.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

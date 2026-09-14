@@ -1,6 +1,6 @@
-//! Reasoning body trace (Engram join): the round trip is appended
+//! Reasoning body trace (ProveTrack join): the round trip is appended
 //! redacted + truncated, keyed by the derived job id — joinable with the
-//! Tuck audit chain and the ledger in Cellrix's Engram view.
+//! Tuck audit chain and the ledger in Cellrix's ProveTrack view.
 
 use std::sync::Arc;
 

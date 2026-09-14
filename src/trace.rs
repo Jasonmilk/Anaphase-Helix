@@ -1,4 +1,4 @@
-//! Reasoning trace — the *body* half of the Engram imprint.
+//! Reasoning trace — the *body* half of the ProveTrack imprint.
 //!
 //! The audit chain (Tuck) never stores request/response bodies — that
 //! would be a sensitive data lake (ADR-0004). The *body* of every
@@ -191,7 +191,7 @@ impl ReasoningTrace {
     }
 }
 
-/// Read-only on-demand query over the append-only trace file (Engram body
+/// Read-only on-demand query over the append-only trace file (ProveTrack body
 /// half — `/v1/trace`, 2026-09-07). Entries matching `trace_id`, or the
 /// newest `limit` entries when None. The file is append-only storage, never
 /// a hot index: a read loads only what a query asks for (按需加载); rows
