@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use futures_util::StreamExt;
 use serde_json::json;
+use super::usage::{parse_usage, UpstreamMeta};
 use super::ReasoningAdapter;
 
 /// Identity rides the system channel: `[{system}, {user}]` — the vendor's
@@ -30,10 +31,10 @@ pub struct HttpReasoningAdapter {
     /// OpenAI-compatible channel contract, not a prompt trick.
     system_prompt: Option<String>,
     client: reqwest::Client,
-    /// Physical model that served the last round trip (ADR-0036): captured
-    /// from the upstream response `model` field. Shared across the buffered
-    /// and streaming paths; read by run_cycle via `last_model()`.
-    last_model: std::sync::Arc<std::sync::Mutex<Option<String>>>,
+    /// Upstream response metadata of the last round trip (ADR-0036 model +
+    /// ADR-0038 usage): captured from the response, shared across the
+    /// buffered and streaming paths, read by run_cycle via `last_meta()`.
+    last_meta: std::sync::Arc<std::sync::Mutex<UpstreamMeta>>,
 }
 
 impl HttpReasoningAdapter {
@@ -45,7 +46,7 @@ impl HttpReasoningAdapter {
             route_tier: config.reasoning_route_tier.clone(),
             max_tokens: config.reasoning_max_tokens.unwrap_or(2048),
             system_prompt,
-            last_model: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            last_meta: std::sync::Arc::new(std::sync::Mutex::new(UpstreamMeta::default())),
             // No idle connection reuse: a gateway-closed keep-alive makes the
             // second call fail with EAGAIN (os error 35). Fresh connect per
             // call is deterministic — the cheap local-LLM path pays no TLS,
@@ -57,11 +58,38 @@ impl HttpReasoningAdapter {
         }
     }
 
-    fn capture_model(&self, json: &serde_json::Value) {
+    /// Begin a round trip: the previous round trip's accounting has been
+    /// spent, so drop it (ADR-0038 D12).
+    ///
+    /// Without this, an upstream that reports usage on one call and omits it
+    /// on the next would have its EARLIER numbers read again — the period
+    /// total would silently bill the same tokens twice, which is a fabricated
+    /// fact, not a rounded one.
+    ///
+    /// The model is deliberately NOT cleared: it describes the route, not the
+    /// call, and ADR-0036 reads it after the retry loop has settled.
+    fn begin_round_trip(&self) {
+        self.last_meta.lock().unwrap().usage = None;
+    }
+
+    /// Capture upstream response metadata (ADR-0038 D6/D7/D8): the routed
+    /// model and the token accounting ride the same response, so they are
+    /// read in one pass.
+    ///
+    /// The write is **presence-gated per field**: a field that is absent — or
+    /// present but `null`, which some OpenAI-compatible gateways send — means
+    /// "no update", never "clear". This is load-bearing for the streaming
+    /// path, where only the final chunk carries `usage`: an unconditional
+    /// write would wipe, on the way out, the very value just captured from it.
+    fn capture_meta(&self, json: &serde_json::Value) {
+        let mut meta = self.last_meta.lock().unwrap();
         if let Some(m) = json.get("model").and_then(|v| v.as_str()) {
             if !m.is_empty() {
-                *self.last_model.lock().unwrap() = Some(m.to_string());
+                meta.model = Some(m.to_string());
             }
+        }
+        if let Some(u) = parse_usage(json.get("usage")) {
+            meta.usage = Some(u);
         }
     }
     /// Shared chat-completions request: streaming flag + trace header + auth.
@@ -95,17 +123,23 @@ impl HttpReasoningAdapter {
 
 #[async_trait]
 impl ReasoningAdapter for HttpReasoningAdapter {
-    /// Physical model that served the last round trip (ADR-0036): the
-    /// upstream response's model field — the routed fact. Read via the
-    /// trait object by run_cycle (inherent impl would never be reached).
-    fn last_model(&self) -> Option<String> {
-        self.last_model.lock().unwrap().clone()
+    /// Upstream response metadata of the LAST round trip (ADR-0036 + 0038):
+    /// the routed model and the token accounting. Read via the trait object
+    /// by run_cycle (an inherent impl would never be reached).
+    ///
+    /// Contract: `usage` describes the round trip that just finished and
+    /// nothing else — an adapter must not carry it across calls (D12). An
+    /// absent report stays absent rather than replaying the previous call's
+    /// numbers.
+    fn last_meta(&self) -> UpstreamMeta {
+        self.last_meta.lock().unwrap().clone()
     }
 
     async fn reason(&self, prompt: &str, _model: &str, trace_id: &str) -> Result<String, String> {
+        self.begin_round_trip();
         let resp = self.post_chat(prompt, trace_id, false).await?;
         let json: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
-        self.capture_model(&json);
+        self.capture_meta(&json);
         json["choices"][0]["message"]["content"]
             .as_str()
             .map(|s| s.to_string())
@@ -120,6 +154,7 @@ impl ReasoningAdapter for HttpReasoningAdapter {
         deltas: tokio::sync::mpsc::UnboundedSender<crate::adapters::StreamDelta>,
         thinking: &std::sync::Mutex<String>,
     ) -> Result<String, String> {
+        self.begin_round_trip();
         let resp = self.post_chat(prompt, trace_id, true).await?;
         if !resp.status().is_success() {
             let status = resp.status();
@@ -136,7 +171,7 @@ impl ReasoningAdapter for HttpReasoningAdapter {
         // fallback: buffer, emit once.
         if !ct.contains("text/event-stream") {
             let json: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
-            self.capture_model(&json);
+            self.capture_meta(&json);
             let full = json["choices"][0]["message"]["content"]
                 .as_str()
                 .unwrap_or("")
@@ -173,7 +208,7 @@ impl ReasoningAdapter for HttpReasoningAdapter {
                             break 'outer;
                         }
                         if let Ok(v) = serde_json::from_str::<serde_json::Value>(payload) {
-                            self.capture_model(&v);
+                            self.capture_meta(&v);
                             let delta = &v["choices"][0]["delta"];
                             let content = delta["content"].as_str().unwrap_or("");
                             let think = delta["reasoning_content"].as_str().unwrap_or("");
@@ -298,5 +333,208 @@ mod tests {
             .unwrap();
         assert_eq!(full, "plain");
         assert_eq!(rx.try_recv().unwrap().content, "plain");
+    }
+
+    // ---------- ADR-0038: upstream usage capture ----------
+
+    fn adapter_for(addr: std::net::SocketAddr) -> HttpReasoningAdapter {
+        let mut cfg = crate::config::AnaphaseConfig::default();
+        cfg.reasoning_endpoint = Some(format!("http://{addr}"));
+        cfg.reasoning_model = Some("fake".into());
+        HttpReasoningAdapter::new(&cfg, None)
+    }
+
+    #[tokio::test]
+    async fn stream_usage_survives_chunks_that_lack_it() {
+        // Only the final chunk carries usage (measured: 1 of 41). The forty
+        // that do not must not wipe the value captured from it.
+        let gw = spawn_gateway(
+            "data: {\"model\":\"m1\",\"choices\":[{\"delta\":{\"content\":\"a\"}}]}\n\n\
+             data: {\"model\":\"m1\",\"choices\":[{\"delta\":{\"content\":\"b\"}}]}\n\n\
+             data: {\"model\":\"m1\",\"choices\":[{\"delta\":{}}],\"usage\":{\"prompt_tokens\":288,\"completion_tokens\":46,\"prompt_tokens_details\":{\"cached_tokens\":256}}}\n\n\
+             data: [DONE]\n\n",
+        )
+        .await;
+        let adapter = adapter_for(gw.addr);
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<crate::adapters::StreamDelta>();
+        let full = adapter
+            .reason_stream("hi", "fake", "t1", tx, &std::sync::Mutex::new(String::new()))
+            .await
+            .unwrap();
+        assert_eq!(full, "ab");
+        let meta = adapter.last_meta();
+        assert_eq!(meta.model.as_deref(), Some("m1"));
+        let u = meta.usage.expect("usage captured from the final chunk");
+        assert_eq!(u.prompt_tokens, 288);
+        assert_eq!(u.completion_tokens, 46);
+        assert_eq!(u.cached_tokens, Some(256));
+        assert_eq!(u.uncached_input(), Some(32));
+        gw.handle.abort();
+    }
+
+    #[tokio::test]
+    async fn stream_without_usage_reports_none() {
+        let gw = spawn_gateway(
+            "data: {\"model\":\"m1\",\"choices\":[{\"delta\":{\"content\":\"x\"}}]}\n\n\
+             data: [DONE]\n\n",
+        )
+        .await;
+        let adapter = adapter_for(gw.addr);
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<crate::adapters::StreamDelta>();
+        let _ = adapter
+            .reason_stream("hi", "fake", "t1", tx, &std::sync::Mutex::new(String::new()))
+            .await
+            .unwrap();
+        let meta = adapter.last_meta();
+        assert!(meta.usage.is_none(), "no upstream usage -> honest None, never zero");
+        assert_eq!(meta.model.as_deref(), Some("m1"), "model is captured independently");
+        gw.handle.abort();
+    }
+
+    #[tokio::test]
+    async fn null_usage_never_clears_a_captured_value() {
+        // Some OpenAI-compatible gateways fill absent fields with null; that
+        // means "no update", never "clear".
+        let gw = spawn_gateway(
+            "data: {\"model\":\"m1\",\"choices\":[{\"delta\":{\"content\":\"a\"}}],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":2}}\n\n\
+             data: {\"model\":\"m1\",\"choices\":[{\"delta\":{\"content\":\"b\"}}],\"usage\":null}\n\n\
+             data: [DONE]\n\n",
+        )
+        .await;
+        let adapter = adapter_for(gw.addr);
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<crate::adapters::StreamDelta>();
+        let _ = adapter
+            .reason_stream("hi", "fake", "t1", tx, &std::sync::Mutex::new(String::new()))
+            .await
+            .unwrap();
+        let u = adapter.last_meta().usage.expect("a null update must not clear it");
+        assert_eq!(u.prompt_tokens, 10);
+        gw.handle.abort();
+    }
+
+    #[tokio::test]
+    async fn buffered_path_captures_usage() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            loop {
+                let Ok((mut sock, _)) = listener.accept().await else { break };
+                tokio::spawn(async move {
+                    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+                    let mut buf = [0u8; 4096];
+                    let _ = sock.read(&mut buf).await;
+                    let body = r#"{"model":"m2","choices":[{"message":{"content":"ok"}}],"usage":{"prompt_tokens":11,"completion_tokens":3}}"#;
+                    let resp = format!(
+                        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                        body.len(), body
+                    );
+                    let _ = sock.write_all(resp.as_bytes()).await;
+                });
+            }
+        });
+        let adapter = adapter_for(addr);
+        assert_eq!(adapter.reason("hi", "fake", "t1").await.unwrap(), "ok");
+        let meta = adapter.last_meta();
+        assert_eq!(meta.model.as_deref(), Some("m2"));
+        assert_eq!(meta.usage.expect("buffered usage").prompt_tokens, 11);
+    }
+
+    #[tokio::test]
+    async fn non_sse_fallback_captures_usage() {
+        // Gateway ignores stream=true and answers plain JSON: the honest
+        // fallback path must capture metadata too.
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            loop {
+                let Ok((mut sock, _)) = listener.accept().await else { break };
+                tokio::spawn(async move {
+                    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+                    let mut buf = [0u8; 4096];
+                    let _ = sock.read(&mut buf).await;
+                    let body = r#"{"model":"m3","choices":[{"message":{"content":"plain"}}],"usage":{"prompt_tokens":7,"completion_tokens":1,"prompt_cache_hit_tokens":5}}"#;
+                    let resp = format!(
+                        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                        body.len(), body
+                    );
+                    let _ = sock.write_all(resp.as_bytes()).await;
+                });
+            }
+        });
+        let adapter = adapter_for(addr);
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<crate::adapters::StreamDelta>();
+        assert_eq!(
+            adapter
+                .reason_stream("hi", "fake", "t1", tx, &std::sync::Mutex::new(String::new()))
+                .await
+                .unwrap(),
+            "plain"
+        );
+        let u = adapter.last_meta().usage.expect("fallback usage");
+        assert_eq!(u.prompt_tokens, 7);
+        assert_eq!(u.cached_tokens, Some(5));
+    }
+
+    /// ADR-0038 read-side: the accounting of a round trip belongs to that
+    /// round trip alone. When the NEXT call reports nothing, the earlier
+    /// numbers must not be read again — re-reading bills the same tokens
+    /// twice and the period total silently doubles.
+    #[tokio::test]
+    async fn a_call_without_usage_does_not_replay_the_previous_call() {
+        // Two consecutive round trips on one adapter: the first reports usage
+        // in its final chunk, the second never mentions it.
+        let bodies = vec![
+            "data: {\"model\":\"m1\",\"choices\":[{\"delta\":{\"content\":\"a\"}}]}\n\n\
+             data: {\"model\":\"m1\",\"choices\":[{\"delta\":{}}],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":2}}\n\n\
+             data: [DONE]\n\n"
+                .to_string(),
+            "data: {\"model\":\"m1\",\"choices\":[{\"delta\":{\"content\":\"b\"}}]}\n\n\
+             data: [DONE]\n\n"
+                .to_string(),
+        ];
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let mut served = 0usize;
+            loop {
+                let Ok((mut sock, _)) = listener.accept().await else { break };
+                let body = bodies.get(served).cloned().unwrap_or_default();
+                served += 1;
+                tokio::spawn(async move {
+                    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+                    let mut buf = [0u8; 4096];
+                    let _ = sock.read(&mut buf).await;
+                    let resp = format!(
+                        "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                        body.len(),
+                        body
+                    );
+                    let _ = sock.write_all(resp.as_bytes()).await;
+                });
+            }
+        });
+        let adapter = adapter_for(addr);
+        let sink = std::sync::Mutex::new(String::new());
+
+        let (tx1, _rx1) = tokio::sync::mpsc::unbounded_channel::<crate::adapters::StreamDelta>();
+        adapter
+            .reason_stream("one", "fake", "t1", tx1, &sink)
+            .await
+            .unwrap();
+        assert!(
+            adapter.last_meta().usage.is_some(),
+            "call 1 reported usage — it must be captured"
+        );
+
+        let (tx2, _rx2) = tokio::sync::mpsc::unbounded_channel::<crate::adapters::StreamDelta>();
+        adapter
+            .reason_stream("two", "fake", "t2", tx2, &sink)
+            .await
+            .unwrap();
+        assert_eq!(
+            adapter.last_meta().usage,
+            None,
+            "call 2 reported no usage — replaying call 1's numbers would bill the same tokens twice"
+        );
     }
 }

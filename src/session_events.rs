@@ -51,6 +51,16 @@ pub enum EventType {
     /// reply → end). Empty reply = the honest zero-length answer, emitted
     /// anyway so the chain never silently loses the deliverable.
     AssistantReply,
+    /// Token accounting of ONE upstream round trip (ADR-0038). A period has
+    /// three call sites — the retry loop (streamed or buffered, N times) and
+    /// the tool-evidence finalize — so this is emitted once per round trip,
+    /// not once per period; the per-period total is derived on read, never
+    /// accumulated on write.
+    ///
+    /// Display-only, exactly like `Think`: it is disclosure, never evidence
+    /// for criteria. The token-budget circuit breaker (DNA principle 7) reads
+    /// `EnergyContext.token_budget` — a different data path, not this event.
+    Usage,
     /// The period ended and returned to Perception.
     TurnEnd,
 }
@@ -68,6 +78,7 @@ impl EventType {
             EventType::Check => "check/status",
             EventType::Verdict => "verdict/status",
             EventType::AssistantReply => "assistant/reply",
+            EventType::Usage => "assistant/usage",
             EventType::TurnEnd => "turn/end",
         }
     }
@@ -334,6 +345,7 @@ mod tests {
         assert_eq!(EventType::ToolResult.as_str(), "tool/result");
         assert_eq!(EventType::Verdict.as_str(), "verdict/status");
         assert_eq!(EventType::AssistantReply.as_str(), "assistant/reply");
+        assert_eq!(EventType::Usage.as_str(), "assistant/usage");
         assert_eq!(EventType::TurnEnd.as_str(), "turn/end");
     }
 

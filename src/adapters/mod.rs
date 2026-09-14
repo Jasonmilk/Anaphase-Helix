@@ -3,6 +3,7 @@ pub mod flowmodus;
 pub mod tentacle;
 // New: Declare HTTP reasoning adapter module
 pub mod http_reasoning;
+pub mod usage;
 
 use async_trait::async_trait;
 use serde::{Serialize, Deserialize};
@@ -143,23 +144,34 @@ pub async fn resolve_memory_adapter(config: &crate::config::AnaphaseConfig) -> A
 // ---------- Reasoning Adapter ----------
 /// One streaming slice of a reasoning round. `content` is the answer
 /// surface (what the client types out); `thinking` is the model's private
-/// deliberation (rendered as a collapsible disclosure, DSH-style, never
-/// injected into judgement — the cycle always runs on the full content).
+/// deliberation (rendered as a collapsible disclosure, never injected into
+/// judgement — the cycle always runs on the full content).
 #[derive(Debug, Clone, Default)]
 pub struct StreamDelta {
     pub content: String,
     pub thinking: String,
 }
 
+// The reasoning adapter's data shapes live in `usage` (ADR-0038): the
+// contracts stay here, the wire parsing lives with its own tests.
+pub use usage::{UpstreamMeta, UsageSnapshot};
+
 #[async_trait]
 pub trait ReasoningAdapter: Send + Sync {
+    /// Upstream response metadata of the last round trip (ADR-0036 + 0038).
+    /// Default empty: only adapters that see the upstream response override
+    /// this. Zero tokens — it is response metadata already on the wire, never
+    /// a prompt cost.
+    fn last_meta(&self) -> UpstreamMeta {
+        UpstreamMeta::default()
+    }
+
     /// The physical model that actually served the last round trip
-    /// (ADR-0036): the upstream OpenAI-compatible response's `model` field —
-    /// the routed fact, not the config's declared name. Default None: only
-    /// adapters that see the upstream response override this. Zero tokens —
-    /// it is response metadata already on the wire, never a prompt cost.
+    /// (ADR-0036): the routed fact, not the config's declared name.
+    /// A derived view over `last_meta()` — the ADR-0036 contract is unchanged
+    /// (ADR-0038 D8).
     fn last_model(&self) -> Option<String> {
-        None
+        self.last_meta().model
     }
 
     /// Run one reasoning round trip. `trace_id` is the derived job id —
