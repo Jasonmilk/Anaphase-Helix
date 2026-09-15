@@ -3,7 +3,7 @@
 - **状态**: Accepted
 - **日期**: 2026-09-06
 - **决策范围**: Anaphase（stdio 传输协议）/ Cellrix（驾驶舱消费端）
-- **关联**: ADR-0010（快照契约）、ADR-0014（驾驶舱 G2）、ADR-0016（编排哲学）、BIND-19（CI-144 传输家族）、Cellrix README §6.4（缺口记录）
+- **关联**: ADR-0010（快照契约）、`Cellrix:ADR-0014`（驾驶舱 G2，Web 面板）、ADR-0016（编排哲学）、BIND-19（CI-144 传输家族）、Cellrix README §6.4（缺口记录）
 - **取代**: Anaphase `--stdio` 的 JSON-lines 临时协议（退役）
 
 ## 1. 背景与问题

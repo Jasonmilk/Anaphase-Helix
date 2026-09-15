@@ -2,7 +2,7 @@
 
 - **状态**: Accepted
 - **日期**: 2026-09-06
-- **关联**: ADR-0013（交互菜单）、ADR-0014（Web 面板）、用户约束（2026-09-06：
+- **关联**: ADR-0013（交互菜单）、`Cellrix:ADR-0014`（Web 面板，cellrix-web）、用户约束（2026-09-06：
   **"Anaphase 有没有引导我输入 api key?"**）
 - **仓库**: Anaphase（src/bin/up.rs）
 
