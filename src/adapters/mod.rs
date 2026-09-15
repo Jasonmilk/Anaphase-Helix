@@ -45,7 +45,9 @@ pub struct CraftNote {
     pub trace_id: String,
     /// Hegelian convergence synthesis (the orchestration result).
     pub synthesis: String,
-    /// P10b fills value_grade; empty until then (honest).
+    /// P10b (ADR-0031 D3) fills value_grade from Mind's deterministic assessor
+    /// (helix-mind-api/src/layer3.rs:374 echoes `format!("{grade:?}")`, e.g.
+    /// "Low"/"Medium"/"High"). Empty only when the adapter degrades (Noop).
     pub value_grade: String,
 }
 
