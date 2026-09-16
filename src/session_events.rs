@@ -677,6 +677,24 @@ pub fn list_periods(dir: &std::path::Path, limit: usize) -> io::Result<Vec<Perio
             name: period_name(dir, job_id),
         });
     }
+    // A parent pointer must point at a period that EXISTS. A value that does not
+    // resolve is not a parent, and handing it to a consumer invites it to
+    // reconstruct a thread that is not there. Two ways a dangling value arises:
+    // the period file was removed, or the writer once put the human-readable
+    // summary here (`is_period_id` now rejects that on the way in).
+    //
+    // Normalised against the FULL set, deliberately BEFORE `truncate`: a parent
+    // that merely fell outside the requested limit still exists, so nulling it
+    // would be a lie about the data rather than a convenience for the caller.
+    let known: Vec<String> = out.iter().map(|p| p.job_id.clone()).collect();
+    for p in out.iter_mut() {
+        if let Some(par) = p.parent.as_ref() {
+            if !known.iter().any(|k| k == par) {
+                p.parent = None;
+            }
+        }
+    }
+
     // Newest first by first event timestamp; tie-break by job id for
     // determinism (same data, same order).
     out.sort_by(|a, b| b.first_ts.cmp(&a.first_ts).then_with(|| a.job_id.cmp(&b.job_id)));
