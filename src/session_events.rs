@@ -725,6 +725,51 @@ mod query_tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
+    /// A parent that names no existing period must be reported as absent, and a
+    /// parent that exists must survive `limit` truncation.
+    ///
+    /// The dangling value is deliberately SHAPE-VALID (`run-0badc0de` passes
+    /// `is_period_id`) so this covers what that check cannot: the writer was right
+    /// about the format and the period is simply gone. A consumer receiving it
+    /// either reconstructs a thread that is not there or silently treats the period
+    /// as a root; `None` is the honest answer.
+    ///
+    /// The second half pins the ORDER of the two steps. Normalisation runs before
+    /// `truncate`, because a parent that merely fell outside the requested window
+    /// still exists — nulling it would be a lie about the data rather than a
+    /// convenience for the caller.
+    #[test]
+    fn a_parent_that_does_not_exist_is_reported_as_absent() {
+        let dir = test_support::tmp_dir("dangling_parent_is_absent");
+        // Oldest: the parent of `run-bbbb2222`, and the one limit=1 will truncate.
+        let mut root = SessionEventStream::open(dir.clone(), "run-aaaa1111", Redaction::default()).unwrap();
+        root.emit("2026-09-07T00:00:00Z", EventType::UserMessage, json!({ "text": "root" })).unwrap();
+        root.emit("2026-09-07T00:00:01Z", EventType::TurnEnd, json!({})).unwrap();
+        // Middle: continues a period that does not exist.
+        let mut orphan = SessionEventStream::open(dir.clone(), "run-cccc3333", Redaction::default()).unwrap();
+        orphan.emit("2026-09-07T00:00:05Z", EventType::ContextInject, json!({ "resume_from": "run-0badc0de" })).unwrap();
+        orphan.emit("2026-09-07T00:00:06Z", EventType::TurnEnd, json!({})).unwrap();
+        // Newest: continues the root, which exists.
+        let mut child = SessionEventStream::open(dir.clone(), "run-bbbb2222", Redaction::default()).unwrap();
+        child.emit("2026-09-07T00:00:10Z", EventType::ContextInject, json!({ "resume_from": "run-aaaa1111" })).unwrap();
+        child.emit("2026-09-07T00:00:11Z", EventType::TurnEnd, json!({})).unwrap();
+
+        let all = list_periods(&dir, 10).unwrap();
+        let by = |id: &str| all.iter().find(|p| p.job_id == id).unwrap().parent.clone();
+        assert_eq!(by("run-bbbb2222"), Some("run-aaaa1111".to_string()));
+        assert_eq!(by("run-cccc3333"), None, "a parent that exists nowhere is not a parent");
+
+        let one = list_periods(&dir, 1).unwrap();
+        assert_eq!(one.len(), 1);
+        assert_eq!(one[0].job_id, "run-bbbb2222", "newest first");
+        assert_eq!(
+            one[0].parent,
+            Some("run-aaaa1111".to_string()),
+            "a parent truncated out of the window still EXISTS and must not be nulled"
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn reads_one_period_by_id() {
         let dir = test_support::tmp_dir("read_one_period_by_id");
