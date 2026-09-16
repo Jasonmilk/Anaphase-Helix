@@ -1109,6 +1109,18 @@ impl AgentLoop {
                                 }
                             }
                             Err(e) => {
+                                // P0-D-1 (2026-09-16): fail closed on contract
+                                // violations. A plan-shaped reply that the
+                                // schema rejects (e.g. malformed calls) must
+                                // surface as an explicit failure — never leak
+                                // the raw JSON as a reply. Free-form prose
+                                // (invalid JSON) stays the legitimate
+                                // no-plan path.
+                                if e.starts_with("calls schema mismatch") {
+                                    warn!("[Reasoning] Tool plan rejected (fail-closed, P0-D-1): {}", e);
+                                    self.context.reasoning_output = output;
+                                    return Ok(TransitionCondition::Failure);
+                                }
                                 // Unstructured conversational output: no plan.
                                 warn!("[Reasoning] Unstructured output (no calls plan): {}", e);
                                 self.context.reasoning_output = output;
@@ -1325,38 +1337,102 @@ impl AgentLoop {
                         .collect();
                     if !lines.is_empty() {
                         // Finalize (ADR-0036): tool evidence is NOT the
-                        // deliverable — the deliverable is Helix's answer
-                        // built from it. One cheap final call organizes the
-                        // facts into a natural-language reply; on any failure
-                        // we degrade to the raw evidence echo (never
-                        // fabricate, never go silent).
-                        let finalize_prompt = format!(
-                            "Original question: {}\nTool results:\n{}\n\nAnswer the user's question directly in natural language, concise, no JSON, no internal format.",
-                            self.context.user_input,
-                            lines.join("\n")
-                        );
-                        let finalized = self
-                            .reason
-                            .reason(
-                                &finalize_prompt,
-                                &self.run_config.reasoning_mode,
-                                &self.context.job.as_ref().map(|j| j.job_id.clone()).unwrap_or_default(),
-                            )
-                            .await;
-                        // ADR-0038: the finalize call is a second upstream
-                        // round trip inside the same period — meter it too, or
-                        // its cost vanishes from the period total.
-                        self.emit_usage();
-                        match finalized
-                        {
-                            Ok(answer) if !answer.trim().is_empty() => {
+                        // deliverable — the deliverable is Helix's answer built
+                        // from it. One cheap final call organizes the facts into
+                        // a natural-language reply; on any failure we degrade to
+                        // the raw evidence echo (never fabricate, never go
+                        // silent).
+                        //
+                        // F1 (2026-09-17): the acceptance guard used to be
+                        // "non-empty", which accepted a SECOND tool plan as the
+                        // reply. The panel then rendered the human raw
+                        // `{"calls":[...]}` JSON while the verdict still read
+                        // Met — `answer.delivered` inspects the TOOL's return
+                        // ("delivery confirmed at tool edge"), never the answer
+                        // the human received. Measured on the live store: 9 of
+                        // 50 periods shipped a raw plan, every one of them a
+                        // tool turn. P0-D-1 (2026-09-16) already refuses this
+                        // shape in Reasoning — "never leak the raw JSON as a
+                        // reply" — and the same rule now holds here.
+                        //
+                        // F2: a follow-up plan normally asks for a REFINED
+                        // query. Executing it here was rejected on evidence:
+                        // `trace_id` is `{job_id}#{index}` with `index` local to
+                        // the plan, and `record_evidence` appends without
+                        // dedup, so a second plan under one job_id would collide
+                        // on both evidence_id and trace_id — and one trace per
+                        // period is a hard contract (ADR-0019/0026). Offsetting
+                        // the index means changing the pipeline's signature, an
+                        // architecture change that needs its own ADR. So the
+                        // bounded follow-up is a RE-ASK instead: the results are
+                        // already in hand, the directive forbids further tools,
+                        // and a model that still answers with a plan degrades to
+                        // the honest evidence echo rather than leaking JSON.
+                        let mut rounds = 0u32;
+                        let mut accepted: Option<String> = None;
+                        loop {
+                            let strict = rounds > 0;
+                            let finalize_prompt = if strict {
+                                format!(
+                                    "Original question: {}\nTool results:\n{}\n\nThe tool calls above have ALREADY been executed. You cannot call a tool again. Answer the user's question now, in natural language, using only these results. If they are insufficient, say plainly what is missing. No JSON, no tool calls, no internal format.",
+                                    self.context.user_input,
+                                    lines.join("\n")
+                                )
+                            } else {
+                                format!(
+                                    "Original question: {}\nTool results:\n{}\n\nAnswer the user's question directly in natural language, concise, no JSON, no internal format.",
+                                    self.context.user_input,
+                                    lines.join("\n")
+                                )
+                            };
+                            let finalized = self
+                                .reason
+                                .reason(
+                                    &finalize_prompt,
+                                    &self.run_config.reasoning_mode,
+                                    &self.context.job.as_ref().map(|j| j.job_id.clone()).unwrap_or_default(),
+                                )
+                                .await;
+                            // ADR-0038: the finalize call is a second upstream
+                            // round trip inside the same period — meter it too,
+                            // or its cost vanishes from the period total.
+                            self.emit_usage();
+                            let Ok(answer) = finalized else { break };
+                            if answer.trim().is_empty() {
+                                break;
+                            }
+                            // F1: a plan is not an answer.
+                            let is_plan = matches!(
+                                parse_reasoning_output(answer.trim()),
+                                Ok(sig) if !sig.calls.is_empty()
+                            );
+                            if is_plan {
+                                if rounds < self.run_config.tool_followup_rounds {
+                                    rounds += 1;
+                                    warn!(
+                                        "[Reflection] finalize returned a tool plan, not an answer — re-asking (round {}/{})",
+                                        rounds, self.run_config.tool_followup_rounds
+                                    );
+                                    continue;
+                                }
+                                warn!(
+                                    "[Reflection] finalize still returned a tool plan after {} follow-up round(s) — refusing to leak it (P0-D-1)",
+                                    rounds
+                                );
+                                break;
+                            }
+                            accepted = Some(answer);
+                            break;
+                        }
+                        match accepted {
+                            Some(answer) => {
                                 self.context.reasoning_output = answer;
                                 info!(
                                     "[Reflection] finalize ok: chars={}",
                                     self.context.reasoning_output.chars().count()
                                 );
                             }
-                            _ => {
+                            None => {
                                 self.context.reasoning_output = lines.join("\n");
                                 info!("[Reflection] finalize degraded to evidence echo");
                             }

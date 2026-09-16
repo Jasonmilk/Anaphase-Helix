@@ -26,7 +26,7 @@ use anaphase::config::AnaphaseConfig;
 use anaphase::ledger::{FakeClock, VerdictStatus};
 use anaphase::pipeline::{Pipeline, PipelineConfig, PipelineInput};
 use anaphase::reflex::ReflexArc;
-use common::StructuredReasoning;
+use common::{connect_tentacle, free_port, spawn_real_tentacle, StructuredReasoning};
 use std::process::{Child, Command, Stdio};
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -70,55 +70,8 @@ async fn spawn_mock_llm(
     (format!("http://{}", addr), shutdown_tx, handle)
 }
 
-/// Reserve a free TCP port, then hand it to the real tentacle binary.
-fn free_port() -> u16 {
-    // Blocking bind on a local listener just to read an available port.
-    std::net::TcpListener::bind("127.0.0.1:0")
-        .and_then(|l| l.local_addr())
-        .map(|a| a.port())
-        .expect("free port")
-}
 
-/// Spawn the real tentacle binary as a gRPC server over the fixtures dir.
-fn spawn_real_tentacle(port: u16) -> Child {
-    let bin = std::env::var("TENTACLE_BIN").unwrap_or_else(|_| {
-        concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../helix-tentacle/target/debug/tentacle"
-        )
-        .to_string()
-    });
-    let fixtures = concat!(env!("CARGO_MANIFEST_DIR"), "/../helix-tentacle/fixtures");
-    Command::new(&bin)
-        .args([
-            "--transport",
-            "grpc",
-            "--plugins-dir",
-            fixtures,
-            "--grpc-port",
-            &port.to_string(),
-        ])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .unwrap_or_else(|e| {
-            panic!(
-                "spawn real tentacle failed ({e}) — build it first with \
-                 `cargo build -p tentacle` in ../helix-tentacle, or set TENTACLE_BIN"
-            )
-        })
-}
 
-/// Poll until the gRPC endpoint accepts a client, then return the adapter.
-async fn connect_with_retry(endpoint: &str) -> anaphase::adapters::tentacle::GrpcTentacleAdapter {
-    for _ in 0..60 {
-        if let Ok(a) = anaphase::adapters::tentacle::GrpcTentacleAdapter::new(endpoint).await {
-            return a;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-    }
-    panic!("tentacle gRPC server not ready at {endpoint}");
-}
 
 /// One full live closed loop: mock LLM -> real Tentacle -> pipeline verdict.
 async fn run_live_loop(llm_content: &str, job_id: &str, clock_now: u64) -> anaphase::pipeline::PipelineOutcome {
@@ -137,7 +90,7 @@ async fn run_live_loop(llm_content: &str, job_id: &str, clock_now: u64) -> anaph
     let port = free_port();
     let mut child = spawn_real_tentacle(port);
     let endpoint = format!("http://127.0.0.1:{}", port);
-    let tentacle = connect_with_retry(&endpoint).await;
+    let tentacle = connect_tentacle(&endpoint).await;
 
     let pipe_config = PipelineConfig::from_codex("knowledge_base/fixture-codex.json").unwrap();
     let mut pipeline = Pipeline::new(tentacle, Box::new(FakeClock(clock_now)), pipe_config);
@@ -195,7 +148,7 @@ async fn tentacle_live_run_cycle() {
     let port = free_port();
     let mut child = spawn_real_tentacle(port);
     let endpoint = format!("http://127.0.0.1:{}", port);
-    let tentacle = connect_with_retry(&endpoint).await;
+    let tentacle = connect_tentacle(&endpoint).await;
 
     let pipe_config = PipelineConfig::from_codex("knowledge_base/fixture-codex.json").unwrap();
     let pipeline = Pipeline::new(tentacle, Box::new(FakeClock(1000)), pipe_config);

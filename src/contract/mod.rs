@@ -37,7 +37,13 @@ pub struct Call {
     pub tool: String,
     /// JSON object; BTreeMap for deterministic key order (ADR-0003).
     pub args: BTreeMap<String, serde_json::Value>,
-    pub expect: Expect,
+    /// Optional expected result shape (P0-G, 2026-09-16). Historical calls
+    /// were 30/30 `ok`; the LLM occasionally omits `expect` — a missing
+    /// field must not kill the plan. None is resolved to `Expect::Ok` at
+    /// dispatch, with a diagnostic event (never a failing check). Unknown
+    /// enum values still reject (strict contract, ADR-0003).
+    #[serde(default)]
+    pub expect: Option<Expect>,
 }
 
 /// Full tt_job envelope, assembled by the pipeline (not by the LLM).
@@ -193,7 +199,7 @@ fn parse_tool_fence(response: &str) -> Option<ReasoningSignal> {
         calls: vec![Call {
             tool: name.to_string(),
             args,
-            expect: Expect::Ok,
+            expect: Some(Expect::Ok),
         }],
         impasse: false,
     })
@@ -251,7 +257,7 @@ pub fn parse_structured_command(input: &str) -> Option<Vec<Call>> {
     Some(vec![Call {
         tool: tool.to_string(),
         args,
-        expect: Expect::Ok,
+        expect: Some(Expect::Ok),
     }])
 }
 
@@ -291,7 +297,7 @@ mod tests {
             calls: vec![Call {
                 tool: "numbers".into(),
                 args: BTreeMap::new(),
-                expect: Expect::Numbers,
+                expect: Some(Expect::Numbers),
             }],
         };
         let json = serde_json::to_string(&job).unwrap();
@@ -320,7 +326,7 @@ mod tests {
     fn strict_json_still_preferred_over_fence() {
         let resp = r#"{"calls":[{"tool":"rate","args":{"numerator":10},"expect":"rate"}]}"#;
         let sig = parse_reasoning_output(resp).unwrap();
-        assert_eq!(sig.calls[0].expect, Expect::Rate);
+        assert_eq!(sig.calls[0].expect, Some(Expect::Rate));
     }
 
     fn parse_llm_calls_accepts_wrapped_object() {
@@ -328,7 +334,7 @@ mod tests {
         let calls = parse_llm_calls(resp).unwrap();
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].tool, "rate");
-        assert_eq!(calls[0].expect, Expect::Rate);
+        assert_eq!(calls[0].expect, Some(Expect::Rate));
     }
 
     #[test]
@@ -342,6 +348,26 @@ mod tests {
         let resp = r#"{"calls":[{"tool":"x","args":{},"expect":"bogus"}]}"#;
         let err = parse_llm_calls(resp).unwrap_err();
         assert!(err.contains("schema mismatch"), "got: {err}");
+    }
+
+    #[test]
+    fn parse_llm_calls_accepts_missing_expect_p0g() {
+        // P0-G (2026-09-16): the LLM occasionally omits `expect` (6/6
+        // web_search attempts died here). A missing field must parse — None
+        // is resolved to Expect::Ok at dispatch, with a diagnostic event.
+        let resp = r#"{"calls":[{"tool":"web_search","args":{"q":"helix"}}]}"#;
+        let calls = parse_llm_calls(resp).unwrap();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].tool, "web_search");
+        assert_eq!(calls[0].expect, None);
+    }
+
+    #[test]
+    fn parse_reasoning_output_accepts_missing_expect_p0g() {
+        let resp = r#"{"calls":[{"tool":"web_search","args":{"q":"helix"}}]}"#;
+        let sig = parse_reasoning_output(resp).unwrap();
+        assert_eq!(sig.calls.len(), 1);
+        assert_eq!(sig.calls[0].expect, None);
     }
 
     #[test]
@@ -429,7 +455,7 @@ mod tests {
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].tool, "date");
         assert!(calls[0].args.is_empty());
-        assert_eq!(calls[0].expect, Expect::Ok);
+        assert_eq!(calls[0].expect, Some(Expect::Ok));
     }
 
     #[test]

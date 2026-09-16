@@ -235,6 +235,22 @@ pub struct RunCycleConfig {
     /// default 1 — bounded and conservative, never a retry storm.
     #[serde(default = "default_empty_reply_retries")]
     pub empty_reply_retries: u32,
+    /// Tool follow-up rounds (2026-09-17): after a tool runs, Reflection asks
+    /// the model to answer from the evidence. The model sometimes answers with
+    /// ANOTHER tool plan instead (usually a refined query). That plan used to be
+    /// accepted as the reply verbatim, so the user saw raw `{"calls":[...]}`
+    /// JSON while the verdict still read Met (the `answer.delivered` criterion
+    /// checks the TOOL's return, not the user's answer). When the follow-up
+    /// plan asks for calls that have not run yet, execute them and finalize
+    /// again — up to this many extra rounds. 0 = never follow up (a follow-up
+    /// plan then degrades to the honest evidence echo). Protocol default 1:
+    /// bounded and conservative, the same shape as `empty_reply_retries`.
+    #[serde(default = "default_tool_followup_rounds")]
+    pub tool_followup_rounds: u32,
+}
+
+fn default_tool_followup_rounds() -> u32 {
+    1
 }
 
 fn default_wakeup_enabled() -> bool {
@@ -266,6 +282,7 @@ impl Default for RunCycleConfig {
             wakeup_jitter_minutes: 60,
             wakeup_actions: vec!["hibernate".into()],
             empty_reply_retries: 1,
+            tool_followup_rounds: 1,
         }
     }
 }
@@ -402,6 +419,7 @@ mod tests {
                     wakeup_enabled: true,
                     wakeup_jitter_minutes: 60,
                     empty_reply_retries: 1,
+                    tool_followup_rounds: 1,
                     wakeup_actions: vec!["hibernate".into()],
                 },
                 rails: RailsConfig::default(),

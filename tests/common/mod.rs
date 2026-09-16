@@ -175,3 +175,56 @@ pub async fn spawn_mock_tentacle(
     });
     (format!("http://{}", addr), captured, shutdown_tx, handle)
 }
+
+/// Reserve a free TCP port, then hand it to the real tentacle binary.
+pub fn free_port() -> u16 {
+    std::net::TcpListener::bind("127.0.0.1:0")
+        .and_then(|l| l.local_addr())
+        .map(|a| a.port())
+        .expect("free port")
+}
+
+/// Spawn the real tentacle binary as a gRPC server over the fixtures dir.
+/// Override the binary path with TENTACLE_BIN if the default relative path
+/// (`../helix-tentacle/target/debug/tentacle`) is not correct.
+pub fn spawn_real_tentacle(port: u16) -> std::process::Child {
+    let bin = std::env::var("TENTACLE_BIN").unwrap_or_else(|_| {
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../helix-tentacle/target/debug/tentacle"
+        )
+        .to_string()
+    });
+    let fixtures = concat!(env!("CARGO_MANIFEST_DIR"), "/../helix-tentacle/fixtures");
+    std::process::Command::new(&bin)
+        .args([
+            "--transport",
+            "grpc",
+            "--plugins-dir",
+            fixtures,
+            "--grpc-port",
+            &port.to_string(),
+        ])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap_or_else(|e| {
+            panic!(
+                "spawn real tentacle failed ({e}) — build it first with \
+                 `cargo build -p tentacle` in ../helix-tentacle, or set TENTACLE_BIN"
+            )
+        })
+}
+
+/// Poll until the gRPC endpoint accepts a client, then return the adapter.
+pub async fn connect_tentacle(
+    endpoint: &str,
+) -> anaphase::adapters::tentacle::GrpcTentacleAdapter {
+    for _ in 0..60 {
+        if let Ok(a) = anaphase::adapters::tentacle::GrpcTentacleAdapter::new(endpoint).await {
+            return a;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    panic!("tentacle gRPC server not ready at {endpoint}");
+}

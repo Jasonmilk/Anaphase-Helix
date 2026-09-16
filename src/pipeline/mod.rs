@@ -202,12 +202,30 @@ impl Pipeline {
                 )
                 .await?;
             let duration_ms = started.elapsed().as_millis() as u64;
+            // P0-G (2026-09-16): an undeclared `expect` is resolved to `ok`
+            // at dispatch — the historical distribution is 30/30 `ok`, and a
+            // missing field must never kill the plan. The default is *traced*,
+            // never silent: a diagnostic event marks the reuse of the fence
+            // fallback convention (contract/mod.rs), so an intent invented by
+            // the service cannot pass unnoticed.
+            let expect = match &call.expect {
+                Some(e) => e.clone(),
+                None => {
+                    self.emit_event(
+                        &job.job_id,
+                        3,
+                        "diag",
+                        "expect=undeclared, defaulted=ok (P0-G)",
+                    );
+                    crate::contract::Expect::Ok
+                }
+            };
             let record = if resp.ok {
                 EvidenceRecord::new(
                     &job.job_id,
                     i as u32,
                     &call.tool,
-                    call.expect.clone(),
+                    expect,
                     true,
                     &resp.data,
                     duration_ms,
@@ -217,7 +235,7 @@ impl Pipeline {
                     &job.job_id,
                     i as u32,
                     &call.tool,
-                    call.expect.clone(),
+                    expect,
                     false,
                     &resp.error,
                     duration_ms,

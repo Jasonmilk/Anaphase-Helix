@@ -343,3 +343,92 @@ async fn time_anchor_injected_with_full_date() {
         "year/month/day must never collapse: {prompt}"
     );
 }
+
+
+// ── tool-followup guard (2026-09-17): a plan is not an answer ───────
+//
+// Lived defect this covers: on the real store, 9 of 50 periods shipped the
+// raw `{"calls":[...]}` plan as the user-visible reply, every one of them a
+// tool turn — the finalize call was accepted on "non-empty" alone, and the
+// `answer.delivered` criterion passed because it inspects the TOOL's return
+// ("delivery confirmed at tool edge"), never the answer the human received.
+
+/// Reasoning stub scripted per call: index 0 is the Reasoning plan, later
+/// indices are what the finalize rounds return.
+struct ScriptedReasoning {
+    prompts: Arc<Mutex<Vec<String>>>,
+    script: Vec<&'static str>,
+}
+
+#[async_trait::async_trait]
+impl ReasoningAdapter for ScriptedReasoning {
+    async fn reason(&self, input: &str, _mode: &str, _trace_id: &str) -> Result<String, String> {
+        let mut g = self.prompts.lock().unwrap();
+        g.push(input.to_string());
+        let n = g.len();
+        drop(g);
+        let last = self.script.len() - 1;
+        Ok(self.script.get(n - 1).copied().unwrap_or(self.script[last]).to_string())
+    }
+}
+
+const PLAN_A: &str = r#"{"calls":[{"tool":"numbers","args":{},"expect":"numbers"}],"impasse":false}"#;
+const PLAN_B: &str = r#"{"calls":[{"tool":"numbers","args":{"n":2},"expect":"numbers"}],"impasse":false}"#;
+
+fn scripted(script: Vec<&'static str>, prompts: Arc<Mutex<Vec<String>>>) -> Arc<dyn ReasoningAdapter> {
+    Arc::new(ScriptedReasoning { prompts, script })
+}
+
+#[tokio::test]
+async fn finalize_never_leaks_a_tool_plan_as_the_reply() {
+    // tool_followup_rounds = 0: no re-ask is allowed, so a follow-up plan must
+    // degrade to the honest evidence echo — never become the reply (P0-D-1's
+    // rule, which until now only held in Reasoning).
+    let prompts = Arc::new(Mutex::new(vec![]));
+    let mock = MockTentacle::new().with_tool("numbers", r#"{"series":[1.0,2.0,3.0]}"#);
+    let mut agent = base_agent(scripted(vec![PLAN_A, PLAN_B], prompts.clone()))
+        .with_pipeline(build_pipeline(mock, 1000).await)
+        .with_run_config(RunCycleConfig { tool_followup_rounds: 0, ..RunCycleConfig::default() });
+
+    agent.run_cycle("calculate").await.unwrap();
+
+    let reply = &agent.context.reasoning_output;
+    assert!(
+        !reply.contains("\"calls\""),
+        "a tool plan must never be the reply; got: {reply}"
+    );
+    assert!(
+        reply.contains("series"),
+        "must degrade to the evidence echo (the real tool result); got: {reply}"
+    );
+    assert_eq!(prompts.lock().unwrap().len(), 2, "one plan call + one finalize call");
+}
+
+#[tokio::test]
+async fn finalize_reasks_once_then_accepts_the_answer() {
+    // tool_followup_rounds = 1: the model answers the first finalize with
+    // another plan; the re-ask forbids further tools and carries the real
+    // results already in hand, so the prose is accepted.
+    let prompts = Arc::new(Mutex::new(vec![]));
+    let mock = MockTentacle::new().with_tool("numbers", r#"{"series":[1.0,2.0,3.0]}"#);
+    let mut agent = base_agent(scripted(
+        vec![PLAN_A, PLAN_B, "The series is 1, 2, 3."],
+        prompts.clone(),
+    ))
+    .with_pipeline(build_pipeline(mock, 1000).await)
+    .with_run_config(RunCycleConfig { tool_followup_rounds: 1, ..RunCycleConfig::default() });
+
+    agent.run_cycle("calculate").await.unwrap();
+
+    assert_eq!(
+        agent.context.reasoning_output, "The series is 1, 2, 3.",
+        "the prose answer from the re-ask is the reply"
+    );
+    let p = prompts.lock().unwrap();
+    assert_eq!(p.len(), 3, "plan + finalize + one bounded re-ask");
+    assert!(
+        p[2].contains("ALREADY been executed"),
+        "the re-ask must forbid further tool calls; got: {}",
+        p[2]
+    );
+}
