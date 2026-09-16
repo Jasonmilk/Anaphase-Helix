@@ -104,6 +104,11 @@ pub struct SessionEventStream {
     path: PathBuf,
     file: fs::File,
     redact: Redaction,
+    /// The period's own identity. The stream knows where it lives and which
+    /// period it is, so features that need the `.name` sidecar do not have to
+    /// re-derive them from the file path.
+    dir: PathBuf,
+    job_id: String,
 }
 
 impl SessionEventStream {
@@ -129,6 +134,8 @@ impl SessionEventStream {
             path,
             file,
             redact,
+            dir,
+            job_id: job_id.to_string(),
         })
     }
 
@@ -196,6 +203,28 @@ impl SessionEventStream {
             EventType::UserMessage,
             json!({ "text": user_input }),
         )?;
+        // Freeze the card title at creation.
+        //
+        // The title must NOT drift. It used to be recomputed on every render from
+        // `first_ts`, so rewriting a timestamp renamed the card — and ADR-0041
+        // records that timestamps DO get rewritten when a job id is reused. The
+        // `.name` sidecar already exists for human renames, so the automatic title
+        // simply joins that slot and is written ONCE, here, from the first user
+        // message: stable by construction, meaningful, and timezone-free (the panel
+        // formats local time by design, so the backend must never bake a zone into
+        // a stored string).
+        //
+        // An empty input writes nothing, leaving those periods to the panel's
+        // time-based fallback: tolerant degradation, never an empty card title.
+        //
+        // `rename_period` validates the job id and requires the `run-` form, so
+        // this is a no-op for the short ids tests use. Ignoring that error is
+        // deliberate: a missing title must never fail a period write.
+        if period_name(&self.dir, &self.job_id).is_none() {
+            if let Some(name) = freeze_name(user_input) {
+                let _ = rename_period(&self.dir, &self.job_id, &name);
+            }
+        }
         let mut data = json!({ "nodes": nodes, "chars": inject_chars });
         if let Some(r) = resume_from {
             data["resume_from"] = json!(r);
@@ -452,6 +481,20 @@ mod tests {
         assert!(!is_period_id("run-"), "the prefix alone is not a parent");
     }
 
+    /// The frozen title is content, collapsed and bounded — never empty, never
+    /// derived from a clock.
+    #[test]
+    fn freeze_name_is_bounded_content_not_a_clock() {
+        assert_eq!(freeze_name("  记住:   我最喜欢的\n数字是 7  "), Some("记住: 我最喜欢的 数字是 7".to_string()));
+        assert_eq!(freeze_name("   "), None, "nothing to freeze");
+        assert_eq!(freeze_name(""), None);
+        let long = "甲".repeat(NAME_MAX_CHARS + 10);
+        let got = freeze_name(&long).unwrap();
+        assert_eq!(got.chars().count(), NAME_MAX_CHARS + 1, "bounded + ellipsis");
+        assert!(got.ends_with('…'));
+        assert_eq!(freeze_name(&"乙".repeat(NAME_MAX_CHARS)).unwrap().chars().count(), NAME_MAX_CHARS, "exactly at the bound needs no ellipsis");
+    }
+
     #[test]
     fn redacts_strings_recursively() {
         let dir = tmp_dir();
@@ -579,6 +622,28 @@ pub fn rename_period(dir: &std::path::Path, job_id: &str, name: &str) -> io::Res
 }
 
 /// Load the optional human-chosen name for a period (`{job_id}.name`).
+/// Characters of the first user message kept as a frozen card title.
+const NAME_MAX_CHARS: usize = 40;
+
+/// The title to freeze at period creation: the human's first message, whitespace
+/// collapsed and bounded. `None` when there is nothing to freeze.
+///
+/// Pure and timezone-free on purpose. A time-derived title drifts whenever the
+/// timestamp it was computed from is rewritten, and it cannot be read as meaning
+/// anything; the first message is both stable once frozen and self-describing.
+pub fn freeze_name(user_input: &str) -> Option<String> {
+    let collapsed = user_input.split_whitespace().collect::<Vec<_>>().join(" ");
+    if collapsed.is_empty() {
+        return None;
+    }
+    let total = collapsed.chars().count();
+    let mut out: String = collapsed.chars().take(NAME_MAX_CHARS).collect();
+    if total > NAME_MAX_CHARS {
+        out.push('…');
+    }
+    Some(out)
+}
+
 fn period_name(dir: &std::path::Path, job_id: &str) -> Option<String> {
     let raw = fs::read_to_string(dir.join(format!("{job_id}.name"))).ok()?;
     let trimmed = raw.trim();
