@@ -42,8 +42,8 @@ impl MemoryAdapter for CraftMemory {
             suggested_actions: vec![],
         })
     }
-    async fn remember(&self, _content: &str) -> Result<(), String> {
-        Ok(())
+    async fn remember(&self, _content: &str, _parent_ids: &[String]) -> Result<String, String> {
+        Ok(String::new())
     }
     async fn craft(&self, query: &str, job_id: &str) -> Result<CraftNote, String> {
         self.calls.lock().unwrap().push(format!("{}#{}", query, job_id));

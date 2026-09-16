@@ -34,7 +34,7 @@ async fn test_noop_memory_adapter() {
     let result = adapter.query("test", false).await.unwrap();
     assert!(result.nodes.is_empty());
     assert_eq!(result.impasse_level, 0);
-    assert!(adapter.remember("test").await.is_ok());
+    assert!(adapter.remember("test", &[]).await.is_ok());
 }
 
 #[tokio::test]

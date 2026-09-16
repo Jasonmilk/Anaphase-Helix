@@ -58,8 +58,8 @@ impl MemoryAdapter for WakeupMemory {
             suggested_actions: vec![],
         })
     }
-    async fn remember(&self, _content: &str) -> Result<(), String> {
-        Ok(())
+    async fn remember(&self, _content: &str, _parent_ids: &[String]) -> Result<String, String> {
+        Ok(String::new())
     }
     async fn wakeup(&self, _jitter_minutes: u32) -> Result<Vec<WakeupAlarm>, String> {
         if self.fail_wakeup {

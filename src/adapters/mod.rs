@@ -66,10 +66,20 @@ pub struct WakeupAlarm {
 #[async_trait]
 pub trait MemoryAdapter: Send + Sync {
     async fn query(&self, query: &str, include_recessive: bool) -> Result<QueryResult, String>;
-    async fn remember(&self, content: &str) -> Result<(), String>;
+    /// Write an episodic note and return the id Mind assigned to it.
+    ///
+    /// `parent_ids` are the Mind node ids this note DERIVES FROM (ADR-0043 T5b):
+    /// the memories this cycle actually retrieved and reasoned over. Mind turns
+    /// them into `derived_from` plus one edge per parent; an empty slice means no
+    /// edges, which is the pre-ADR-0043 behaviour (tolerant degradation).
+    ///
+    /// The returned id is new: the old signature was `Result<(), String>` and threw
+    /// away `RememberResponse.node_id`, so a writer could not reference what it had
+    /// just written (ADR-0043 D3).
+    async fn remember(&self, content: &str, parent_ids: &[String]) -> Result<String, String>;
     /// Explicit-layer write (L0-L3). Default = plain remember (protocol L3).
     /// Adapters that understand layers override; the trait stays minimal.
-    async fn remember_node(&self, _content: &str, _node_type: i32) -> Result<(), String> {
+    async fn remember_node(&self, _content: &str, _node_type: i32, _parent_ids: &[String]) -> Result<String, String> {
         Err("layer-aware remember not supported".to_string())
     }
     /// 状态驱动钩子（P10b T2）：Amygdala PreAssessment 输出复杂度（1=简单/2=中等/3=复杂），
@@ -108,14 +118,14 @@ impl MemoryAdapter for NoopMemoryAdapter {
     async fn query(&self, _query: &str, _include_recessive: bool) -> Result<QueryResult, String> {
         Ok(QueryResult { nodes: vec![], impasse_level: 0, suggested_actions: vec![] })
     }
-    async fn remember(&self, _content: &str) -> Result<(), String> {
-        Ok(())
+    async fn remember(&self, _content: &str, _parent_ids: &[String]) -> Result<String, String> {
+        Ok(String::new())
     }
-    async fn remember_node(&self, content: &str, node_type: i32) -> Result<(), String> {
+    async fn remember_node(&self, content: &str, node_type: i32, parent_ids: &[String]) -> Result<String, String> {
         if node_type == -1 || node_type == 3 {
-            self.remember(content).await
+            self.remember(content, parent_ids).await
         } else {
-            Ok(())
+            Ok(String::new())
         }
     }
 }

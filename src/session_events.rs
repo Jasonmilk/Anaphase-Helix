@@ -433,6 +433,7 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
+    #[test]
     fn redacts_strings_recursively() {
         let dir = tmp_dir();
         let mut stream = SessionEventStream::open(

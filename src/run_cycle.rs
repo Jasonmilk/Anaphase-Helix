@@ -218,6 +218,17 @@ fn fold_memory_nodes(nodes: &[MemoryNode], budget: usize) -> String {
     out
 }
 
+/// ADR-0043 T5b: the parent set for anything this cycle writes — the memories it
+/// actually retrieved and reasoned over.
+///
+/// `derived_from` means "built on", so the honest parents are the OBSERVATIONS
+/// this cycle reasoned over, not the previous note. This also gives real fan-in
+/// rather than a thin chain, and its size is already bounded by Mind's own
+/// `max_nodes_per_query` — hence no new configuration knob.
+fn remember_parents(context: &AgentContext) -> Vec<String> {
+    context.memory_nodes.iter().map(|n| n.id.clone()).collect()
+}
+
 /// Context data flowing through the cognitive cycle
 #[derive(Debug, Clone, Default)]
 pub struct AgentContext {
@@ -492,7 +503,8 @@ impl AgentLoop {
             "first_input": digest.first_input,
         })
         .to_string();
-        let _ = self.memory.remember(&note).await;
+        let parents = remember_parents(&self.context);
+        let _ = self.memory.remember(&note, &parents).await;
         Some(digest)
     }
 
@@ -1520,9 +1532,13 @@ impl AgentLoop {
                             "note": self.context.reflection_notes,
                         })
                         .to_string();
-                        self.memory.remember(&structured).await
+                        let parents = remember_parents(&self.context);
+                        self.memory.remember(&structured, &parents).await
                     }
-                    None => self.memory.remember(&self.context.reflection_notes).await,
+                    None => {
+                        let parents = remember_parents(&self.context);
+                        self.memory.remember(&self.context.reflection_notes, &parents).await
+                    }
                 };
                 Ok(TransitionCondition::Success)
             }
@@ -1661,8 +1677,8 @@ mod tests {
                 suggested_actions: vec![],
             })
         }
-        async fn remember(&self, _c: &str) -> Result<(), String> {
-            Ok(())
+        async fn remember(&self, _c: &str, _p: &[String]) -> Result<String, String> {
+            Ok(String::new())
         }
     }
 
@@ -2014,4 +2030,38 @@ mod tests {
         }
     }
 
+}
+
+#[cfg(test)]
+mod remember_parents_tests {
+    use super::*;
+
+    fn mem_node(id: &str) -> MemoryNode {
+        MemoryNode {
+            content: format!("content-{id}"),
+            id: id.to_string(),
+            tier: "L3".into(),
+            heat: 0.5,
+            phase: "liquid".into(),
+            recessive: false,
+        }
+    }
+
+    /// ADR-0043 T5b: the parent set is the memories this cycle reasoned over, in
+    /// retrieval order. Order matters because Mind builds one edge per parent and
+    /// the DAG check runs in that order.
+    #[test]
+    fn parents_are_the_retrieved_memory_ids_in_order() {
+        let mut ctx = AgentContext::default();
+        ctx.memory_nodes = vec![mem_node("n1"), mem_node("n2"), mem_node("n3")];
+        assert_eq!(remember_parents(&ctx), vec!["n1", "n2", "n3"]);
+    }
+
+    /// No retrieved memories => no parents => no edges. This is the tolerant
+    /// degradation path (ADR-0043 D6), and it is what a cold first cycle looks
+    /// like, so it must be an empty slice rather than an error.
+    #[test]
+    fn no_retrieved_memories_yields_no_parents() {
+        assert!(remember_parents(&AgentContext::default()).is_empty());
+    }
 }

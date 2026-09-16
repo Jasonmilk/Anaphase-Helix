@@ -41,9 +41,9 @@ impl MemoryAdapter for RecordingMemory {
             suggested_actions: vec![],
         })
     }
-    async fn remember(&self, content: &str) -> Result<(), String> {
+    async fn remember(&self, content: &str, _parent_ids: &[String]) -> Result<String, String> {
         self.notes.lock().unwrap().push(content.to_string());
-        Ok(())
+        Ok(String::new())
     }
 }
 

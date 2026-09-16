@@ -21,6 +21,6 @@ async fn seed_l2_three_laws() {
         "万有引力定律：任意两质点相互吸引，引力与质量乘积成正比、与距离平方成反比。适用：经典弱引力场。不适用：强引力场（需广义相对论修正）。",
     ];
     for law in laws {
-        adapter.remember_node(law, 2).await.unwrap();
+        adapter.remember_node(law, 2, &[]).await.unwrap();
     }
 }

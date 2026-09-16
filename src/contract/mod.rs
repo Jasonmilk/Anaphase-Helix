@@ -438,7 +438,6 @@ mod tests {
     }
 
     #[test]
-    #[test]
     fn fence_fallback_parses_markdown_tool_block() {
         let resp = "调用 calc 工具：\n\n```tool\ncalc(expr=\"7**9\")\n```";
         let sig = parse_reasoning_output(resp).unwrap();
@@ -461,6 +460,7 @@ mod tests {
         assert_eq!(sig.calls[0].expect, Some(Expect::Rate));
     }
 
+    #[test]
     fn parse_llm_calls_accepts_wrapped_object() {
         let resp = r#"{"calls":[{"tool":"rate","args":{"numerator":10},"expect":"rate"}]}"#;
         let calls = parse_llm_calls(resp).unwrap();

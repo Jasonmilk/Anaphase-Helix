@@ -106,24 +106,27 @@ impl MemoryAdapter for GrpcMindAdapter {
         }
     }
 
-    async fn remember(&self, content: &str) -> Result<(), String> {
-        self.remember_node(content, -1).await
+    async fn remember(&self, content: &str, parent_ids: &[String]) -> Result<String, String> {
+        self.remember_node(content, -1, parent_ids).await
     }
 
     /// Write a memory node at an explicit layer (L0-L3; -1 = protocol default
     /// L3). One adapter method, any layer: the orchestrator names the layer,
     /// Mind enforces the meaning (ADR-0033 layer semantics).
-    async fn remember_node(&self, content: &str, node_type: i32) -> Result<(), String> {
+    async fn remember_node(&self, content: &str, node_type: i32, parent_ids: &[String]) -> Result<String, String> {
         let request = tonic::Request::new(RememberRequest {
             content: content.to_string(),
             node_type,
+            // ADR-0043 T5b: Mind turns these into `derived_from` + one edge each.
+            parent_ids: parent_ids.to_vec(),
         });
-        self.client
+        let response = self.client
             .clone()
             .remember(request)
             .await
             .map_err(|e| e.to_string())?;
-        Ok(())
+        // ADR-0043 D3: surface the id instead of discarding it.
+        Ok(response.into_inner().node_id)
     }
 
     /// P10a (ADR-0031): cognitive craft trigger. Deterministic orchestration
