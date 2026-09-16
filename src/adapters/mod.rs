@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 // ---------- Memory Adapter ----------
 /// One retrieved memory node with its provenance metadata (ADR-0033):
-/// Mind's Node carries layer/heat/phase already — the adapter must not
+/// Mind's Node carries layer/activation/phase already — the adapter must not
 /// discard them, or the cockpit cannot show what SA-Core actually chose.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct MemoryNode {
@@ -22,7 +22,15 @@ pub struct MemoryNode {
     /// Layer label: "L0"|"L1"|"L2"|"L3" (Mind's own serialization).
     pub tier: String,
     /// Heat score (relevance) reported by retrieval.
-    pub heat: f64,
+    /// THIS CYCLE's SA-Core activation, from `activation_vector` (proto field 13).
+    ///
+    /// It used to carry Mind's persisted `heat` column, which is a field nothing
+    /// ever writes: measured on the live store, `heat` was 0.5 for all 565 nodes
+    /// with zero exceptions, so the panel's "energy" was a construction default
+    /// rather than Helix's state (ADR-0042 T6). Named `activation`, not `heat`,
+    /// because calling a per-cycle activation a heat would be a lie about what
+    /// the number means.
+    pub activation: f64,
     /// Phase state: "gas"|"liquid"|"crystal" (SA-Core phase semantics).
     pub phase: String,
     /// Recessive (隐性) flag — surfaced but never injected by default.

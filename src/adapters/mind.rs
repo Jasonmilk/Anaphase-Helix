@@ -77,17 +77,38 @@ impl MemoryAdapter for GrpcMindAdapter {
         match self.client.clone().helix_query(request).await {
             Ok(response) => {
                 let inner = response.into_inner();
+                // ADR-0042 T6: the white-box must report what SA-Core actually
+                // computed this cycle (`activation_vector`, proto field 13). The
+                // vector was reserved and wired end-to-end in ADR-0042, but nothing
+                // on this side ever read it — so the panel displayed the persisted
+                // `heat` column, which no code writes.
+                //
+                // Fallback: a node the diffusion never energised keeps its persisted
+                // heat. Reporting 0.0 would claim "SA-Core chose nothing here" when
+                // the truth is "SA-Core did not consider it" — a different fact.
+                let activations: std::collections::HashMap<String, f64> = inner
+                    .activation_vector
+                    .iter()
+                    .map(|a| (a.node_id.clone(), a.activation))
+                    .collect();
                 Ok(QueryResult {
                     nodes: inner
                         .nodes
                         .into_iter()
-                        .map(|n| MemoryNode {
-                            content: n.content_json,
-                            id: n.id,
-                            tier: n.node_type,
-                            heat: n.heat,
-                            phase: n.phase_state,
-                            recessive: n.is_recessive,
+                        .map(|n| {
+                            // ADR-0042 T6: report what SA-Core computed THIS cycle,
+                            // not the persisted `heat` column. Resolved before the
+                            // struct literal because the literal moves `n.id`.
+                            let activation =
+                                activations.get(n.id.as_str()).copied().unwrap_or(n.heat);
+                            MemoryNode {
+                                content: n.content_json,
+                                id: n.id,
+                                tier: n.node_type,
+                                activation,
+                                phase: n.phase_state,
+                                recessive: n.is_recessive,
+                            }
                         })
                         .collect(),
                     impasse_level: inner.impasse_level as u8,

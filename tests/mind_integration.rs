@@ -324,7 +324,7 @@ async fn normal_closed_loop_returns_nodes() {
     assert_eq!(result.nodes[0].content, "test-node-content");
     assert_eq!(result.nodes[0].tier, "L3");
     assert_eq!(result.nodes[0].phase, "liquid");
-    assert_eq!(result.nodes[0].heat, 0.5);
+    assert_eq!(result.nodes[0].activation, 0.5);
     assert_eq!(result.nodes[0].id, "n1");
 }
 

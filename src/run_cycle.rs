@@ -295,7 +295,7 @@ pub struct AgentContext {
 
 impl AgentLoop {
     /// SA-Core choice detail for the ProveTrack cockpit (ADR-0033): which layers
-    /// were picked and the top-heat nodes — provenance only (id/tier/heat/
+    /// were picked and the top-activation nodes — provenance only (id/tier/activation/
     /// phase), never node content. Empty when no memory was retrieved.
     fn memory_choice_detail(&self) -> Option<serde_json::Value> {
         if self.context.memory_nodes.is_empty() {
@@ -314,16 +314,16 @@ impl AgentLoop {
                 serde_json::json!({
                     "id": n.id,
                     "tier": n.tier,
-                    "heat": (n.heat * 100.0).round() / 100.0,
+                    "activation": (n.activation * 100.0).round() / 100.0,
                     "phase": n.phase,
                 })
             })
             .collect();
         top.sort_by(|a, b| {
-            b["heat"]
+            b["activation"]
                 .as_f64()
                 .unwrap_or(0.0)
-                .partial_cmp(&a["heat"].as_f64().unwrap_or(0.0))
+                .partial_cmp(&a["activation"].as_f64().unwrap_or(0.0))
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
         top.truncate(3);
@@ -1925,7 +1925,7 @@ mod tests {
             content: text.to_string(),
             id: "n-test".to_string(),
             tier: "L3".to_string(),
-            heat: 1.0,
+            activation: 1.0,
             phase: "liquid".to_string(),
             recessive: false,
         }
@@ -2048,7 +2048,7 @@ mod remember_parents_tests {
             content: format!("content-{id}"),
             id: id.to_string(),
             tier: "L3".into(),
-            heat: 0.5,
+            activation: 0.5,
             phase: "liquid".into(),
             recessive: false,
         }
