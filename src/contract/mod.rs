@@ -110,6 +110,138 @@ pub fn parse_reasoning_output(response: &str) -> Result<ReasoningSignal, String>
     parse_tool_fence(response).ok_or_else(|| format!("invalid JSON from LLM: {json_err}"))
 }
 
+/// Does this text ASK FOR A TOOL, in any of the shapes the model emits?
+///
+/// F1 (2026-09-17) refused a reply that parsed as a plan, but only in the
+/// canonical shape (`{"calls":[...]}`, whole-string JSON) plus the ```tool fence.
+/// Measured on the live store: the model also answers the finalize prompt with
+/// prose followed by `Tool: {"tool": "web_search", ...}`, which BOTH parsers
+/// miss — so the request was accepted as the answer and the search it asked for
+/// never ran. The human's report was "Tentacle 无法正常搜索", again.
+///
+/// So the rule is P0-D-1's, widened: a reply that asks for a tool is not an
+/// answer, whatever wrapper it arrives in. Deliberately substring-level rather
+/// than anchored, because the wrapper is the model's choice and the intent is
+/// not. Deterministic and offline: brace-balanced JSON extraction, no regex.
+pub fn contains_tool_request(text: &str) -> bool {
+    let mut from = 0usize;
+    while let Some(rel) = text[from..].find('{') {
+        let start = from + rel;
+        let Some(end) = balanced_json_end(text, start) else {
+            return false;
+        };
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text[start..end]) {
+            if is_call_shape(&v) {
+                return true;
+            }
+        }
+        from = start + 1;
+    }
+    false
+}
+
+/// A JSON value that names a tool to call: a single call object
+/// (`{"tool": "...", ...}`) or a plan (`{"calls": [...]}` with at least one call).
+/// Results and prose are neither — `{"ok":true,"result":"..."}` must stay an
+/// answer, or a legitimately quoted tool result would be refused.
+fn is_call_shape(v: &serde_json::Value) -> bool {
+    if let Some(t) = v.get("tool") {
+        return t.is_string();
+    }
+    v.get("calls")
+        .and_then(|c| c.as_array())
+        .map(|a| !a.is_empty())
+        .unwrap_or(false)
+}
+
+/// End index (exclusive) of the JSON object starting at `open`, or None when the
+/// braces never balance. String literals and their escapes are skipped, so a
+/// `}` inside a query string does not close the object early.
+fn balanced_json_end(text: &str, open: usize) -> Option<usize> {
+    let bytes = text.as_bytes();
+    if bytes.get(open) != Some(&b'{') {
+        return None;
+    }
+    let mut depth = 0i32;
+    let mut in_string = false;
+    let mut escaped = false;
+    for (i, &b) in bytes.iter().enumerate().skip(open) {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if b == b'\\' {
+                escaped = true;
+            } else if b == b'"' {
+                in_string = false;
+            }
+            continue;
+        }
+        match b {
+            b'"' => in_string = true,
+            b'{' => depth += 1,
+            b'}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(i + 1);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// The authoritative scalar a tool returned, when it returned one.
+///
+/// Only the `{"ok":true,"result":<scalar>}` shape counts. That is the shape a
+/// deterministic tool uses to state a fact (`calc` answered `8**15` with
+/// `"35184372088832"`), and it is the shape whose paraphrase can be checked
+/// against the reply without guessing. Tools that return documents (a search's
+/// result list) are deliberately excluded: their numbers are content, not facts.
+pub fn authoritative_result(tool_return: &str) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(tool_return).ok()?;
+    if v.get("ok").and_then(|o| o.as_bool()) != Some(true) {
+        return None;
+    }
+    let r = v.get("result")?;
+    let s = match r {
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Number(n) => n.to_string(),
+        _ => return None,
+    };
+    Some(s)
+}
+
+/// Normalise a number for comparison: digits only (`35,184,372,088,32` and
+/// `35184372088832` must compare equal, and so must `1 234` or `1_234`).
+pub fn digits_only(s: &str) -> String {
+    s.chars().filter(|c| c.is_ascii_digit()).collect()
+}
+
+/// Does `reply` CONTRADICT the tool evidence it was built from?
+///
+/// Returns the authoritative value the reply failed to carry, or None when there
+/// is nothing to check (no scalar result) or the reply is consistent.
+///
+/// The defect this exists for: `calc` returned `"35184372088832"` and the reply
+/// said `35,184,372,088,32` — the model dropped a digit while adding thousands
+/// separators — and the verdict still read Met, because `answer.delivered`
+/// inspects the TOOL's return and never the answer the human received. The
+/// comparison is digits-only and requires a run of at least 4 digits, so short
+/// integers (a count, a year) cannot produce a false accusation.
+pub fn contradicts_evidence(tool_return: &str, reply: &str) -> Option<String> {
+    let authoritative = authoritative_result(tool_return)?;
+    let want = digits_only(&authoritative);
+    if want.len() < 4 {
+        return None;
+    }
+    if digits_only(reply).contains(&want) {
+        None
+    } else {
+        Some(authoritative)
+    }
+}
+
 /// Parse a ```tool fence into a single planned call (fence fallback).
 ///
 /// Accepted shapes inside the fence:
@@ -482,4 +614,90 @@ mod tests {
         assert!(parse_structured_command("!").is_none());
         assert!(parse_structured_command("!   ").is_none());
     }
+
+    // ── tool-request detection + evidence consistency (2026-09-17) ─────
+
+    #[test]
+    fn tool_request_detected_in_every_shape_the_model_emits() {
+        // Canonical plan (whole-string JSON).
+        assert!(contains_tool_request(
+            r#"{"calls":[{"tool":"web_search","args":{"q":"x"}}],"impasse":false}"#
+        ));
+        // The shape that escaped BOTH parsers on the live store: prose followed
+        // by `Tool: {json}`. It was accepted as the answer and the search it
+        // asked for never ran — the human's "Tentacle 无法正常搜索", again.
+        assert!(contains_tool_request(
+            "Let me search specifically for it.\nTool: {\"tool\": \"web_search\", \"args\": {\"max\": 10}}"
+        ));
+        // A bare single-call object.
+        assert!(contains_tool_request(r#"{"tool":"calc","args":{"expression":"8**15"}}"#));
+        // A ```tool fence carries NO braces, so this function is not what
+        // catches it — `parse_reasoning_output` is (via parse_tool_fence). The
+        // finalize guard uses BOTH for exactly this reason; asserted here so
+        // the division of labour is recorded rather than assumed.
+        assert!(!contains_tool_request("```tool calc(expression=\"8**15\")\n```"));
+        assert!(!parse_reasoning_output("```tool calc(expression=\"8**15\")\n```")
+            .map(|s| s.calls.is_empty())
+            .unwrap_or(true));
+    }
+
+    #[test]
+    fn tool_request_detection_does_not_accuse_an_answer() {
+        // A result object is NOT a request — or a legitimately quoted tool
+        // result would be refused.
+        assert!(!contains_tool_request(r#"{"ok":true,"result":"35184372088832"}"#));
+        // Plain prose.
+        assert!(!contains_tool_request("The series is 1, 2, 3."));
+        // An explicit no-plan is not a plan (the empty calls array is the
+        // protocol's way of saying "no tool needed").
+        assert!(!contains_tool_request(r#"{"calls":[],"impasse":false}"#));
+        // Unbalanced braces must not panic and must not match.
+        assert!(!contains_tool_request("prose { \"tool\": \"x\" "));
+        // A `}` inside a string must not close the object early.
+        assert!(contains_tool_request(r#"Tool: {"tool":"web_search","args":{"q":"a}b"}}"#));
+    }
+
+    #[test]
+    fn authoritative_result_reads_only_the_scalar_shape() {
+        assert_eq!(
+            authoritative_result(r#"{"ok":true,"result":"35184372088832"}"#).as_deref(),
+            Some("35184372088832")
+        );
+        assert_eq!(
+            authoritative_result(r#"{"ok":true,"result":1024}"#).as_deref(),
+            Some("1024")
+        );
+        // A document-shaped return (a search's result list) has no scalar fact
+        // to check against, so it is deliberately excluded.
+        assert_eq!(authoritative_result(r#"{"ok":true,"results":[{"title":"x"}]}"#), None);
+        assert_eq!(authoritative_result(r#"{"ok":false,"result":"1"}"#), None);
+    }
+
+    #[test]
+    fn contradiction_is_caught_exactly_as_it_happened_live() {
+        // The live defect, verbatim: calc returned ...320 and the reply said
+        // ...32 — a digit lost while adding thousands separators — and the
+        // verdict still read Met.
+        let evidence = r#"{"ok":true,"result":"35184372088832"}"#;
+        assert_eq!(
+            contradicts_evidence(evidence, "8的15次方等于 **35,184,372,088,32**。").as_deref(),
+            Some("35184372088832")
+        );
+        // Separator variations are not contradictions.
+        assert_eq!(
+            contradicts_evidence(evidence, "It is 35,184,372,088,832."),
+            None
+        );
+        assert_eq!(contradicts_evidence(evidence, "It is 35184372088832."), None);
+        // A reply that omits the value entirely has not delivered the fact
+        // either: the tool stated a scalar and the answer does not carry it.
+        // (I first asserted None here — the test was wrong, not the rule.)
+        assert_eq!(
+            contradicts_evidence(evidence, "The calculation is done.").as_deref(),
+            Some("35184372088832")
+        );
+        // Short numbers cannot produce a false accusation (a count, a year).
+        assert_eq!(contradicts_evidence(r#"{"ok":true,"result":"12"}"#, "twelve"), None);
+    }
+
 }

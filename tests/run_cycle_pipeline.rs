@@ -432,3 +432,92 @@ async fn finalize_reasks_once_then_accepts_the_answer() {
         p[2]
     );
 }
+
+// ── F2 (2026-09-17): the reply must not contradict its own evidence ───
+//
+// Live defect this covers: `calc` returned "35184372088832", the reply said
+// "35,184,372,088,32" (a digit lost while adding thousands separators), and the
+// verdict still read Met — because `answer.delivered` inspects the TOOL's return
+// ("delivery confirmed at tool edge") and never the answer the human received.
+
+const PLAN_CALC: &str = r#"{"calls":[{"tool":"calc","args":{"expression":"8**15"},"expect":"ok"}],"impasse":false}"#;
+const CALC_OK: &str = r#"{"ok":true,"result":"35184372088832"}"#;
+
+#[tokio::test]
+async fn finalize_reasks_when_the_reply_contradicts_its_evidence() {
+    let prompts = Arc::new(Mutex::new(vec![]));
+    let mock = MockTentacle::new().with_tool("calc", CALC_OK);
+    let mut agent = base_agent(scripted(
+        vec![
+            PLAN_CALC,
+            "8 to the 15th is 35,184,372,088,32.", // the live mistake
+            "8 to the 15th is 35,184,372,088,832.", // corrected after the re-ask
+        ],
+        prompts.clone(),
+    ))
+    .with_pipeline(build_pipeline(mock, 1000).await)
+    .with_run_config(RunCycleConfig { tool_followup_rounds: 1, ..RunCycleConfig::default() });
+
+    agent.run_cycle("what is 8**15").await.unwrap();
+
+    assert_eq!(
+        agent.context.reasoning_output, "8 to the 15th is 35,184,372,088,832.",
+        "the consistent reply is the one accepted"
+    );
+    let p = prompts.lock().unwrap();
+    assert_eq!(p.len(), 3, "plan + finalize + one re-ask");
+    assert!(
+        p[2].contains("35184372088832"),
+        "the re-ask must state the authoritative value, not just demand prose; got: {}",
+        p[2]
+    );
+}
+
+#[tokio::test]
+async fn contradictory_reply_degrades_to_the_evidence_echo_when_no_retry_is_allowed() {
+    let prompts = Arc::new(Mutex::new(vec![]));
+    let mock = MockTentacle::new().with_tool("calc", CALC_OK);
+    let mut agent = base_agent(scripted(
+        vec![PLAN_CALC, "8 to the 15th is 35,184,372,088,32."],
+        prompts.clone(),
+    ))
+    .with_pipeline(build_pipeline(mock, 1000).await)
+    .with_run_config(RunCycleConfig { tool_followup_rounds: 0, ..RunCycleConfig::default() });
+
+    agent.run_cycle("what is 8**15").await.unwrap();
+
+    let reply = &agent.context.reasoning_output;
+    assert!(
+        reply.contains("35184372088832"),
+        "with no retry allowed the honest evidence echo carries the value verbatim; got: {reply}"
+    );
+    assert!(
+        !reply.contains("088,32."),
+        "the contradictory paraphrase must not survive; got: {reply}"
+    );
+}
+
+#[tokio::test]
+async fn a_reply_that_asks_for_a_tool_is_refused_even_in_prose_plus_tool_shape() {
+    // The shape that escaped BOTH parsers live: prose followed by `Tool: {json}`.
+    let prompts = Arc::new(Mutex::new(vec![]));
+    let mock = MockTentacle::new().with_tool("numbers", r#"{"series":[1.0,2.0,3.0]}"#);
+    let mut agent = base_agent(scripted(
+        vec![
+            PLAN_A,
+            "Let me search for that.\nTool: {\"tool\": \"web_search\", \"args\": {\"q\": \"x\"}}",
+            "The series is 1, 2, 3.",
+        ],
+        prompts.clone(),
+    ))
+    .with_pipeline(build_pipeline(mock, 1000).await)
+    .with_run_config(RunCycleConfig { tool_followup_rounds: 1, ..RunCycleConfig::default() });
+
+    agent.run_cycle("calculate").await.unwrap();
+
+    assert_eq!(agent.context.reasoning_output, "The series is 1, 2, 3.");
+    assert!(
+        !agent.context.reasoning_output.contains("\"tool\""),
+        "a tool request must never reach the human as an answer"
+    );
+}

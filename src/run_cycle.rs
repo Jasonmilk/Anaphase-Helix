@@ -1,6 +1,9 @@
 use crate::adapters::*;
 use crate::config::{Mode, RunCycleConfig};
-use crate::contract::{derive_episode_id, parse_reasoning_output, Call, TtJob};
+use crate::contract::{
+    contains_tool_request, contradicts_evidence, derive_episode_id, parse_reasoning_output, Call,
+    TtJob,
+};
 use crate::evidence::EvidenceRecord;
 use crate::hitl::HITLApprover;
 use crate::ledger::unix_secs_to_rfc3339;
@@ -1370,13 +1373,25 @@ impl AgentLoop {
                         // the honest evidence echo rather than leaking JSON.
                         let mut rounds = 0u32;
                         let mut accepted: Option<String> = None;
+                        // Set when the reply contradicted a tool's own scalar
+                        // result; carried into the re-ask so the directive can
+                        // state the authoritative value instead of only asking
+                        // for prose.
+                        let mut ground_truth: Option<String> = None;
                         loop {
                             let strict = rounds > 0;
                             let finalize_prompt = if strict {
+                                let must_use = match &ground_truth {
+                                    Some(v) => format!(
+                                        "\nA tool returned this exact value: {v}. It is authoritative — reproduce it verbatim (its digits must appear unchanged) and do not recompute or reformat it."
+                                    ),
+                                    None => String::new(),
+                                };
                                 format!(
-                                    "Original question: {}\nTool results:\n{}\n\nThe tool calls above have ALREADY been executed. You cannot call a tool again. Answer the user's question now, in natural language, using only these results. If they are insufficient, say plainly what is missing. No JSON, no tool calls, no internal format.",
+                                    "Original question: {}\nTool results:\n{}\n\nThe tool calls above have ALREADY been executed. You cannot call a tool again. Answer the user's question now, in natural language, using only these results. If they are insufficient, say plainly what is missing. No JSON, no tool calls, no internal format.{}",
                                     self.context.user_input,
-                                    lines.join("\n")
+                                    lines.join("\n"),
+                                    must_use
                                 )
                             } else {
                                 format!(
@@ -1401,24 +1416,62 @@ impl AgentLoop {
                             if answer.trim().is_empty() {
                                 break;
                             }
-                            // F1: a plan is not an answer.
-                            let is_plan = matches!(
-                                parse_reasoning_output(answer.trim()),
-                                Ok(sig) if !sig.calls.is_empty()
-                            );
-                            if is_plan {
+                            // F1: a plan is not an answer — in ANY shape. The
+                            // canonical check is kept (it also sees `impasse`),
+                            // and `contains_tool_request` widens it to the
+                            // shapes the model actually emits, e.g. prose
+                            // followed by `Tool: {"tool": ...}`, which both
+                            // parsers used to miss (measured live: the search it
+                            // asked for never ran and the text became the reply).
+                            let is_plan = contains_tool_request(answer.trim())
+                                || matches!(
+                                    parse_reasoning_output(answer.trim()),
+                                    Ok(sig) if !sig.calls.is_empty()
+                                );
+                            // F2: the reply must not CONTRADICT the evidence it
+                            // was built from. Measured live: `calc` returned
+                            // "35184372088832", the reply said
+                            // "35,184,372,088,32", and the verdict still read Met
+                            // — because `answer.delivered` inspects the TOOL's
+                            // return, never the answer the human received. A
+                            // reply that misstates its own evidence is not a
+                            // deliverable; the honest outcome is the evidence
+                            // echo, which carries the value verbatim.
+                            let contradiction = self.context.evidence.iter().find_map(|e| {
+                                if e.ok {
+                                    contradicts_evidence(&e.data, answer.trim())
+                                } else {
+                                    None
+                                }
+                            });
+                            if is_plan || contradiction.is_some() {
                                 if rounds < self.run_config.tool_followup_rounds {
                                     rounds += 1;
-                                    warn!(
-                                        "[Reflection] finalize returned a tool plan, not an answer — re-asking (round {}/{})",
-                                        rounds, self.run_config.tool_followup_rounds
-                                    );
+                                    if let Some(v) = &contradiction {
+                                        warn!(
+                                            "[Reflection] finalize reply contradicts its evidence (authoritative {} is absent) — re-asking (round {}/{})",
+                                            v, rounds, self.run_config.tool_followup_rounds
+                                        );
+                                        ground_truth = contradiction.clone();
+                                    } else {
+                                        warn!(
+                                            "[Reflection] finalize returned a tool plan, not an answer — re-asking (round {}/{})",
+                                            rounds, self.run_config.tool_followup_rounds
+                                        );
+                                    }
                                     continue;
                                 }
-                                warn!(
-                                    "[Reflection] finalize still returned a tool plan after {} follow-up round(s) — refusing to leak it (P0-D-1)",
-                                    rounds
-                                );
+                                if let Some(v) = &contradiction {
+                                    warn!(
+                                        "[Reflection] finalize still contradicts its evidence (authoritative {} absent) after {} follow-up round(s) — degrading to the evidence echo",
+                                        v, rounds
+                                    );
+                                } else {
+                                    warn!(
+                                        "[Reflection] finalize still returned a tool plan after {} follow-up round(s) — refusing to leak it (P0-D-1)",
+                                        rounds
+                                    );
+                                }
                                 break;
                             }
                             accepted = Some(answer);
