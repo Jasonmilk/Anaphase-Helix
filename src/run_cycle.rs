@@ -958,14 +958,21 @@ impl AgentLoop {
                 if let Some(ev) = self.session_events.as_mut() {
                     let ts = crate::ledger::unix_secs_to_rfc3339(self.clock.now());
                     // resume_from = machine-readable parent job id when this
-                    // period continues a previous one (ProveTrack threading);
-                    // legacy fallback keeps the human summary for old
-                    // callers that never sent a job_id.
-                    let resume_from = self
-                        .context
-                        .resume_job
-                        .as_deref()
-                        .or(self.context.resume.as_deref());
+                    // period continues a previous one (ProveTrack threading).
+                    //
+                    // It previously fell back to `context.resume` — the
+                    // HUMAN-READABLE continuation summary — for callers that sent
+                    // no job id. That wrote a paragraph into a parent-pointer slot:
+                    // measured on the live stream, 12 of 139 periods carried prose
+                    // (or an arbitrary caller-supplied string) as their `parent`,
+                    // which orphaned their threads (83 apparent roots) and made list
+                    // grouping look like a wrong MODEL when the INPUT was corrupt.
+                    //
+                    // The summary has its own carrier (`resume`, injected into the
+                    // prompt) and does not belong in lineage. Absent job id =>
+                    // absent parent; the reader enforces this too, because history
+                    // is append-only and the old rows stay as they were written.
+                    let resume_from = self.context.resume_job.as_deref();
                     let _ = ev.emit_period_start(
                         &ts,
                         &self.context.user_input,

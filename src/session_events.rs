@@ -434,6 +434,25 @@ mod tests {
     }
 
     #[test]
+    fn prose_is_never_a_parent_pointer() {
+        // Real ids (the shape Anaphase mints).
+        assert!(is_period_id("run-8bba24c5ee368a4a"));
+        assert!(is_period_id("run-abc")); // `abc` is hex, so shape-valid
+        // The two shapes that actually polluted the live stream.
+        assert!(
+            !is_period_id("human said: 我最喜欢的数字是 7\nhelix answered: 7"),
+            "the human-readable continuation summary must never act as a parent"
+        );
+        assert!(
+            !is_period_id("run-adr0043-t5b-verify"),
+            "an arbitrary caller-supplied id must not become a parent just because \
+             it carries the run- prefix"
+        );
+        assert!(!is_period_id(""), "empty is not a parent");
+        assert!(!is_period_id("run-"), "the prefix alone is not a parent");
+    }
+
+    #[test]
     fn redacts_strings_recursively() {
         let dir = tmp_dir();
         let mut stream = SessionEventStream::open(
@@ -481,6 +500,30 @@ pub fn read_period(dir: &std::path::Path, job_id: &str) -> io::Result<Vec<Sessio
         }
     }
     Ok(events)
+}
+
+/// Is `s` an Anaphase period id — `run-` followed by lowercase hex?
+///
+/// `resume_from` is MACHINE-READABLE lineage, so this is the gate that decides
+/// whether a recorded value may act as a parent pointer. It exists because the
+/// writer used to fall back to the human-readable continuation summary when no
+/// job id was supplied, putting a paragraph into the parent slot; measured on the
+/// live stream that orphaned 12 of 139 periods (83 apparent roots for a graph
+/// with far fewer threads). The writer is fixed, but history is append-only, so
+/// the reader refuses non-ids rather than trusting the field.
+///
+/// Strict on purpose: a *shape* check, not membership. Membership would need the
+/// whole stream before deciding, and a malformed id is not a parent regardless of
+/// whether some other period happens to share the string.
+///
+/// Note this also rejects caller-supplied ids that merely start with `run-`
+/// (e.g. a hand-written `run-adr0043-t5b-verify`), which is how two polluted
+/// parents entered the live stream during verification.
+pub fn is_period_id(s: &str) -> bool {
+    match s.strip_prefix("run-") {
+        Some(rest) => !rest.is_empty() && rest.chars().all(|c| c.is_ascii_hexdigit()),
+        None => false,
+    }
 }
 
 /// One period's list summary (session-management sidebar, ProveTrack v2).
@@ -608,7 +651,13 @@ pub fn list_periods(dir: &std::path::Path, limit: usize) -> io::Result<Vec<Perio
             // this period was resumed from a previous one (session thread).
             if parent.is_none() && row.event_type == EventType::ContextInject.as_str() {
                 if let Some(r) = row.data.get("resume_from").and_then(|v| v.as_str()) {
-                    parent = Some(r.to_string());
+                    // Only a real period id is a parent. See `is_period_id`: the
+                    // writer used to put the human-readable summary here, and
+                    // history is append-only, so the reader must refuse prose
+                    // rather than inherit the confusion.
+                    if is_period_id(r) {
+                        parent = Some(r.to_string());
+                    }
                 }
             }
             last_ts = row.time;
