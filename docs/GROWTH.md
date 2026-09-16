@@ -1,3 +1,62 @@
+
+
+---
+
+## [2026-09-17] 工具链闭环：计划不是答案 + 周期身份不唯一（ADR-0041）
+
+**变异类型**：交付断裂修复 + 存储身份缺陷定位
+
+- **现象（人类报告）**：面板里让 Helix 搜网络，回复却是原始 `{"calls":[...]}` JSON。
+  实测全库：**50 段经历中 9 条如此，且 9 条全部是工具轮**（8×`web_search`、1×`calc`）。
+- **根因（三处，按因果排序）**：
+  ① `Reflection` 的 finalize 守卫只有"非空"，不判**它是不是又一次工具调用**——模型（虽被
+  提示 "no JSON"）回计划，该 JSON 即成用户可见答复；② 判据 `answer.delivered` 检查的是
+  **工具返回值**（自注 `"delivery confirmed at tool edge"`），不是"用户是否拿到答案"
+  ⇒ 工具跑通即判 **Met**，把空交付判成了成功；③ `Reasoning` 侧早已有 **P0-D-1**
+  （"never leak the raw JSON as a reply"），**finalize 路径没享受同一条规则**。
+- **修复**：把 P0-D-1 延伸到 finalize；新增 `tool_followup_rounds`（协议默认 1，与
+  `empty_reply_retries` 同形）做**有界重问**——明示"工具已执行完、不得再调、只用已有结果
+  作答"；仍不成则落回**证据回显**（诚实显示工具结果，**永不吐 JSON**）。
+- **拒绝了一版更强方案，理由要留档**：原打算"执行模型要的细化查询再综合"。实测否决——
+  `trace_id = {job_id}#{index}`（index 局部于计划）且 `record_evidence` **纯追加不去重**
+  ⇒ 同一 job_id 下第二次执行会**同时撞 `evidence_id` 与 `trace_id`**，而"一周期一 trace"
+  是硬契约（ADR-0019/0026）；要让下标跨轮偏移就得改 pipeline 签名，属架构变更须另立 ADR。
+- **测试 + 变异证明**：新增 2 条（计划绝不成答复 / 有界重问收下散文）。
+  **变异测试**：把守卫退回"只看非空" ⇒ 两条**双双变红**；还原 ⇒ 双双转绿（非空转）。
+- **端到端实证（真实上游，经 Tuck）**：事件流为
+  `assistant/attempt(计划) → tool/call → tool/result(ok=true, 846ms) → assistant/usage(prompt=853)
+  → assistant/reply(自然语言答案)`；回复是「抱歉，我尝试搜索了…没有找到相关结果」而非 JSON。
+
+### 顺带定位：人类报告"经历内容顺序错乱"——真因是周期身份不唯一
+
+三层叠加，逐层实测：① `job_id` 由输入派生（FNV-1a）⇒ **同问题重问同 id**；
+② `session_events::open` 用 `truncate(true)` 覆写 ⇒ 那条记录被替换；③ **别的周期仍以被覆写的
+id 为父**（`context/inject.resume_from`）⇒ 父的内容变成**另一次更晚的执行**。
+
+铁证：`run-9e901b965a772d51` 的 `first_ts = 17:01:07`，其子 `run-32c4be74a996a40d` 为 `06:19:10`
+——**父比子晚 11 小时**；51 条血缘路径中 **5 条时间戳非单调**，全部源于此。
+
+补充：129 个事件文件中 **8 个含多组 `turn/start`**（最多 7 组；最远相隔 6 天），
+**全在 2026-09-07~09-13，09-15 后为 0** ⇒ `truncate` 防住了"一个文件装多期"，
+**防不住"覆写被别的周期引用的父"**。
+
+⇒ **ADR-0041（Proposed）**：周期身份与输入解耦——事件流存储键必须唯一，冲突时**后缀分配**
+（旧键不动，无时钟、无迁移），且**唯一键即 trace id**（一个身份，不是两个）。
+
+### 验收
+
+- `cargo test --no-fail-fast` = **264 passed / 0 failed / 10 ignored**
+- 工具轮端到端：真实上游，回复为自然语言（事件流见上）
+- 变异测试：守卫退化 ⇒ 2 红；还原 ⇒ 2 绿
+- ADR-0041 经 `tools/adr_head.py`（该事实的唯一解析器）解析通过；索引已补 0041
+
+### 未做（诚实边界）
+
+`answer.delivered` 判据**语义仍名不副实**（检查工具边缘而非用户交付）。补一条"回复不得是
+调用计划"的判据是独立一件事，本 ADR/本次修复**没有**顺手做，以免被误认为已完成。
+
+---
+
 ## [2026-09-14] 完成：上游计量捕获——按次落盘，按需派生（ADR-0038）
 
 ### 变更性质
@@ -17,6 +76,8 @@
 - live 端到端：Tuck 网关 → anaphase `--stdio` → 真实上游（`X-Route-Tier: free`）。真实产出 `assistant/usage` = `{prompt_tokens:664, cached_tokens:256, completion_tokens:171, reasoning_tokens:148, model:"agnes-2.5-flash"}`；不相交输入 408，total 835。
 - Cellrix 数据层真实回放：用上述 live 事件文件在 node 下回放 `prove_track.data.js`，27 项断言全绿（含「计量事件不扰动既有 dur」逐项相同）。
 
+---
+
 ## [2026-09-08] 完成：回答被思考吞掉——token 预算共享修复（ADR-0034）
 
 ### 变更性质
@@ -30,16 +91,3 @@
 - 复现问题实测：think 5816 + attempt 103（`empty=False`）——回答落地；浏览器显示完整回答
 - 新测试 `empty_reply_retries_with_direct_answer_directive`：空→直答重试，断言 2 次调用 + 指令存在
 - 240 passed 0 failed（此前 239 + 新增）
-
-## [2026-09-08] 完成：SSE 事件序运行时焊死（ADR-0030）
-
-### 变更性质
-- 终态通道 oneshot → mpsc：oneshot 在 complete 后重复 poll 触发 tokio panic（`called after complete`）→ unfold 流在 done 行发出前中断 → 浏览器只收到 attempt 裸 JSON delta（用户视角"Helix 回复是计划文本不是答案"）。mpsc `recv()` 可安全重复 poll，done 行确定性到达。
-- 事件序契约不变（ADR-0028：delta 先、done 后、drain flush 尾部）；只换通道原语，不换语义。
-- sender 未发送即 drop（周期崩溃）→ 流静默结束，客户端保留已流式内容，不伪造 done。
-
-### 验收
-- 浏览器实测：8^3 → Chat 显示 `calc: {"ok":true,"result":"512"}`（此前裸 JSON）；
-- 连续两次 curl SSE 均收到 `"done":true`（此前 done 行丢失）；
-- `grep -c panicked` = 0（此前每请求后 panic）；`cargo test` 全绿 0 failed。
-

@@ -2,7 +2,31 @@
 
 > **DNA 方法论 v1.0** ｜ PLAN.md 是导航牌，不是历史档案（≤150 行）。完成记录进 GROWTH.md。
 
-## 当前阶段：O-1 落地 + Rails + O-2 事件总线 + P10 全链路 + up 全栈
+## 当前阶段：工具链闭环（计划不是答案）+ 周期身份唯一化（ADR-0041）
+
+**工具链闭环（2026-09-17 完成）**：`Reflection` 的 finalize 守卫原本只判"非空"，把模型回的
+**第二个工具计划**当成了答复 —— 实测 50 段经历中 **9 条**如此、**全部是工具轮**
+（8×`web_search`、1×`calc`）。已把 `Reasoning` 侧既有的 **P0-D-1**（"never leak the raw JSON
+as a reply"）延伸到 finalize，并新增 `tool_followup_rounds`（协议默认 1，与
+`empty_reply_retries` 同形）做**有界重问**；仍不成则落回**证据回显**。
+端到端实证（真实上游经 Tuck）：`attempt(计划) → tool/call → tool/result(ok,846ms) →
+usage(prompt=853) → reply(自然语言)`。**变异测试**：守卫退回旧行为 ⇒ 新增 2 条**双双变红**。
+测试 **264 passed / 0 failed / 10 ignored**。
+
+**周期身份唯一化（ADR-0041，Proposed —— 待人类批准后方可改码）**：
+`job_id` 由输入派生（FNV-1a）⇒ **同问题重问同 id** ⇒ `session_events` 用 `truncate` 覆写
+⇒ **别的周期仍以被覆写的 id 为父** ⇒ 父的内容变成另一次更晚的执行。
+铁证：`run-9e901b965a772d51` `first_ts=17:01:07`，其子 `run-32c4be74a996a40d` `06:19:10`
+（**父比子晚 11 小时**）；51 条血缘路径中 **5 条**时间戳非单调。
+方案：存储键唯一（冲突时**后缀分配**，旧键不动、无时钟、无迁移）+ **唯一键即 trace id**。
+
+**下一阶段预览**：ADR-0041 批准后改 `session_events.rs` 与 `derive_job_id` 调用点；
+另补一条"回复不得是调用计划"的判据 —— `answer.delivered` 现在检查的是**工具边缘**
+（自注 `"delivery confirmed at tool edge"`），不检查用户是否拿到答案，**名不副实，尚未修**。
+
+---
+
+## 上一阶段（历史，详情见 GROWTH.md 与 archive/growth/）：O-1 落地 + Rails + O-2 事件总线 + P10 全链路 + up 全栈
 **ProveTrack 正文轨迹（2026-09-07，ADR-0004 证轨半体）**：推理正文（prompt+response）落盘
 `reasoning-trace.jsonl`（`reasoning_trace_path` 可选开启）——落盘前脱敏（sk-/Bearer/api_key=
 内建 + config 附加字面量）+ 按预算截断；trace_id = 派生 job_id（与审计链/ledger 同一 join 键）；
