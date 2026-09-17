@@ -68,3 +68,142 @@ target  = "src/run_cycle.rs"
 reason  = "整个状态机；拆分定界方案见 ADR-0042"
 owner   = "TBD"
 due     = "2026-12-11"
+
+# ─── ratchet ────────────────────────────────────────────────────────────────
+# One entry per source file: the NCLOC it had when the ratchet was set. A file
+# may shrink, never grow.
+#
+# Why a ratchet and not just a number: a threshold has to answer "how big is too
+# big", which nobody can answer defensibly -- the 300 in the spec was already
+# contradicted within the same round, when bind.rs reached 302 one line after
+# being measured at 301. A ratchet asks a question that needs no calibration and
+# cannot be argued with: is this file longer than it was? It also means the
+# budget tightens on its own, because every later edit has to fit in the space an
+# earlier one left.
+#
+# The numbers below are derived, not chosen: regenerated with
+# `python3 ci/check_line_budget.py --root . --emit-ratchet`.
+#
+[[ratchet]]
+target = "build.rs"
+ncloc  = 13
+[[ratchet]]
+target = "src/adapters/flowmodus.rs"
+ncloc  = 52
+[[ratchet]]
+target = "src/adapters/http_reasoning.rs"
+ncloc  = 449
+[[ratchet]]
+target = "src/adapters/mind.rs"
+ncloc  = 363
+[[ratchet]]
+target = "src/adapters/mod.rs"
+ncloc  = 183
+[[ratchet]]
+target = "src/adapters/tentacle.rs"
+ncloc  = 80
+[[ratchet]]
+target = "src/adapters/usage.rs"
+ncloc  = 119
+[[ratchet]]
+target = "src/bin/up.rs"
+ncloc  = 545
+[[ratchet]]
+target = "src/bind.rs"
+ncloc  = 302
+[[ratchet]]
+target = "src/ci144/mod.rs"
+ncloc  = 258
+[[ratchet]]
+target = "src/ci144/server.rs"
+ncloc  = 129
+[[ratchet]]
+target = "src/config.rs"
+ncloc  = 350
+[[ratchet]]
+target = "src/contract/mod.rs"
+ncloc  = 502
+[[ratchet]]
+target = "src/criteria/mod.rs"
+ncloc  = 291
+[[ratchet]]
+target = "src/events.rs"
+ncloc  = 164
+[[ratchet]]
+target = "src/evidence/mod.rs"
+ncloc  = 93
+[[ratchet]]
+target = "src/gloves.rs"
+ncloc  = 246
+[[ratchet]]
+target = "src/health.rs"
+ncloc  = 198
+[[ratchet]]
+target = "src/hitl.rs"
+ncloc  = 86
+[[ratchet]]
+target = "src/judge.rs"
+ncloc  = 185
+[[ratchet]]
+target = "src/ledger/mod.rs"
+ncloc  = 219
+[[ratchet]]
+target = "src/lib.rs"
+ncloc  = 32
+[[ratchet]]
+target = "src/lifecycle.rs"
+ncloc  = 148
+[[ratchet]]
+target = "src/main.rs"
+ncloc  = 913
+[[ratchet]]
+target = "src/pipeline/mod.rs"
+ncloc  = 269
+[[ratchet]]
+target = "src/rails.rs"
+ncloc  = 370
+[[ratchet]]
+target = "src/reflex.rs"
+ncloc  = 12
+[[ratchet]]
+target = "src/run_cycle.rs"
+ncloc  = 1505
+[[ratchet]]
+target = "src/security.rs"
+ncloc  = 62
+[[ratchet]]
+target = "src/session_events/crystallize.rs"
+ncloc  = 107
+[[ratchet]]
+target = "src/session_events/identity.rs"
+ncloc  = 168
+[[ratchet]]
+target = "src/session_events/mod.rs"
+ncloc  = 19
+[[ratchet]]
+target = "src/session_events/naming.rs"
+ncloc  = 47
+[[ratchet]]
+target = "src/session_events/query.rs"
+ncloc  = 181
+[[ratchet]]
+target = "src/session_events/query_tests.rs"
+ncloc  = 187
+[[ratchet]]
+target = "src/session_events/test_support.rs"
+ncloc  = 14
+[[ratchet]]
+target = "src/session_events/tests.rs"
+ncloc  = 248
+[[ratchet]]
+target = "src/session_events/types_and_stream.rs"
+ncloc  = 154
+[[ratchet]]
+target = "src/states.rs"
+ncloc  = 26
+[[ratchet]]
+target = "src/task_dag.rs"
+ncloc  = 144
+[[ratchet]]
+target = "src/trace.rs"
+ncloc  = 261

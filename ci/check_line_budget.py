@@ -107,6 +107,30 @@ class WaiverError(Exception):
     """The waiver file is unreadable or malformed. Never silently ignored."""
 
 
+def load_ratchet(path):
+    """file -> the NCLOC it had when the ratchet was set.
+
+    A ratchet asks a question that needs no calibration: is this file longer
+    than it was? That is decidable, cannot misjudge "how big is too big", and
+    cannot be dodged by arguing about the threshold. It also makes the budget
+    self-tightening — every later edit must fit in the space a previous edit
+    left behind.
+    """
+    if not os.path.exists(path):
+        return {}
+    out = {}
+    target = None
+    for raw in open(path, encoding="utf-8"):
+        line = raw.strip()
+        if line == "[[ratchet]]":
+            target = None
+        elif line.startswith("target"):
+            target = line.partition("=")[2].strip().strip('"')
+        elif line.startswith("ncloc") and target:
+            out[target] = int(line.partition("=")[2].strip())
+    return out
+
+
 def load_waivers(path, check, today):
     """Returns (active_targets, expired_targets).
 
@@ -119,6 +143,7 @@ def load_waivers(path, check, today):
         return set(), []
     active, expired = set(), []
     check_field = target = due = owner = None
+    in_other_table = False
 
     def flush():
         if check_field != check or not target:
@@ -138,8 +163,20 @@ def load_waivers(path, check, today):
             if line == "[[waiver]]":
                 flush()
                 check_field = target = due = owner = None
+                in_other_table = False
+            else:
+                # Any other table ends the waiver section. Without this, a
+                # `[[ratchet]]` block appended below is parsed as part of the
+                # waiver above it, and every waiver after it silently stops
+                # matching — the same "keys that match nothing" defect this
+                # checker was already caught by once.
+                flush()
+                check_field = target = due = owner = None
+                in_other_table = True
             continue
         if "=" not in line or line.startswith("#"):
+            continue
+        if in_other_table and not line.startswith("["):
             continue
         key, _, value = line.partition("=")
         value = value.strip().strip('"')
@@ -175,7 +212,7 @@ def is_test_path(rel):
     return "tests" in parts or rel.endswith("_test.rs")
 
 
-def run(root, budget, branch_budget, max_line, check, line_mode='warn'):
+def run(root, budget, branch_budget, max_line, check, line_mode='warn', ratchet=True, emit=False):
     today = date.today()
     iso = os.environ.get("CI_TODAY")
     if iso:
@@ -189,6 +226,9 @@ def run(root, budget, branch_budget, max_line, check, line_mode='warn'):
         print(f"CHECKER ERROR: {waivers_path}: {e}", file=sys.stderr)
         return 3
 
+    ratchet_base = load_ratchet(waivers_path) if ratchet else {}
+    grown = []
+    current = {}
     violations, marker_failures, long_lines, over_budget = [], [], [], []
     for rel in iter_sources(root):
         if is_test_path(rel):
@@ -206,6 +246,9 @@ def run(root, budget, branch_budget, max_line, check, line_mode='warn'):
         # its own pass.
         data_only = DATA_ONLY_MARK in text
         n = ncloc(text)
+        current[rel.replace(os.sep, "/")] = n
+        if rel.replace(os.sep, "/") in ratchet_base and n > ratchet_base[rel.replace(os.sep, "/")]:
+            grown.append((rel, ratchet_base[rel.replace(os.sep, "/")], n))
         if not data_only and n > budget and rel not in waived and rel.replace(os.sep, "/") not in waived:
             over_budget.append((rel, n))
 
@@ -224,9 +267,15 @@ def run(root, budget, branch_budget, max_line, check, line_mode='warn'):
             f"{len(expired)} waiver(s) are past due and exempt nothing: {', '.join(expired)}"
         )
 
-    blocking = over_budget or marker_failures or expired_note
+    blocking = over_budget or marker_failures or expired_note or grown
     if line_mode == "fail":
         blocking = blocking or long_lines
+    if emit:
+        print("[[ratchet]] entries for ci/baseline.toml:")
+        for rel in sorted(current):
+            print(f'[[ratchet]]\ntarget = "{rel}"\nncloc  = {current[rel]}\n')
+        return 0
+
     ok = not blocking
     if ok:
         extra = ""
@@ -236,6 +285,10 @@ def run(root, budget, branch_budget, max_line, check, line_mode='warn'):
               f"  lines <= {max_line}{extra}")
         return 0
 
+    if grown:
+        print(f"FAIL  {len(grown)} file(s) grew past their ratchet:")
+        for rel, was, now in grown:
+            print(f"        {rel}  {was} -> {now}")
     if over_budget:
         print(f"FAIL  {len(over_budget)} file(s) over {budget} NCLOC with no waiver:")
         for rel, n in over_budget:
@@ -266,9 +319,12 @@ def main():
     ap.add_argument("--max-line", type=int, default=120)
     ap.add_argument("--check", default="CI-6")
     ap.add_argument("--line-mode", choices=("warn", "fail"), default="warn")
+    ap.add_argument("--no-ratchet", action="store_true")
+    ap.add_argument("--emit-ratchet", action="store_true")
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args()
-    code = run(args.root, args.budget, args.branch_budget, args.max_line, args.check, args.line_mode)
+    code = run(args.root, args.budget, args.branch_budget, args.max_line, args.check,
+               args.line_mode, not args.no_ratchet, args.emit_ratchet)
     if args.json:
         print(json.dumps({"exit": code}))
     return code
