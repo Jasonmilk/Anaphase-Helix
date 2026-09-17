@@ -1,0 +1,8 @@
+{"type":"turn/start","period_id":"run-aaaa1111-p00000001","job_id":"run-aaaa1111","seq":0,"time":"2023-11-14T22:13:20Z","data":{}}
+{"type":"user/message","period_id":"run-aaaa1111-p00000001","job_id":"run-aaaa1111","seq":1,"time":"2023-11-14T22:13:20Z","data":{"text":"用计算器算 7 的 9 次方"}}
+{"type":"context/inject","period_id":"run-aaaa1111-p00000001","job_id":"run-aaaa1111","seq":2,"time":"2023-11-14T22:13:20Z","data":{"chars":800,"choice":{"chosen":"memory","why":"fixture"},"nodes":2,"resume_from":"run-0000beef-p00000001"}}
+{"type":"assistant/usage","period_id":"run-aaaa1111-p00000001","job_id":"run-aaaa1111","seq":3,"time":"2023-11-14T22:13:20Z","data":{"cached_tokens":null,"completion_tokens":50,"prompt_tokens":1511}}
+{"type":"tool/call","period_id":"run-aaaa1111-p00000001","job_id":"run-aaaa1111","seq":4,"time":"2023-11-14T22:13:20Z","data":{"expect":"numbers","index":0,"tool":"numbers"}}
+{"type":"tool/result","period_id":"run-aaaa1111-p00000001","job_id":"run-aaaa1111","seq":5,"time":"2023-11-14T22:13:20Z","data":{"duration_ms":3,"index":0,"ok":true,"outcome":"40353607","tool":"numbers"}}
+{"type":"verdict/status","period_id":"run-aaaa1111-p00000001","job_id":"run-aaaa1111","seq":6,"time":"2023-11-14T22:13:20Z","data":{"job_id":"run-aaaa1111","reason":"ok","status":"Met"}}
+{"type":"turn/end","period_id":"run-aaaa1111-p00000001","job_id":"run-aaaa1111","seq":7,"time":"2023-11-14T22:13:20Z","data":{"done":true,"success":true}}
