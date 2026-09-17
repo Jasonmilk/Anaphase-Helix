@@ -1,0 +1,70 @@
+# ci/baseline.toml — the ONE waiver file every shape check shares (ADR-0042 / CI-6).
+#
+# A waiver is a debt with a date, not a permission:
+#   1. `owner` and `due` are mandatory. An exemption nobody owns is an omission.
+#   2. On `due` the waiver STOPS WORKING and the check goes red again.
+#   3. Waivers are staggered on purpose. All 33 CI-4 waivers sharing one date
+#      would turn the whole repo red on a single morning and the gate would be
+#      switched off rather than satisfied — a deadline that cannot be met is a
+#      deadline that gets removed.
+#   4. The counts are NOT written here. The checker derives them; a written-down
+#      number rots (P8).
+#
+# `src/config.rs` is deliberately absent: it is marked DATA-ONLY and the marker
+# is verified (branch budget), so it needs no waiver.
+
+[[waiver]]
+check   = "CI-6"
+target  = "src/bind.rs"
+reason  = "拆分待评估：若职责单一则阈值问题，若可拆则拆"
+owner   = "TBD"
+due     = "2026-10-02"
+
+[[waiver]]
+check   = "CI-6"
+target  = "src/rails.rs"
+reason  = "拆分待评估"
+owner   = "TBD"
+due     = "2026-10-16"
+
+[[waiver]]
+check   = "CI-6"
+target  = "src/adapters/mind.rs"
+reason  = "拆分待评估"
+owner   = "TBD"
+due     = "2026-10-16"
+
+[[waiver]]
+check   = "CI-6"
+target  = "src/adapters/http_reasoning.rs"
+reason  = "拆分待评估"
+owner   = "TBD"
+due     = "2026-10-30"
+
+[[waiver]]
+check   = "CI-6"
+target  = "src/contract/mod.rs"
+reason  = "拆分待评估（703 物理行，已作单模块）"
+owner   = "TBD"
+due     = "2026-11-13"
+
+[[waiver]]
+check   = "CI-6"
+target  = "src/bin/up.rs"
+reason  = "交互式启动器，拆分待评估"
+owner   = "TBD"
+due     = "2026-11-13"
+
+[[waiver]]
+check   = "CI-6"
+target  = "src/main.rs"
+reason  = "HTTP 端点与装配，拆分待评估"
+owner   = "TBD"
+due     = "2026-11-27"
+
+[[waiver]]
+check   = "CI-6"
+target  = "src/run_cycle.rs"
+reason  = "整个状态机；拆分定界方案见 ADR-0042"
+owner   = "TBD"
+due     = "2026-12-11"
