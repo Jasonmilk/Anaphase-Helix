@@ -944,20 +944,35 @@ impl AgentLoop {
                 // the join key shared with the body trace and the Tuck audit
                 // chain; `period_id` is what makes THIS run a distinct period
                 // (K-006) — two runs of one input must not share a file.
-                let period_id =
-                    crate::session_events::allocate_period_id(&trace_id, self.clock.now());
-                self.session_events = self
-                    .session_events_dir
-                    .as_ref()
-                    .and_then(|dir| {
-                        crate::session_events::SessionEventStream::open(
-                            dir.clone(),
-                            &period_id,
-                            &trace_id,
-                            self.session_events_redact.clone(),
-                        )
-                        .ok()
-                    });
+                // `period_id` is what makes THIS run a distinct period (K-006):
+                // two runs of one input must not share a file. The allocator
+                // rejects a job id it cannot digest rather than repairing it
+                // (B17'), and a rejection here means the identity layer has no
+                // valid id to allocate — so the period stream stays unopened
+                // rather than being opened under a wrong key.
+                match crate::session_events::try_allocate_period_id(
+                    &trace_id,
+                    self.clock.now(),
+                ) {
+                    Ok(period_id) => {
+                        self.session_events = self
+                            .session_events_dir
+                            .as_ref()
+                            .and_then(|dir| {
+                                crate::session_events::SessionEventStream::open(
+                                    dir.clone(),
+                                    &period_id,
+                                    &trace_id,
+                                    self.session_events_redact.clone(),
+                                )
+                                .ok()
+                            });
+                    }
+                    Err(e) => {
+                        warn!("[SessionEvents] no period stream this cycle: {}", e);
+                        self.session_events = None;
+                    }
+                }
                 let detail = self.memory_choice_detail();
                 if let Some(ev) = self.session_events.as_mut() {
                     let ts = crate::ledger::unix_secs_to_rfc3339(self.clock.now());

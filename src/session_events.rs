@@ -44,19 +44,56 @@ use crate::trace::Redaction;
 // root error this module now refuses: see `resolve_period` and the ambiguity
 // results, plus `job_id_is_not_an_identity` in the tests.
 
+/// The digest part of a `job_id`: `run-` followed by 1..=16 lowercase hex.
+///
+/// Rejecting rather than filtering is the whole point. The previous version
+/// collected the hex characters out of whatever it was handed and sliced the
+/// result, which turned an invalid input into a VALID-LOOKING digest: `run-abcd&`
+/// became `abcd`, colliding with `run-abcd`, and an input with no hex at all
+/// produced `run--p...`. A silently repaired value is worse than a rejected one,
+/// because it is indistinguishable from a correct value downstream — the same
+/// shape as a default that disguises a missing key as a legitimate one.
+fn job_digest(job_id: &str) -> Result<&str, String> {
+    let raw = job_id
+        .strip_prefix("run-")
+        .ok_or_else(|| format!("job id must be run-<hex>, got {job_id:?}"))?;
+    if raw.is_empty() {
+        return Err(format!("job id has an empty digest: {job_id:?}"));
+    }
+    if raw.len() > 16 {
+        return Err(format!("job id digest exceeds 16 hex chars: {job_id:?}"));
+    }
+    if !raw.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(format!("job id digest is not hex: {job_id:?}"));
+    }
+    Ok(raw)
+}
+
 /// Allocate the next period id: `run-{input digest}-p{secs}{counter}`.
 ///
 /// The digest keeps different inputs distinguishable at a glance and preserves
 /// the `run-` prefix every existing consumer filters on. The `p`-suffixed
 /// allocated tail is what makes it an IDENTITY rather than a digest: two runs
 /// of the same input differ here.
-pub fn allocate_period_id(job_id: &str, unix_secs: u64) -> String {
+///
+/// Returns an error for a `job_id` that is not `run-<1..=16 hex>` rather than
+/// building an id out of the parts that happen to look right. This function is
+/// the only allocator in the chain, so an id it gets wrong is an id that is not
+/// unique — and every guarantee built on `period_id` (B15's identity, B18's
+/// propagation) rests on that.
+pub fn try_allocate_period_id(job_id: &str, unix_secs: u64) -> Result<String, String> {
     static NEXT: AtomicU64 = AtomicU64::new(0);
+    let digest = job_digest(job_id)?;
     let n = NEXT.fetch_add(1, Ordering::Relaxed);
-    let raw = job_id.strip_prefix("run-").unwrap_or(job_id);
-    let digest: String = raw.chars().filter(|c| c.is_ascii_hexdigit()).collect();
-    let digest = &digest[..digest.len().min(16)];
-    format!("run-{digest}-p{unix_secs:010x}{n:06x}")
+    Ok(format!("run-{digest}-p{unix_secs:010x}{n:06x}"))
+}
+
+/// `try_allocate_period_id`, for callers whose input is already known-good
+/// (the production path always derives a 16-hex digest). Panics rather than
+/// returning a repaired id when that assumption is broken.
+pub fn allocate_period_id(job_id: &str, unix_secs: u64) -> String {
+    try_allocate_period_id(job_id, unix_secs)
+        .unwrap_or_else(|e| panic!("allocate_period_id: {e}"))
 }
 
 /// True when `s` is an allocated period id (not merely a `run-`-shaped digest).
@@ -588,7 +625,7 @@ mod tests {
         use crate::trace::Redaction;
         let dir = tmp_dir().join("distill");
         let redact = Redaction::default();
-        let mut stream = SessionEventStream::open(dir.clone(), "run-xyz", "run-xyz", redact).unwrap();
+        let mut stream = SessionEventStream::open(dir.clone(), "run-abc", "run-abc", redact).unwrap();
         let t = ts();
         stream
             .emit(&t, EventType::UserMessage, json!({ "text": "calc 7^9" }))
@@ -611,7 +648,7 @@ mod tests {
             )
             .unwrap();
         stream
-            .emit(&t, EventType::Verdict, json!({ "job_id": "run-xyz", "status": "Unmet", "reason": "failed: exec_ok" }))
+            .emit(&t, EventType::Verdict, json!({ "job_id": "run-abc", "status": "Unmet", "reason": "failed: exec_ok" }))
             .unwrap();
         stream
             .emit(&t, EventType::TurnEnd, json!({ "done": true, "success": false, "impasse": false, "verdict": "Unmet" }))
@@ -621,13 +658,13 @@ mod tests {
         let out = crystallize(&dir, 50).unwrap();
         assert_eq!(out.len(), 1, "one unmet period -> one suggestion");
         let s = &out[0];
-        assert_eq!(s.job_id, "run-xyz");
+        assert_eq!(s.job_id, "run-abc");
         assert_eq!(s.tool, "calc");
         assert_eq!(s.expect, "ok");
         assert_eq!(s.failed_checks, vec!["exec_ok".to_string()]);
         assert_eq!(s.outcome_shas, vec!["abcd1234".to_string()]);
         assert!(s.suggested_rule.contains("gate=hard judge=rule"));
-        assert!(dir.join("crystallized/rule-run-xyz.json").exists());
+        assert!(dir.join("crystallized/rule-run-abc.json").exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -636,10 +673,10 @@ mod tests {
         use crate::trace::Redaction;
         let dir = tmp_dir().join("skips");
         let redact = Redaction::default();
-        let mut stream = SessionEventStream::open(dir.clone(), "run-met", "run-met", redact).unwrap();
+        let mut stream = SessionEventStream::open(dir.clone(), "run-31e", "run-31e", redact).unwrap();
         let t = ts();
         stream
-            .emit(&t, EventType::Verdict, json!({ "job_id": "run-met", "status": "Met", "reason": "all checks passed" }))
+            .emit(&t, EventType::Verdict, json!({ "job_id": "run-31e", "status": "Met", "reason": "all checks passed" }))
             .unwrap();
         drop(stream);
         let out = crystallize(&dir, 50).unwrap();
@@ -664,7 +701,7 @@ mod tests {
     #[test]
     fn emits_monotonic_seq_and_roundtrips() {
         let dir = tmp_dir();
-        let mut stream = SessionEventStream::open(dir.clone(), "job-a", "job-a", Redaction::default()).unwrap();
+        let mut stream = SessionEventStream::open(dir.clone(), "run-a1", "run-a1", Redaction::default()).unwrap();
         let t = ts();
         stream.emit(&t, EventType::TurnStart, json!({})).unwrap();
         stream.emit(&t, EventType::UserMessage, json!({ "text": "hi" })).unwrap();
@@ -686,7 +723,7 @@ mod tests {
     #[test]
     fn period_start_carries_resume_and_choice_detail() {
         let dir = tmp_dir();
-        let mut stream = SessionEventStream::open(dir.clone(), "job-c", "job-c", Redaction::default()).unwrap();
+        let mut stream = SessionEventStream::open(dir.clone(), "run-c3", "run-c3", Redaction::default()).unwrap();
         let t = ts();
         let detail = json!({
             "tiers": { "L1": 1, "L2": 2, "L3": 5 },
@@ -714,12 +751,12 @@ mod tests {
     #[test]
     fn read_summary_flattens_last_round_as_history() {
         let dir = tmp_dir();
-        let mut stream = SessionEventStream::open(dir.clone(), "job-d", "job-d", Redaction::default()).unwrap();
+        let mut stream = SessionEventStream::open(dir.clone(), "run-d4", "run-d4", Redaction::default()).unwrap();
         let t = ts();
         stream.emit(&t, EventType::TurnStart, json!({})).unwrap();
         stream.emit(&t, EventType::UserMessage, json!({ "text": "用计算器算 7 的 9 次方" })).unwrap();
         stream.emit(&t, EventType::Attempt, json!({ "text": "我将用确定性工具计算，而不是口算。" })).unwrap();
-        let summary = read_summary(&dir, "job-d", 400).expect("summary");
+        let summary = read_summary(&dir, "run-d4", 400).expect("summary");
         assert!(summary.contains("用计算器算 7 的 9 次方"));
         assert!(summary.contains("我将用确定性工具计算"));
         assert!(summary.contains("human said:"));
@@ -755,6 +792,39 @@ mod tests {
         );
         assert!(!is_period_id(""), "empty is not a parent");
         assert!(!is_period_id("run-"), "the prefix alone is not a parent");
+    }
+
+    /// B17': the allocator is the chain's only source of identity, so it must
+    /// REJECT what it cannot allocate rather than repair it.
+    ///
+    /// The failure this guards against is not a wrong id but a
+    /// valid-LOOKING one: the previous version filtered the hex characters out of
+    /// whatever it was given, so `run-abcd&` and `run-abcd` produced the SAME
+    /// period id while both looked well-formed. Nothing downstream could tell.
+    #[test]
+    fn allocation_rejects_rather_than_repairs() {
+        let t = 1_760_000_000u64;
+        // Criterion 1: non-hex is an explicit failure, never a filtered digest.
+        let err = try_allocate_period_id("run-abcd&", t).expect_err("non-hex must fail");
+        assert!(err.contains("not hex"), "the reason must be specific: {err}");
+        // Criterion 4 (collision): a repaired digest would equal this one.
+        let clean = try_allocate_period_id("run-abcd", t).unwrap();
+        let dirty = try_allocate_period_id("run-abcd&", t);
+        assert!(dirty.is_err(), "a repaired id would collide with {clean}");
+        // Criterion 2: nothing hex-like at all must not yield `run--p...`.
+        assert!(try_allocate_period_id("run-日本語", t).is_err());
+        assert!(try_allocate_period_id("run-", t).is_err());
+        assert!(try_allocate_period_id("plainhex", t).is_err(), "the run- prefix is required");
+        // Criterion 3: no panic on non-ASCII (the old code byte-sliced).
+        assert!(try_allocate_period_id("run-aaa日本語", t).is_err());
+        assert!(try_allocate_period_id("run-9f9f9f9f9f9f9f9f9", t).is_err(), "longer than 16 hex");
+        // Criterion 4 (uniqueness): same digest, same second, still distinct --
+        // and an allocated id is always shaped like one.
+        let a = try_allocate_period_id("run-abcd", t).unwrap();
+        let b = try_allocate_period_id("run-abcd", t).unwrap();
+        assert_ne!(a, b, "two allocations must not share an id");
+        assert!(is_period_id(&a) && is_period_id(&b), "allocated ids must be recognisable");
+        assert!(a.starts_with("run-abcd-"), "and must carry their digest as a prefix: {a}");
     }
 
     /// C9 reverse guard: a `job_id` may never be *used* as an identity, even
@@ -807,7 +877,7 @@ mod tests {
     #[test]
     fn redacts_strings_recursively() {
         let dir = tmp_dir();
-        let mut stream = SessionEventStream::open(dir.clone(), "job-b", "job-b", Redaction::new(vec!["sk-secret-key-12345".to_string()]))
+        let mut stream = SessionEventStream::open(dir.clone(), "run-b2", "run-b2", Redaction::new(vec!["sk-secret-key-12345".to_string()]))
         .unwrap();
         let t = ts();
         stream
@@ -1112,16 +1182,16 @@ mod query_tests {
     fn lists_periods_newest_first() {
         let dir = test_support::tmp_dir("lists_periods_newest_first");
         // Two periods written out of time order (b first, a second).
-        let mut b = SessionEventStream::open(dir.clone(), "job-b", "job-b", Redaction::default()).unwrap();
-        let mut a = SessionEventStream::open(dir.clone(), "job-a", "job-a", Redaction::default()).unwrap();
+        let mut b = SessionEventStream::open(dir.clone(), "run-b2", "run-b2", Redaction::default()).unwrap();
+        let mut a = SessionEventStream::open(dir.clone(), "run-a1", "run-a1", Redaction::default()).unwrap();
         b.emit("2026-09-07T00:00:00Z", EventType::UserMessage, json!({ "text": "second" })).unwrap();
         b.emit("2026-09-07T00:00:02Z", EventType::TurnEnd, json!({})).unwrap();
         a.emit("2026-09-07T00:00:10Z", EventType::UserMessage, json!({ "text": "first message" })).unwrap();
         a.emit("2026-09-07T00:00:12Z", EventType::TurnEnd, json!({})).unwrap();
         let list = list_periods(&dir, 10).unwrap();
         assert_eq!(list.len(), 2);
-        assert_eq!(list[0].job_id, "job-a", "newest first");
-        assert_eq!(list[1].job_id, "job-b");
+        assert_eq!(list[0].job_id, "run-a1", "newest first");
+        assert_eq!(list[1].job_id, "run-b2");
         assert_eq!(list[0].preview, "first message");
         assert_eq!(list[0].count, 2);
         let _ = fs::remove_dir_all(&dir);
@@ -1281,7 +1351,7 @@ mod query_tests {
     #[test]
     fn replay_compares_body_and_excludes_allocated_identity() {
         let dir = test_support::tmp_dir("replay_excludes_identity");
-        let job = "run-replay01";
+        let job = "run-1e91a0";
         let first = allocate_period_id(job, 1_760_000_000);
         let replay_id = allocate_period_id(job, 1_760_000_500);
         assert_ne!(first, replay_id, "an identity is allocated, so a replay differs here");
@@ -1342,10 +1412,10 @@ mod query_tests {
     #[test]
     fn reads_one_period_by_id() {
         let dir = test_support::tmp_dir("read_one_period_by_id");
-        let mut s = SessionEventStream::open(dir.clone(), "job-x", "job-x", Redaction::default()).unwrap();
+        let mut s = SessionEventStream::open(dir.clone(), "run-e5", "run-e5", Redaction::default()).unwrap();
         s.emit("2026-09-07T00:00:00Z", EventType::TurnStart, json!({})).unwrap();
         s.emit("2026-09-07T00:00:01Z", EventType::UserMessage, json!({ "text": "hi" })).unwrap();
-        let events = read_period(&dir, "job-x").unwrap();
+        let events = read_period(&dir, "run-e5").unwrap();
         assert_eq!(events.len(), 2);
         assert_eq!(events[0].event_type, "turn/start");
         assert_eq!(events[1].event_type, "user/message");
