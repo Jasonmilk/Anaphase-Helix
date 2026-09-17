@@ -210,6 +210,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         &name,
                     ) {
                         Ok(()) => Json(serde_json::json!({ "ok": true })),
+                        // Same distinction as read_period: "several periods
+                        // share this digest" is not "no such period", and
+                        // neither one renamed anything.
+                        Err(e) if e.to_string().contains("ambiguous period reference") => {
+                            Json(serde_json::json!({
+                                "ok": false, "ambiguous": true, "error": e.to_string()
+                            }))
+                        }
                         Err(e) => Json(serde_json::json!({ "ok": false, "error": e.to_string() })),
                     }
                 }
@@ -273,6 +281,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         Ok(events) => Json(serde_json::json!({
                             "configured": true, "missing": false, "events": events
                         })),
+                        // An ambiguous key is NOT a missing period. Reporting
+                        // "missing" would collapse two different failures into
+                        // one answer and leave the caller believing the data is
+                        // gone, when the truth is that several periods share the
+                        // digest and one must be named explicitly. The
+                        // session_events layer already refuses to pick; this
+                        // only reports which refusal happened.
+                        Err(e) if e.to_string().contains("ambiguous period reference") => {
+                            Json(serde_json::json!({
+                                "configured": true,
+                                "missing": false,
+                                "ambiguous": true,
+                                "events": [],
+                                "error": e.to_string()
+                            }))
+                        }
                         Err(e) => Json(serde_json::json!({
                             "configured": true, "missing": true, "events": [],
                             "error": e.to_string()

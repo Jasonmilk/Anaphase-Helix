@@ -902,7 +902,11 @@ pub struct PeriodSummary {
 /// replay handle is not an identity. Callers holding only a `job_id` must
 /// resolve it first (`resolve_period`) and pass the resulting period id — or
 /// refuse when the resolution is ambiguous.
-pub fn rename_period(dir: &std::path::Path, id: &str, name: &str) -> io::Result<()> {
+pub fn rename_period(dir: &std::path::Path, key: &str, name: &str) -> io::Result<()> {
+    // Resolve first: renaming "one of the periods that share this digest"
+    // would relabel an arbitrary run. Ambiguity is an error, not a choice.
+    let resolved = resolve_one(dir, key)?;
+    let id: &str = &resolved;
     let valid = id.len() >= 4
         && id.len() <= 64
         && id.starts_with("run-")
@@ -1235,6 +1239,33 @@ mod query_tests {
         let events = read_period(&dir, job).unwrap();
         assert_eq!(events.len(), 1, "a single match resolves without ceremony");
         assert_eq!(events[0].period_id, only);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// A rename by an ambiguous digest must change NOTHING. Silently picking
+    /// one run to relabel is the same guess as silently reading one.
+    #[test]
+    fn rename_refuses_an_ambiguous_digest() {
+        let dir = test_support::tmp_dir("rename_refuses_ambiguous");
+        let job = "run-cafe1234";
+        let a = allocate_period_id(job, 1_760_000_000);
+        let b = allocate_period_id(job, 1_760_000_001);
+        for id in [&a, &b] {
+            let mut s = SessionEventStream::open(dir.clone(), id, job, Redaction::default()).unwrap();
+            s.emit("2026-09-07T00:00:00Z", EventType::TurnStart, json!({})).unwrap();
+        }
+        let err = rename_period(&dir, job, "chosen").expect_err("an ambiguous key must not rename");
+        assert!(
+            err.to_string().contains("ambiguous period reference"),
+            "the refusal must say why: {err}"
+        );
+        // Neither run acquired a sidecar.
+        assert!(period_name(&dir, &a).is_none());
+        assert!(period_name(&dir, &b).is_none());
+        // The unique key still renames normally (positive control).
+        rename_period(&dir, &a, "only this one").unwrap();
+        assert_eq!(period_name(&dir, &a), Some("only this one".to_string()));
+        assert!(period_name(&dir, &b).is_none());
         let _ = fs::remove_dir_all(&dir);
     }
 
