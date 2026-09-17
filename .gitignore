@@ -31,3 +31,10 @@ Thumbs.db
 config.toml
 config.toml.bak
 events.jsonl
+
+# Runtime state written by the engine itself (not source).
+# `session_notes.json` is the epoch dehydration briefing: main.rs writes it at
+# the default path whenever no explicit path is configured, so a tracked copy
+# goes dirty on every run and reads as a "file a human is editing" when it is
+# nothing of the kind.
+session_notes.json
