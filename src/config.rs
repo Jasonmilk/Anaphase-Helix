@@ -1,3 +1,9 @@
+//! DATA-ONLY — 字段声明 / 默认值 / 常量表，无分支逻辑（7 条 `if`）。
+//!
+//! 按 `CI-144_形状类CI检查规格.md` §3 的分类：本文件属 DATA-ONLY 档，
+//! 不适用 NCLOC 阈值。理由：拆一个 7 条分支的字段表只会制造
+//! "配置在东、默认值在西"的漂移面（K-002 同族）。
+
 use serde::{Deserialize, Serialize};
 
 /// Interaction mode of the cognitive loop (ADR-0006): the same Helix with
