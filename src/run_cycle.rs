@@ -940,15 +940,19 @@ impl AgentLoop {
                 let trace_id = crate::contract::derive_job_id(&self.context.user_input);
                 // Session event stream (ProveTrack turn timeline): open the
                 // per-period stream and emit the period header — turn/start,
-                // user/message, context/inject (summary only). The stream is
-                // keyed by the same derived job id as the body trace and the
-                // Tuck audit chain, so the client joins all three on it.
+                // user/message, context/inject (summary only). `job_id` stays
+                // the join key shared with the body trace and the Tuck audit
+                // chain; `period_id` is what makes THIS run a distinct period
+                // (K-006) — two runs of one input must not share a file.
+                let period_id =
+                    crate::session_events::allocate_period_id(&trace_id, self.clock.now());
                 self.session_events = self
                     .session_events_dir
                     .as_ref()
                     .and_then(|dir| {
                         crate::session_events::SessionEventStream::open(
                             dir.clone(),
+                            &period_id,
                             &trace_id,
                             self.session_events_redact.clone(),
                         )
