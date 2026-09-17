@@ -1269,6 +1269,53 @@ mod query_tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
+    /// T10: replay still works — the same input produces the same BODY, and
+    /// the comparison deliberately EXCLUDES the allocated identity.
+    ///
+    /// This test exists to protect the allocation decision, not merely to
+    /// check it. If a future replay comparison included `period_id`, every
+    /// replay would differ and the obvious "fix" would be to derive the id
+    /// from the content again — silently undoing what B15 did and restoring
+    /// the K-006 collision. So the exclusion is asserted, at the one place a
+    /// comparison naturally happens.
+    #[test]
+    fn replay_compares_body_and_excludes_allocated_identity() {
+        let dir = test_support::tmp_dir("replay_excludes_identity");
+        let job = "run-replay01";
+        let first = allocate_period_id(job, 1_760_000_000);
+        let replay_id = allocate_period_id(job, 1_760_000_500);
+        assert_ne!(first, replay_id, "an identity is allocated, so a replay differs here");
+
+        // Identical logical content, replayed under the same handle.
+        for id in [&first, &replay_id] {
+            let mut s = SessionEventStream::open(dir.clone(), id, job, Redaction::default()).unwrap();
+            s.emit("2026-09-07T00:00:00Z", EventType::TurnStart, json!({})).unwrap();
+            s.emit(
+                "2026-09-07T00:00:01Z",
+                EventType::UserMessage,
+                json!({ "text": "same question" }),
+            )
+            .unwrap();
+        }
+
+        let a = read_period(&dir, &first).unwrap();
+        let b = read_period(&dir, &replay_id).unwrap();
+        assert_eq!(a.len(), b.len(), "a replay must produce the same row count");
+        for (x, y) in a.iter().zip(b.iter()) {
+            // The ONLY field allowed to differ between a period and its replay.
+            assert_ne!(x.period_id, y.period_id, "identity is per-run by design");
+            assert_eq!(x.event_type, y.event_type);
+            assert_eq!(x.job_id, y.job_id, "the replay handle is stable");
+            assert_eq!(x.seq, y.seq);
+            assert_eq!(x.time, y.time);
+            assert_eq!(x.data, y.data, "the body is what a replay comparison reads");
+        }
+        // Both runs still resolvable: the replay did not displace the original.
+        assert_eq!(read_period(&dir, &first).unwrap().len(), 2);
+        assert_eq!(read_period(&dir, job).unwrap_err().to_string().contains("ambiguous"), true);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
     /// T5: `seq` restarts every period, so the unique row key is the PAIR
     /// `(period_id, seq)`. Two periods' row 0 are not duplicates of each other.
     #[test]
