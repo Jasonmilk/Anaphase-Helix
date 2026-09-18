@@ -9,6 +9,7 @@ use super::super::*;
 // re-exported by `use super::*`, so the test file names it again. Same set, no
 // new dependency.
 use crate::adapters::*;
+use async_trait::async_trait;
 use super::*;
 use std::sync::Arc;
 
@@ -527,4 +528,118 @@ fn an_impasse_goes_to_reflection() {
         Some(&S::Reflection),
         "an impasse must reach Reflection, where the outcome is marked"
     );
+}
+
+/// Reasoning that reports upstream usage, including the shape that has its own
+/// known defect downstream.
+///
+/// This exists because the usage path had NO coverage at all: the fixed adapters
+/// used elsewhere return `UpstreamMeta::default()`, whose `usage` is `None`, so
+/// `emit_usage` never executes. A mutation that renamed its output fields left
+/// every test green — which is worse than an untested path, because it looks
+/// tested.
+///
+/// Two shapes, because they diverge: `cached_tokens = Some(..)` and `None`. The
+/// adapter declares `Option<u64>` deliberately ("None = the upstream did not
+/// report it; never coerced to 0"), and Cellrix's validator rejects the `null`
+/// that `None` serialises to (K-029). So both are asserted here, and the `None`
+/// one is the case that has actually broken in the field.
+struct UsageReportingReasoning {
+    cached: Option<u64>,
+}
+
+#[async_trait]
+impl ReasoningAdapter for UsageReportingReasoning {
+    async fn reason(&self, _prompt: &str, _model: &str, _trace_id: &str) -> Result<String, String> {
+        Ok(r#"{"calls":[{"tool":"numbers","args":{},"expect":"numbers"}]}"#.to_string())
+    }
+    fn last_meta(&self) -> UpstreamMeta {
+        UpstreamMeta {
+            model: Some("fixture-model".to_string()),
+            usage: Some(UsageSnapshot {
+                prompt_tokens: 1511,
+                completion_tokens: 50,
+                cached_tokens: self.cached,
+                reasoning_tokens: if self.cached.is_some() { Some(25) } else { None },
+            }),
+        }
+    }
+}
+
+/// Run one cycle with usage reporting and return the `assistant/usage` rows.
+async fn usage_rows(cached: Option<u64>) -> Vec<serde_json::Value> {
+    let dir = std::env::temp_dir().join(format!(
+        "rc-usage-{}-{}",
+        std::process::id(),
+        cached.is_some()
+    ));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let mut agent = AgentLoop::new(
+        Arc::new(NoopMemoryAdapter),
+        Arc::new(UsageReportingReasoning { cached }),
+        Arc::new(NoopToolAdapter),
+        Arc::new(NoopSafetyAdapter),
+        Arc::new(NoopUiAdapter),
+        Arc::new(NoopFearAdapter),
+        ReflexArc {
+            safety_rules: vec![],
+        },
+    )
+    .with_clock(Arc::new(crate::ledger::FakeClock(1_700_000_000)));
+    agent.session_events_dir = Some(dir.clone());
+    agent.run_cycle("hello").await.unwrap();
+
+    let mut out = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&dir) {
+        for e in entries.flatten() {
+            let p = e.path();
+            if p.extension().and_then(|x| x.to_str()) != Some("jsonl") {
+                continue;
+            }
+            if let Ok(text) = std::fs::read_to_string(&p) {
+                for line in text.lines().filter(|l| !l.trim().is_empty()) {
+                    let v: serde_json::Value = serde_json::from_str(line).unwrap();
+                    if v.get("type").and_then(|t| t.as_str()) == Some("assistant/usage") {
+                        out.push(v);
+                    }
+                }
+            }
+        }
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+    out.sort_by_key(|v| v.get("seq").and_then(|s| s.as_u64()).unwrap_or(0));
+    out
+}
+
+/// The usage row is emitted, with the reported numbers, when the upstream
+/// reported them.
+#[tokio::test]
+async fn usage_is_emitted_with_reported_counts() {
+    let rows = usage_rows(Some(256)).await;
+    assert_eq!(rows.len(), 1, "one cycle reports usage once");
+    let d = &rows[0]["data"];
+    assert_eq!(d["prompt_tokens"], 1511);
+    assert_eq!(d["completion_tokens"], 50);
+    assert_eq!(d["cached_tokens"], 256);
+    assert_eq!(d["model"], "fixture-model");
+}
+
+/// The shape that broke in the field: `cached_tokens` absent upstream becomes
+/// `null` on the wire, and downstream that value is rejected outright (K-029).
+/// Pinned here so the Anaphase half of that chain is at least observable — the
+/// two ends were both dark before this test.
+#[tokio::test]
+async fn usage_keeps_null_cached_tokens_rather_than_coercing_to_zero() {
+    let rows = usage_rows(None).await;
+    assert_eq!(rows.len(), 1);
+    let d = &rows[0]["data"];
+    assert!(
+        d.get("cached_tokens").map(|v| v.is_null()).unwrap_or(false),
+        "absent upstream usage must serialise as null, not 0 and not a missing \
+         field: the adapter's contract says None is 'not reported', and coercing \
+         it to zero would invent a measurement. Got: {d}"
+    );
+    assert_eq!(d["prompt_tokens"], 1511, "the rest of the row still lands");
 }
