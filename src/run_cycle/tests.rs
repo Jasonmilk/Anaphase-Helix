@@ -665,10 +665,17 @@ async fn the_loop_actually_reads_the_transition_table() {
     ));
 
     let outcome = agent.run_cycle("hello").await.unwrap();
+    // Since the fallback was made fail-closed, an undefined transition reports an
+    // INCOMPLETE period. Before that change this assertion read `outcome.done`,
+    // because a missing rule was reported as a normal completion — which is the
+    // defect this pair of tests was written to expose.
     assert!(
-        outcome.done,
-        "the loop must still terminate (the fallback does that), so this test \
-         measures the FALLBACK, not the table"
+        !outcome.done,
+        "an undefined transition must not report a completed period"
+    );
+    assert!(
+        outcome.impasse,
+        "and it must be marked as the machine failing to proceed"
     );
 
     // The fallback returns to Perception and marks the period done, which is
@@ -708,5 +715,108 @@ fn the_transition_table_is_sparse_and_that_is_recorded() {
     assert_eq!(
         defined, 12,
         "the table changed size; update this record and the dispatch fallback test"
+    );
+}
+
+/// M9, second direction: change an edge's TARGET and see what notices.
+///
+/// The first experiment deleted an edge and watched nine tests fail, which proved
+/// the table is read. It did NOT prove the loop arrives where the table says —
+/// an edge can exist and still be consumed to the wrong place, and every
+/// assertion about the table's CONTENTS would stay green while the machine went
+/// elsewhere.
+///
+/// So this corrupts one target and observes the states actually visited, taken
+/// from the state events the loop emits rather than from the table. If the table
+/// were merely a flag list consulted for "is this edge defined", the visited path
+/// would be unchanged and this test would pass — which is the finding it exists
+/// to rule out.
+#[tokio::test]
+async fn a_corrupted_target_is_visible_in_the_states_actually_visited() {
+    let mut agent = base();
+    // Point MemoryRetrieval+Success at Reflection instead of Reasoning. The edge
+    // still exists, so any "is it defined" check is satisfied.
+    agent.transitions.insert(
+        (
+            crate::states::HelixState::MemoryRetrieval,
+            TransitionCondition::Success,
+        ),
+        crate::states::HelixState::Reflection,
+    );
+
+    let ring = std::sync::Arc::new(std::sync::Mutex::new(crate::events::EventRing::new(64)));
+    agent.events = Some(ring.clone());
+    agent.run_cycle("hello").await.unwrap();
+
+    // Read the visited states out of the emitted state events.
+    let mut visited: Vec<String> = Vec::new();
+    for row in ring.lock().unwrap().events().to_vec() {
+        let detail = row.detail.clone();
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&detail) {
+            if let Some(to) = v.get("to").and_then(|t| t.as_str()) {
+                visited.push(to.trim_matches('"').to_string());
+            }
+        }
+    }
+    let joined = visited.join(" -> ");
+    assert!(
+        !visited.iter().any(|s| s == "Reasoning"),
+        "the loop reached Reasoning even though the only route there was \
+         redirected; visited path: {joined}"
+    );
+    assert!(
+        visited.iter().any(|s| s == "Reflection"),
+        "the redirected target should appear in the visited path; got: {joined}"
+    );
+}
+
+/// M9, first direction again — but on the VISITED trail rather than on test
+/// failures, so the two directions are symmetric.
+///
+/// Deleting an edge and counting red tests shows the table matters somewhere.
+/// Observing that a state disappears from the trail shows the loop reads it for
+/// the route, which is the claim worth having.
+#[tokio::test]
+async fn a_removed_edge_removes_that_state_from_the_trail() {
+    let mut agent = base();
+    agent.transitions.remove(&(
+        crate::states::HelixState::MemoryRetrieval,
+        TransitionCondition::Success,
+    ));
+    let ring = std::sync::Arc::new(std::sync::Mutex::new(crate::events::EventRing::new(64)));
+    agent.events = Some(ring.clone());
+    agent.run_cycle("hello").await.unwrap();
+
+    let visited: Vec<String> = ring
+        .lock()
+        .unwrap()
+        .events()
+        .iter()
+        .filter_map(|row| {
+            serde_json::from_str::<serde_json::Value>(&row.detail)
+                .ok()
+                .and_then(|v| v.get("to").and_then(|t| t.as_str()).map(|s| s.trim_matches('"').to_string()))
+        })
+        .collect();
+    let joined = visited.join(" -> ");
+    assert!(
+        !visited.iter().any(|s| s == "Reasoning"),
+        "Reasoning is unreachable once its only inbound edge is gone, so it must \
+         not appear in the trail; got: {joined}"
+    );
+    // The fallback emits NO state event: the trail simply stops at the last
+    // defined transition, so the wrap-around to Perception is invisible in the
+    // event stream. That is the same defect one layer down — not only does an
+    // undefined transition look like a normal completion to the caller, it leaves
+    // no trace that it happened, while a defined edge emits one.
+    assert!(
+        !joined.contains("Perception") || visited.last().map(|s| s.as_str()) != Some("Perception"),
+        "if the fallback emitted a state event this assertion should be revisited; \
+         got: {joined}"
+    );
+    assert_eq!(
+        visited.last().map(|s| s.as_str()),
+        Some("MemoryRetrieval"),
+        "the trail ends at the last defined transition; got: {joined}"
     );
 }

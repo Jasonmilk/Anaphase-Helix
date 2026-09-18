@@ -620,6 +620,9 @@ impl AgentLoop {
         // Looping policy (how many periods, when to stop) belongs to the
         // caller; this primitive is atomic and replayable.
         let mut outcome = CycleOutcome::default();
+        // Set when the machine meets a (state, condition) pair with no rule. The
+        // period then ends without having completed, and says so.
+        let mut undefined_transition = false;
         for _ in 0..HelixState::ALL.len() {
             let condition = self.execute_current_state().await?;
 
@@ -634,13 +637,41 @@ impl AgentLoop {
                 );
                 self.current_state = next_state.clone();
             } else {
-                warn!("No transition rule found: ({:?}, {:?}), returning to Perception", self.current_state, condition);
+                // FAIL-CLOSED (2026-09-18). This used to warn and return to
+                // Perception, after which the period-end block below marked the
+                // period `done` and derived success from the condition — so an
+                // undefined (state, condition) pair was indistinguishable, to a
+                // caller, from a period that completed normally. That is the same
+                // defect as `unwrap_or("local")`: an absence reported as a
+                // legitimate value.
+                //
+                // The table defines 12 of the 7x7 = 49 pairs. An undefined pair
+                // means the machine's own description is incomplete or a state
+                // returned a condition it never should, and both are conditions
+                // to surface. The loop still stops — it must, or it would spin —
+                // but it stops as an INCOMPLETE period, not a successful one.
+                warn!(
+                    "No transition rule for ({:?}, {:?}): period ends as incomplete",
+                    self.current_state, condition
+                );
+                undefined_transition = true;
+                self.emit_cycle(
+                    "state",
+                    &format!(
+                        "{{\"from\":\"{:?}\",\"condition\":\"{:?}\",\"to\":null,\"undefined\":true}}",
+                        self.current_state, condition
+                    ),
+                );
                 self.current_state = HelixState::Perception;
             }
 
             // Period end: the state machine returned to Perception.
             if self.current_state == HelixState::Perception {
-                outcome.done = true;
+                // A period that ended because the machine had no rule did NOT
+                // complete. Reporting `done` for it is what let an undefined
+                // transition pass as a normal end.
+                outcome.done = !undefined_transition;
+                outcome.impasse = outcome.impasse || undefined_transition;
                 // 铁律 (ADR-0029): END.success derives from the criteria
                 // verdict when a tool ran — success ≡ (verdict ≠ Unmet).
                 // Never from the transition alone; a tool round that failed
@@ -651,7 +682,11 @@ impl AgentLoop {
                     Some(v) => v == "Met",
                     None => condition == TransitionCondition::Success,
                 };
-                outcome.impasse = condition == TransitionCondition::Impass;
+                // Undefined wins: a period that ended because the machine had no
+                // rule is an impasse regardless of the last condition, and the
+                // assignment above must not overwrite it.
+                outcome.impasse =
+                    undefined_transition || condition == TransitionCondition::Impass;
                 self.emit_cycle(
                     "end",
                     &format!(
