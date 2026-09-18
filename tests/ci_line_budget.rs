@@ -173,7 +173,22 @@ fn scratch(name: &str, files: &[(&str, usize)], base: &[(&str, usize)], allowanc
         let body: String = (0..*n).map(|i| format!("let x{i} = 1;\n")).collect();
         std::fs::write(&path, body).expect("scratch file");
     }
-    let mut ratchet = String::new();
+    // The version comes from the checker rather than being written here, so a bump
+    // cannot leave the fixtures silently measuring under a stale ruler — which is
+    // exactly the failure the versioning exists to prevent, and it fired on these
+    // fixtures the moment it was added.
+    let version = Command::new("python3")
+        .arg("-c")
+        .arg(format!(
+            "import importlib.util;\
+             s = importlib.util.spec_from_file_location('clb', {root:?} + '/ci/check_line_budget.py');\
+             m = importlib.util.module_from_spec(s); s.loader.exec_module(m);\
+             print(m.COUNTER_VERSION)",
+            root = env!("CARGO_MANIFEST_DIR")
+        ))
+        .output()
+        .expect("counter version");
+    let mut ratchet = format!("counter = {}\n", String::from_utf8_lossy(&version.stdout).trim());
     for (rel, n) in base {
         ratchet.push_str(&format!("[[ratchet]]\ntarget = \"{rel}\"\nncloc  = {n}\n"));
     }
@@ -396,7 +411,7 @@ fn the_counter_reports_a_known_value_for_the_python_canary() {
              s = importlib.util.spec_from_file_location('clb', {root:?} + '/ci/check_line_budget.py')\n\
              m = importlib.util.module_from_spec(s); s.loader.exec_module(m)\n\
              t = open({root:?} + '/ci/canary/ncloc_known.py', encoding='utf-8').read()\n\
-             print(m.ncloc(t, 'py'), m.ncloc(t, 'rust'))"
+             print(m.ncloc(t, 'hash'), m.ncloc(t, 'rust'))"
         ))
         .output()
         .unwrap_or_else(|e| panic!("cannot run the counter: {e}"));

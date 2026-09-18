@@ -39,3 +39,4 @@ events.jsonl
 # nothing of the kind.
 session_notes.json
 target/
+.DS_Store

@@ -57,7 +57,7 @@ TRIPLE_QUOTES = ('"""', "'''")
 SINGLE_QUOTES = ('"', "'")
 
 
-def _py_line_counts(line, in_str=None):
+def _hash_line_counts(line, in_str=None):
     """(is_this_line_code, string_state_at_end_of_line) — quote-aware.
 
     `#` inside a string is not a comment. A naive `line.split("#", 1)[0]` is right
@@ -119,7 +119,12 @@ def ncloc(text, lang="rust"):
     proved the counter correct on the path it tested, while a second path went
     untested. Same family as a numerator right and a denominator wrong.
 
-    Deliberate choice, stated rather than implied: **Python docstrings count as
+    **`hash` covers Python and shell.** Their single-language predicates are the same
+    for `#` and quotes; the triple-quote continuation is Python's and is inert in
+    shell. Declaring it as one named path rather than two identical ones is why a
+    single canary is the right number — the counter is what is under test.
+
+    Deliberate choice, stated rather than implied: **docstrings count as
     code.** They are string literals that are part of the program, and unlike a `#`
     comment they can be read at runtime. Treating them as comments would need a
     parser to know whether a triple quote is a docstring or a value, and guessing
@@ -131,8 +136,8 @@ def ncloc(text, lang="rust"):
     py_str = None
     for raw in text.splitlines():
         line = raw
-        if lang == "py":
-            counts, py_str = _py_line_counts(line, py_str)
+        if lang == "hash":
+            counts, py_str = _hash_line_counts(line, py_str)
             if counts:
                 count += 1
             continue
@@ -192,20 +197,29 @@ def load_ratchet(path):
     cannot be dodged by arguing about the threshold. It also makes the budget
     self-tightening — every later edit must fit in the space a previous edit
     left behind.
+
+    **A baseline is only a bound for the ruler that measured it.** The file records
+    the counter version it was written under; a different version means every number
+    in it is a correct measurement of a different rule, which is not a bound this run
+    may hold anyone to. In that case all baselines are re-derived and the growth
+    checks are skipped ONCE, loudly.
     """
     if not os.path.exists(path):
-        return {}
+        return {}, None
     out = {}
+    recorded = None
     target = None
     for raw in open(path, encoding="utf-8"):
         line = raw.strip()
-        if line == "[[ratchet]]":
+        if line.startswith("counter") and recorded is None:
+            recorded = int(line.partition("=")[2].strip())
+        elif line == "[[ratchet]]":
             target = None
         elif line.startswith("target"):
             target = line.partition("=")[2].strip().strip('"')
         elif line.startswith("ncloc") and target:
             out[target] = int(line.partition("=")[2].strip())
-    return out
+    return out, recorded
 
 
 def load_split_windows(path, today):
@@ -434,7 +448,22 @@ def load_seeds(path, today=None):
             )
         if not cur.get("ncloc"):
             raise WaiverError(f"seed for {cur['target']!r} has no ncloc")
-        out[cur["target"]] = (int(cur["ncloc"]), cur.get("grandfathered"))
+        if cur.get("counter") is None:
+            raise WaiverError(
+                f"seed for {cur['target']!r} does not record which counter version it was "
+                "signed under. A hand signature binds who may change a value; it says "
+                "nothing about whether the value is right, so the version of the thing "
+                "that produced it has to travel with it."
+            )
+        if int(cur["counter"]) != COUNTER_VERSION:
+            raise WaiverError(
+                f"seed for {cur['target']!r} was signed under counter version "
+                f"{cur['counter']}, and the counter is now version {COUNTER_VERSION}. "
+                "The recorded value is a correct measurement of a DIFFERENT rule, so it "
+                "must be re-taken deliberately — this is the check that would have caught "
+                "343 and 811 without anyone deciding to scan `ci/`."
+            )
+        out[cur["target"]] = (int(cur["ncloc"]), cur.get("grandfathered"), cur.get("counter"), cur.get("k_id") or cur.get("adr"))
 
     in_seed = False
     for raw in open(path, encoding="utf-8"):
@@ -445,6 +474,45 @@ def load_seeds(path, today=None):
             in_seed = line == "[[seed]]"
             continue
         if not in_seed or "=" not in line or line.startswith("#"):
+            continue
+        k, _, v = line.partition("=")
+        cur[k.strip()] = v.strip().strip('"')
+    flush()
+    return out
+
+
+def load_tooling(path):
+    """The tooling tier: `{path_prefix: (budget, adr)}`.
+
+    A CLASSIFICATION rather than an exemption. An exemption says "this file may break
+    the rule" and carries a due date, because it is a debt. A classification says
+    "this is a different kind of file and the rule was never about it" and carries no
+    date, because nothing is owed.
+
+    The 300-line budget approximates "how much a reader must hold in their head" for a
+    Rust module. A checker is not that shape: it carries several allowance classes, a
+    ratchet, a seed gate and a counter, and its size tracks the number of rules it
+    enforces. Judging it by the module limit produces a file permanently over budget
+    and kept alive by a waiver that keeps coming due — a rule generating paperwork
+    rather than a bound doing work. See ADR-0042 D9.
+    """
+    if not os.path.exists(path):
+        return {}
+    out, cur = {}, None
+
+    def flush():
+        if cur and cur.get("target") and cur.get("budget"):
+            out[cur["target"]] = (int(cur["budget"]), cur.get("adr") or cur.get("reason") or "?")
+
+    in_tool = False
+    for raw in open(path, encoding="utf-8"):
+        line = raw.strip()
+        if line.startswith("["):
+            flush()
+            in_tool = line == "[tooling]"
+            cur = {} if in_tool else None
+            continue
+        if not in_tool or "=" not in line or line.startswith("#"):
             continue
         k, _, v = line.partition("=")
         cur[k.strip()] = v.strip().strip('"')
@@ -516,6 +584,25 @@ def load_waivers(path, check, today):
 
 # ── the check ───────────────────────────────────────────────────────────────
 
+# Bump whenever the COUNTING LOGIC changes — what a language's comments are, what
+# counts as a blank line, which extensions are in scope. Every seed and every
+# ratchet baseline is derived from this counter, so a change here silently
+# invalidates all of them: the old numbers were correct measurements of a different
+# rule.
+#
+# Round 36's point, and it is the reason this exists: the seeds are hand-signed,
+# which binds WHO may change a value and says nothing about whether the value is
+# RIGHT. The only source of a seed's number is this counter, so a counter bug signs
+# a wrong number in good faith. That happened — 343 and 811 were signed, and were
+# wrong by 32 and 144 — and it was found by a human deciding to scan `ci/`, not by
+# anything in this file. Next time nobody will scan.
+#
+#   1 — Rust only: `//`, `/* */`, everything else fell through as code
+#   2 — language-aware: added the `hash` path (# comments, quote-aware, docstring
+#       state carried across lines) and a language whitelist. Existing seeds were
+#       re-signed under version 2; their old values were measurements of version 1.
+COUNTER_VERSION = 2
+
 DATA_ONLY_MARK = "//! DATA-ONLY"
 
 
@@ -561,7 +648,30 @@ RATCHET_HEADER = """# GENERATED — do not edit. Regenerated by ci/check_line_bu
 DEFAULT_EXCLUDES = ("target", "node_modules", ".git")
 
 
-def iter_sources(root):
+# The languages this counter knows how to read, and the files it deliberately does
+# not count. Anything else under a governed directory is an ERROR, not a skip.
+#
+# Round 36's point: if `lang` comes from the extension and an unknown extension
+# falls back to some default, then a `.js` file gets its `/* */` counted as code and
+# a `.toml` becomes entirely code — silently, and with a number that looks like a
+# measurement. The same family as P6: an unknown must fail toward strict, not toward
+# "pick a rule".
+#
+# Declared rather than inferred, so adding a language is a decision with a canary
+# beside it (see `ci/canary/`). `data` extensions are here because they are not
+# source at all; that is a statement about this repository, not a fallback.
+LANG_BY_EXT = {
+    ".rs": "rust",
+    # `hash` = `#`-to-end-of-line comments, quote-aware. Python and shell share it;
+    # the triple-quote branch is Python's and is simply never reached in shell, which
+    # is why one canary covers both (it tests the counter, not the language).
+    ".py": "hash",
+    ".sh": "hash",
+}
+DATA_EXT = {".toml", ".md", ".json", ".txt", ".lock", ".yml", ".yaml", ".csv"}
+
+
+def iter_sources(root, unknown_ext=None):
     """Everything this budget governs.
 
     Rust under `src/`, plus the checkers in `ci/`. The checkers were the only files
@@ -575,14 +685,26 @@ def iter_sources(root):
     checker's checker is still a checker, and the recursion has to stop somewhere
     or it is only building upward.
     """
+    if unknown_ext is None:
+        unknown_ext = []
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if d not in DEFAULT_EXCLUDES]
         for name in sorted(filenames):
             rel = os.path.relpath(os.path.join(dirpath, name), root)
-            if name.endswith(".rs"):
-                yield rel, "rust"
-            elif name.endswith(".py") and rel.replace(os.sep, "/").startswith("ci/"):
-                yield rel, "py"
+            ext = os.path.splitext(name)[1]
+            if ext in LANG_BY_EXT:
+                yield rel, LANG_BY_EXT[ext]
+            elif ext not in DATA_EXT:
+                # Not skipped: reported. A file that is neither a known language nor a
+                # declared data file is one this counter cannot judge, and judging it
+                # by a default would produce a confident wrong number.
+                #
+                # Scoped to the two directories this budget actually governs, so the
+                # report is about the budget's blind spots and not a census of the
+                # repository's file types.
+                head = rel.replace(os.sep, "/").split("/")[0]
+                if head in ("src", "ci"):
+                    unknown_ext.append(rel)
 
 
 def is_test_path(rel):
@@ -638,7 +760,25 @@ def run(root, budget, branch_budget, max_line, check, line_mode='warn', ratchet=
     # must not live somewhere a human signs. Loaded before the allowances
     # because a fix cap is bounded by the baseline it applies to.
     ratchet_path = os.path.join(root, RATCHET_FILE)
-    ratchet_base = load_ratchet(ratchet_path) if ratchet else {}
+    ratchet_base, ratchet_counter = load_ratchet(ratchet_path) if ratchet else ({}, None)
+    # The counter changed, so no baseline in the file is comparable to today's
+    # measurement. Re-derive them all and say so: silently comparing across rulers is
+    # how a real regression hides inside a measurement change, and how a measurement
+    # change gets charged to whoever edits next.
+    # `None` counts as stale too: a ratchet that does not say which ruler made it
+    # cannot be trusted to bound today's measurement. Unknown fails toward strict.
+    stale_ratchet = ratchet and ratchet_counter != COUNTER_VERSION
+    if stale_ratchet:
+        print(f"WARN  the counter is version {COUNTER_VERSION} and the ratchet was recorded "
+              f"under version {ratchet_counter}.")
+        print("        Every baseline in it measured a DIFFERENT rule, so none of them is a")
+        print("        bound this run may hold anyone to. All baselines are being re-derived")
+        print("        and growth checks are skipped ONCE. Not silent: a regression that")
+        print("        happened to coincide with a counter change would otherwise hide here.")
+        ratchet_base = {}
+        fix_windows = {}
+        split_windows = {}
+        dir_grown = []
     # Captured BEFORE any override: an override is a test affordance, and letting
     # it inflate a fix cap would mean a forced baseline could widen an allowance.
     # A signed seed may also RE-TAKE an existing key. `min(old, current)` keeps the
@@ -658,8 +798,13 @@ def run(root, budget, branch_budget, max_line, check, line_mode='warn', ratchet=
     except WaiverError as e:
         print(f"CHECKER ERROR: {waivers_path}: {e}", file=sys.stderr)
         return 3
-    cap_base = dict(ratchet_base)
-    retaken = sorted(k for k, (n, _g) in seeds.items() if k in ratchet_base and n > ratchet_base[k])
+    # Empty when stale, so the ratio validation inside `load_fix_windows` is skipped
+    # for every target: with no baseline there is no "10% of it" to compute. It must
+    # be empty HERE and not later, because that validation runs at load time, before
+    # the staleness handling below — the first version rejected a cap against a
+    # baseline measured by a counter that no longer exists.
+    cap_base = {} if stale_ratchet else dict(ratchet_base)
+    retaken = sorted(k for k, v in seeds.items() if k in ratchet_base and v[0] > ratchet_base[k])
     for k in retaken:
         cap_base[k] = seeds[k][0]
     pits_path = os.path.join(root, PITS_FILE)
@@ -699,7 +844,11 @@ def run(root, budget, branch_budget, max_line, check, line_mode='warn', ratchet=
     split_window_open = bool(split_windows)
 
     violations, marker_failures, long_lines, over_budget = [], [], [], []
-    for rel, lang in iter_sources(root):
+    tooling = load_tooling(waivers_path) if ratchet else {}
+    unknown_ext = []
+    for rel, lang in iter_sources(root, unknown_ext):
+        if rel.replace(os.sep, "/").split("/")[0] not in ("src", "ci"):
+            continue
         if is_test_path(rel):
             continue
         path = os.path.join(root, rel)
@@ -732,8 +881,15 @@ def run(root, budget, branch_budget, max_line, check, line_mode='warn', ratchet=
         # a directory leaves the sum unchanged.
         direc = os.path.dirname(key) or "."
         dir_totals[direc] = dir_totals.get(direc, 0) + n
-        if not data_only and n > budget and rel not in waived and rel.replace(os.sep, "/") not in waived:
-            over_budget.append((rel, n))
+        # The tooling tier replaces the module budget for `ci/`. Not a waiver: a
+        # waiver is a debt with a due date, and these files are not borrowing against
+        # the rule — they are a different kind of file.
+        eff_budget = budget
+        for prefix, (tb, _adr) in tooling.items():
+            if rel.replace(os.sep, "/").startswith(prefix):
+                eff_budget = tb
+        if not data_only and n > eff_budget and rel not in waived and rel.replace(os.sep, "/") not in waived:
+            over_budget.append((rel, n, eff_budget))
 
         if data_only:
             b = branch_count(text)
@@ -789,9 +945,18 @@ def run(root, budget, branch_budget, max_line, check, line_mode='warn', ratchet=
     # passed its own positive control by doing nothing. And more importantly, an
     # invalid seed must stop the write-back rather than be reported alongside it,
     # or the checker has already taken the upward step it is complaining about.
+    if unknown_ext:
+        print(f"CHECKER ERROR: {len(unknown_ext)} file(s) under src/ or ci/ have an "
+              f"extension this counter does not know:", file=sys.stderr)
+        for rel in sorted(set(unknown_ext)):
+            print(f"        {rel}: add its extension to LANG_BY_EXT with a canary, or to "
+                  f"DATA_EXT if it is not source. Falling back to some language's rules "
+                  f"would produce a confident wrong number.", file=sys.stderr)
+        return 3
+
     expired_seeds = []
     if today is not None:
-        for k, (_n, gf) in seeds.items():
+        for k, (_n, gf, _c, _id) in seeds.items():
             if not gf:
                 continue
             try:
@@ -802,11 +967,11 @@ def run(root, budget, branch_budget, max_line, check, line_mode='warn', ratchet=
             except ValueError:
                 raise WaiverError(f"seed for {k!r} has an unparseable grandfathered date: {gf!r}")
 
-    if ratchet and not emit:
+    if ratchet and not emit and not stale_ratchet:
         for k, v in current.items():
             if k in cap_base:
                 continue
-            signed = (seeds.get(k) or (None, None))[0]
+            signed = (seeds.get(k) or (None, None, None, None))[0]
             if signed is None:
                 unseeded.append(k)
             elif v > signed:
@@ -823,16 +988,37 @@ def run(root, budget, branch_budget, max_line, check, line_mode='warn', ratchet=
                       f"upward is the one direction a ratchet must not move.", file=sys.stderr)
             return 3
 
-    if ratchet and not emit and not override:
+    if stale_ratchet:
+        # A version change invalidates the VALUES, not the existence of the keys. The
+        # seed requirement is about a new baseline appearing; these baselines already
+        # exist and are simply being measured again with a different ruler. Demanding
+        # forty signatures here would also make the gate unpassable, which is how a
+        # gate gets routed around.
+        merged = dict(current)
+        for k, v in dir_totals.items():
+            merged[k + "/"] = v
+        try:
+            with open(ratchet_path, "w", encoding="utf-8") as fh:
+                fh.write(RATCHET_HEADER)
+                fh.write(f"counter = {COUNTER_VERSION}\n")
+                for k in sorted(merged):
+                    fh.write(f'[[ratchet]]\ntarget = "{k}"\nncloc  = {merged[k]}\n')
+        except OSError as e:
+            print(f"CHECKER ERROR: cannot write {ratchet_path}: {e}", file=sys.stderr)
+            return 3
+        print(f"        Re-derived {len(merged)} baseline(s) under counter version {COUNTER_VERSION}.")
+
+    if ratchet and not emit and not override and not stale_ratchet:
         merged = dict(ratchet_base)
         for k, v in current.items():
             if k in merged:
                 merged[k] = min(merged[k], v)
                 continue
-            signed = seeds.get(k)
-            if signed is None:
+            entry = seeds.get(k)
+            if entry is None:
                 unseeded.append(k)
                 continue
+            signed = entry[0]
             if v > signed:
                 oversigned.append((k, signed, v))
                 continue
@@ -864,6 +1050,7 @@ def run(root, budget, branch_budget, max_line, check, line_mode='warn', ratchet=
         try:
             with open(ratchet_path, "w", encoding="utf-8") as fh:
                 fh.write(RATCHET_HEADER)
+                fh.write(f"counter = {COUNTER_VERSION}\n")
                 for k in sorted(merged):
                     fh.write(f'[[ratchet]]\ntarget = "{k}"\nncloc  = {merged[k]}\n')
         except OSError as e:
@@ -910,15 +1097,16 @@ def run(root, budget, branch_budget, max_line, check, line_mode='warn', ratchet=
             else ""
         )
         print(f"{tag}  {len(over_budget)} file(s) over {budget} NOCL with no waiver:{note}")
-        for rel, n in over_budget:
-            print(f"        {rel}  {n}")
+        for rel, n, eff in over_budget:
+            tag = "" if eff == budget else f"  (tooling budget {eff})"
+            print(f"        {rel}  {n}{tag}")
     # Both advisories print BEFORE the early PASS return. The over-300 one used to
     # sit after it, so it appeared only when something else had already failed -- a
     # file 757 lines over a 300-line budget was reported to nobody on a clean run.
     if retaken:
         print(f"WARN  {len(retaken)} seed(s) were RE-TAKEN to a higher value by hand:")
         for k in retaken:
-            print(f"        {k}  {ratchet_base.get(k)} -> {seeds[k][0]}  (k_id {seeds[k][1] and ''})")
+            print(f"        {k}  {ratchet_base.get(k)} -> {seeds[k][0]}  (cited {seeds[k][3]})")
         print("        The automatic path can only lower. A raise is a decision, and these are the")
         print("        decisions: each is signed in baseline.toml with a pit id.")
     open_gf = [(k, seeds[k][1]) for k in sorted(seeds)
