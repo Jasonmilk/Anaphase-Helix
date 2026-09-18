@@ -14,6 +14,12 @@ ncloc  = 13
 target = "build.rs"
 ncloc  = 13
 [[ratchet]]
+target = "ci/canary/"
+ncloc  = 52
+[[ratchet]]
+target = "ci/canary/ncloc_known.rs"
+ncloc  = 52
+[[ratchet]]
 target = "src/"
 ncloc  = 9110
 [[ratchet]]

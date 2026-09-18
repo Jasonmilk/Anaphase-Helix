@@ -93,3 +93,39 @@ fn the_override_does_not_affect_the_real_run() {
     let (code, _, stderr) = run_checker(&[]);
     assert_eq!(code, 0, "the tree is clean: {stderr}");
 }
+
+/// The counter itself has a known-answer fixture.
+///
+/// The reconciliation against tokei (350/350, 168/168, 291/291) was a one-time
+/// event. If the counter drifts later — a regex tweak, a new comment form — the
+/// baselines would drift with it, because the same script measures, writes the
+/// baselines, and checks them. Nothing would report that.
+///
+/// So `ci/canary/ncloc_known.rs` holds a file whose NCLOC is known by
+/// construction: 50 code lines, 60 comment lines, and three lines containing
+/// `//` inside string literals — the case a hand-rolled counter gets wrong first.
+/// This asserts the checker still reports 52 for it.
+#[test]
+fn the_counter_reports_a_known_value_for_the_canary() {
+    let root = env!("CARGO_MANIFEST_DIR");
+    let script = Path::new(root).join("ci/check_line_budget.py");
+    let out = Command::new("python3")
+        .arg("-c")
+        .arg(format!(
+            "import sys; sys.path.insert(0, {root:?} + '/ci');\
+             from check_line_budget import ncloc;\
+             print(ncloc(open({root:?} + '/ci/canary/ncloc_known.rs', encoding='utf-8').read()))"
+        ))
+        .output()
+        .unwrap_or_else(|e| panic!("cannot run the counter: {e}"));
+    let got: i64 = String::from_utf8_lossy(&out.stdout).trim().parse().unwrap_or(-1);
+    assert_eq!(
+        got, 52,
+        "the NCLOC counter no longer agrees with the canary. The baselines are \
+         written by this same counter, so a drift here silently moves every \
+         ratchet with it.\nstdout: {} stderr: {}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let _ = script;
+}
