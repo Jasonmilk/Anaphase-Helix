@@ -3,7 +3,7 @@
 //! Split out rather than inline so the test code is not budgeted as production;
 //! the checker excludes `*_tests.rs` (spec §3).
 
-use crate::governance::{status, warning, PRECONDITIONS};
+use crate::governance::{known_preconditions, status, unknown_preconditions, warning, PRECONDITIONS};
 use crate::config::AnaphaseConfig;
 use std::net::TcpListener;
 
@@ -24,6 +24,7 @@ fn live_endpoint() -> (TcpListener, String) {
 /// `ok: true, detail: "not configured"`, so an absent precondition and a
 /// satisfied one produced the same verdict, which is the family this ledger
 /// keeps recording.
+// guards: governance-states
 #[test]
 fn a_missing_precondition_is_reported_as_ungoverned_not_as_ok() {
     let v = status(&configured(None), true);
@@ -96,4 +97,71 @@ fn the_health_payload_carries_governance_separately_from_ok() {
         v["governance"]["state"], "ungoverned",
         "and ungoverned in the new one; both must be readable at once"
     );
+}
+
+/// `governed` is **dead code today**, and this is the assertion that keeps that
+/// fact from becoming silent.
+///
+/// Round 31's point, and it is the transition-table lesson a second time: 13 edges
+/// were declared and the denominator was what is *reachable*; here 3 states are
+/// declared and 2 are reachable. A state that can never occur is a `match` arm
+/// nobody will ever see execute — the next person writes
+/// `match { Governed => ..., _ => warn }` and that arm is dead forever, with
+/// nothing to say so.
+///
+/// So unreachability is pinned rather than tolerated. When a precondition gains a
+/// config source, `unknown_preconditions` shrinks, this goes red, and whoever
+/// moved it is told to re-derive the states and test whatever now handles
+/// `governed`. The failure message says that, because the assertion's job is to
+/// force a decision, not merely to be red.
+// guards: governed-is-dead
+#[test]
+fn governed_is_dead_code_until_a_precondition_gains_a_source() {
+    let known = known_preconditions();
+    let unknown = unknown_preconditions();
+
+    assert_eq!(
+        known.len() + unknown.len(),
+        PRECONDITIONS,
+        "the two lists must account for every precondition B17 names, or one is \
+         being counted nowhere"
+    );
+    assert!(
+        known.iter().all(|k| !unknown.contains(k)),
+        "a precondition cannot both have and lack a config source: known={known:?} \
+         unknown={unknown:?}"
+    );
+    assert!(
+        !unknown.is_empty(),
+        "a precondition gained a config source, so `governed` may now be REACHABLE. \
+         This assertion exists to make that day loud. Before deleting it: re-derive \
+         the three states, check whether anything handles `governed` — and if it \
+         became reachable, that arm stops being dead code and needs a test and a \
+         mutation of its own. Also re-check `unknown` handling in `status`."
+    );
+
+    // And the behaviour, not just the list: with every KNOWN precondition
+    // satisfied, the verdict still must not be `governed`.
+    let (_l, addr) = live_endpoint();
+    let v = status(&configured(Some(&addr)), true);
+    assert_ne!(
+        v["state"], "governed",
+        "the third state is unreachable; if this fires, the list assertion above \
+         was passed by a build that still cannot reach `governed`, which means the \
+         two disagree: {v}"
+    );
+}
+
+/// The counts in the payload must be derived from the same lists the assertion
+/// above reads. Otherwise `preconditions_known: 1` could be right while the
+/// unknown list stopped meaning anything.
+#[test]
+fn the_payload_counts_come_from_the_same_lists() {
+    let v = status(&configured(None), false);
+    assert_eq!(v["preconditions_known"], known_preconditions().len());
+    assert_eq!(
+        v["unknown"].as_array().unwrap().len(),
+        unknown_preconditions().len()
+    );
+    assert_eq!(v["preconditions_total"], PRECONDITIONS);
 }

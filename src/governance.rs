@@ -37,6 +37,23 @@ use serde_json::{json, Value};
 /// number of exactly the kind this ledger keeps correcting.
 pub const PRECONDITIONS: usize = 3;
 
+/// The preconditions this build can actually read.
+///
+/// A function rather than a literal inside `status`, because the set is a fact
+/// about the contract and the tests assert against it. A literal would make
+/// "which ones do we know" an implementation detail only `status` can see.
+pub fn known_preconditions() -> &'static [&'static str] { &["tuck_endpoint"] }
+
+/// B17's preconditions that have no config source in this crate yet.
+///
+/// **Their non-emptiness is what makes `governed` unreachable.** That is asserted,
+/// not assumed — see `governed_is_dead_code_until_a_precondition_gains_a_source`.
+/// The day one of these gains a source, that assertion goes red on purpose,
+/// because `governed` stops being dead and whatever handles it needs tests.
+pub fn unknown_preconditions() -> &'static [&'static str] {
+    &["anaphase_endpoint", "tuck_audit_path"]
+}
+
 /// Which of the three hold, and which cannot be seen. See the module docs.
 ///
 /// `probes` controls the reachability TCP probe: `false` reports configuration
@@ -62,7 +79,7 @@ pub fn status(cfg: &AnaphaseConfig, probes: bool) -> Value {
 
     // No config source in this crate yet. Listed so their absence is stated
     // rather than silently counted as satisfied.
-    let unknown = ["anaphase_endpoint", "tuck_audit_path"];
+    let unknown = unknown_preconditions();
     detail.push(format!(
         "{} of {} precondition(s) have no config source in this crate yet: {}",
         unknown.len(),

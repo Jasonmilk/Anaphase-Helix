@@ -559,6 +559,7 @@ impl crate::adapters::ReasoningAdapter for ImpasseReasoning {
 /// green through all of this: it reaches `impasse = true` down the undefined
 /// path, so it cannot distinguish "an impasse was declared" from "a rule was
 /// missing". Both are impasses — but only one of them was ever reachable.
+// guards: impasse-survives
 #[tokio::test]
 async fn a_declared_impasse_survives_to_the_outcome() {
     let mut agent = AgentLoop::new(

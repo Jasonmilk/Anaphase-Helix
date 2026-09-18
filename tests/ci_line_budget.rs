@@ -286,6 +286,7 @@ fn scratch_with_pits(name: &str, files: &[(&str, usize)], base: &[(&str, usize)]
 /// The fixtures stay under the 300-line per-file budget on purpose: at 1000 the
 /// `over_budget` path fires first and the ratio rule is never reached, so the
 /// test would pass for the wrong reason.
+// guards: fix-cap-ratio
 #[test]
 fn a_fix_window_cap_may_not_exceed_a_tenth_of_the_baseline() {
     let pits = "[[pit]]\nid = \"K-999\"\n";

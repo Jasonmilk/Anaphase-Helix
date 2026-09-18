@@ -1,0 +1,84 @@
+# CI-7 — the mutation that must redden each guard test.
+#
+# P15: the label is an index, the criterion is the gate. A `guards: <id>` tag
+# beside a test names an entry here; CI-7 applies the substitution, requires the
+# test to FAIL, reverts, and requires it to PASS. Both halves, or the entry proves
+# nothing — a test that is already red would otherwise look like a real guard.
+#
+# Why the mutation is data rather than prose: a file saying "someone wrote a
+# mutation for this" checks reachability, not capability. That distinction has been
+# the defect five times in this ledger. The substitution is executed.
+#
+# Fields:
+#   id      — the tag name written beside the test as `guards: <id>`
+#   test    — the test function that must go red
+#   kind    — `lib` (a unit test) or `integration` (a file under tests/)
+#   target  — the integration test target name, required when kind = integration
+#   file    — the file the substitution is applied to
+#   from    — the exact text to replace; must occur exactly once, and must be code
+#   to      — the replacement
+#   k_id    — the pit that justifies the guard
+#
+# [ENG] Known simplification: the substitution is chosen by the entry's author, so
+# this proves "this change reddens this test", not "every change would". Upgrade
+# trigger: an entry whose `from` only nominally relates to the invariant, or two
+# entries in one file that cannot be applied independently.
+#
+# The entries below are the mutations that were run by hand while each guard was
+# written. Moving them here is the point: a hand-run mutation is evidence once, and
+# a manifest entry is evidence every time.
+
+[[guard]]
+id     = "impasse-survives"
+test   = "a_declared_impasse_survives_to_the_outcome"
+kind   = "lib"
+file   = "src/run_cycle/mod.rs"
+from   = "outcome.impasse = undefined_transition || seen_impasse;"
+to     = "outcome.impasse = undefined_transition || condition == TransitionCondition::Impass;"
+k_id   = "K-035"
+
+[[guard]]
+id     = "gate-directions-differ"
+test   = "every_gate_branch_answers_what_it_answers_today"
+kind   = "lib"
+file   = "src/run_cycle/safety_gate.rs"
+from   = "                GateVerdict::Refused(TransitionCondition::Success)"
+to     = "                GateVerdict::Refused(TransitionCondition::Failure)"
+k_id   = "K-033"
+
+[[guard]]
+id     = "hitl-error-blocks"
+test   = "pc1_a_low_risk_tool_is_not_consulted_and_a_high_risk_one_is"
+kind   = "lib"
+file   = "src/run_cycle/safety_gate.rs"
+from   = "            warn!(\"[SafetyGate] HITL unavailable for {tool:?}, blocked (fail-closed): {e}\");\n            return GateVerdict::Refused(TransitionCondition::Failure);"
+to     = "            warn!(\"[SafetyGate] HITL unavailable: {e}\");"
+k_id   = "K-033"
+
+[[guard]]
+id     = "governed-is-dead"
+test   = "governed_is_dead_code_until_a_precondition_gains_a_source"
+kind   = "lib"
+file   = "src/governance.rs"
+from   = "    &[\"anaphase_endpoint\", \"tuck_audit_path\"]"
+to     = "    &[]"
+k_id   = "B17"
+
+[[guard]]
+id     = "governance-states"
+test   = "a_missing_precondition_is_reported_as_ungoverned_not_as_ok"
+kind   = "lib"
+file   = "src/governance.rs"
+from   = "    let state = if !unmet.is_empty() {\n        \"ungoverned\"\n    } else if !unknown.is_empty() {\n        \"indeterminate\"\n    } else {\n        \"governed\"\n    };"
+to     = "    let state = \"governed\";"
+k_id   = "B17"
+
+[[guard]]
+id     = "fix-cap-ratio"
+test   = "a_fix_window_cap_may_not_exceed_a_tenth_of_the_baseline"
+kind   = "integration"
+target = "ci_line_budget"
+file   = "ci/check_line_budget.py"
+from   = "            if cap > ceiling:"
+to     = "            if False:"
+k_id   = "B17"

@@ -53,6 +53,7 @@ fn no_args() -> Vec<String> {
 ///
 /// The two rows marked K-033 are the finding: identical inputs, opposite
 /// verdicts, and the only thing that picks between them is which caller you are.
+// guards: gate-directions-differ
 #[tokio::test]
 async fn every_gate_branch_answers_what_it_answers_today() {
     // (label, hitl, audit, policy, expected)
@@ -137,6 +138,7 @@ async fn every_gate_branch_answers_what_it_answers_today() {
 /// This is the third time this family has come up — a rule written without a
 /// control (P7), a grep whose zero could have been the wrong path (C1), and now a
 /// counter reporting 0. The first two got controls; this one gets two.
+// guards: hitl-error-blocks
 #[tokio::test]
 async fn pc1_a_low_risk_tool_is_not_consulted_and_a_high_risk_one_is() {
     use std::sync::atomic::{AtomicUsize, Ordering};

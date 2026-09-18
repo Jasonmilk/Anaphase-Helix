@@ -163,3 +163,17 @@ target = "src/lib.rs"
 cap    = 3
 k_id   = "B17"
 reason = "declares the new governance module and its test module"
+
+# This file was SEEDED MID-DEVELOPMENT: D6 seeds a new file at birth, and the first
+# run happened while it was 56 lines, before the contract assertions added the two
+# accessor functions the tests read. So its baseline is not a previous release, and
+# the cap covers the rest of the same work unit. The cap is 4 because 5 is the
+# ceiling (10% of 56, floored at 5) and the growth was 6 — the ratio rule forced one
+# line of economy, which it got by compacting an accessor rather than by widening
+# the cap. A second growth spurt here means the seed is stale and should be re-taken
+# deliberately, not nudged.
+[[fix_window]]
+target = "src/governance.rs"
+cap    = 4
+k_id   = "B17"
+reason = "the two precondition accessors the contract assertions read, added after the file was seeded"
