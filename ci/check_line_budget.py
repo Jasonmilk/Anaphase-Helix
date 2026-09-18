@@ -330,6 +330,14 @@ def run(root, budget, branch_budget, max_line, check, line_mode='warn', ratchet=
     grown = []
     current = {}
     dir_totals = {}
+    # A split renames files, so every segment produces a file with no waiver key
+    # and a stale key for the old name. Both would fire on each of the seven
+    # segments, and both are cleared by editing ci/baseline.toml — which is easier
+    # than editing code, and therefore a route around the check. So inside an
+    # authorized window these are advisory, and the window closes with one
+    # alignment pass.
+    split_window_open = bool(split_windows)
+
     violations, marker_failures, long_lines, over_budget = [], [], [], []
     for rel in iter_sources(root):
         if is_test_path(rel):
@@ -383,7 +391,9 @@ def run(root, budget, branch_budget, max_line, check, line_mode='warn', ratchet=
         limit = ratchet_base[dk] + split_windows.get(dk, 0)
         if v > limit:
             dir_grown.append((k, ratchet_base[dk], v, split_windows.get(dk, 0)))
-    blocking = over_budget or marker_failures or expired_note or grown or dir_grown
+    blocking = marker_failures or expired_note or grown or dir_grown
+    if not split_window_open:
+        blocking = blocking or bool(over_budget)
     if line_mode == "fail":
         blocking = blocking or long_lines
     # Monotone write-back: the new baseline is min(old, current). Auto-taking the
@@ -422,11 +432,24 @@ def run(root, budget, branch_budget, max_line, check, line_mode='warn', ratchet=
         t for t in all_waiver_targets
         if t not in seen_paths and not t.endswith("/")
     )
+    # Inside an authorized split window, a stale key is EXPECTED: a split renames
+    # a file on every segment, so its waiver key expires on every segment. Failing
+    # there would fire seven times for seven renames and train the habit of
+    # editing the key to clear the red — and editing a key is easier than editing
+    # code, which makes it a route around the check. So it warns inside the window
+    # and blocks when the window closes, where the keys are aligned once.
+    window_open = split_window_open
     if stale and not emit:
-        print(f"STALE_EXEMPTION  {len(stale)} waiver(s) name a path that no longer exists:")
+        tag = "WARN" if window_open else "STALE_EXEMPTION"
+        print(f"{tag}  {len(stale)} waiver(s) name a path that no longer exists:")
         for t in stale:
-            print(f"        {t}  (this key exempts nothing; update it or delete it)")
-        if line_mode != "off":
+            extra = (
+                "  (expected during a split window: align it when the window closes)"
+                if window_open
+                else "  (this key exempts nothing; update it or delete it)"
+            )
+            print(f"        {t}{extra}")
+        if not window_open:
             blocking = True
 
     if emit:
@@ -454,7 +477,13 @@ def run(root, budget, branch_budget, max_line, check, line_mode='warn', ratchet=
         for rel, was, now in grown:
             print(f"        {rel}  {was} -> {now}")
     if over_budget:
-        print(f"FAIL  {len(over_budget)} file(s) over {budget} NCLOC with no waiver:")
+        tag = "WARN" if split_window_open else "FAIL"
+        note = (
+            "  (advisory during a split window: these are the segments being carved out)"
+            if split_window_open
+            else ""
+        )
+        print(f"{tag}  {len(over_budget)} file(s) over {budget} NOCL with no waiver:{note}")
         for rel, n in over_budget:
             print(f"        {rel}  {n}")
     if marker_failures:

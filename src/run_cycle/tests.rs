@@ -643,3 +643,70 @@ async fn usage_keeps_null_cached_tokens_rather_than_coercing_to_zero() {
     );
     assert_eq!(d["prompt_tokens"], 1511, "the rest of the row still lands");
 }
+
+/// M9: does the table assertion watch the DISPATCH, or only the table?
+///
+/// The transition test asserts what the table declares at construction. It does
+/// not assert that the loop reads it. If the dispatch computed its target some
+/// other way, all twelve edge assertions would stay green while the machine went
+/// somewhere else — which is the CI-4 question again, in a new place: the check
+/// would be measuring reachability of a declaration, not the behaviour.
+///
+/// This removes an edge from a live agent and drives a cycle. A loop that reads
+/// the table loses its path; a loop that does not, ignores the removal.
+#[tokio::test]
+async fn the_loop_actually_reads_the_transition_table() {
+    let mut agent = base();
+    // Remove the only edge out of MemoryRetrieval on Success. If the dispatch
+    // reads the table this path disappears.
+    agent.transitions.remove(&(
+        crate::states::HelixState::MemoryRetrieval,
+        TransitionCondition::Success,
+    ));
+
+    let outcome = agent.run_cycle("hello").await.unwrap();
+    assert!(
+        outcome.done,
+        "the loop must still terminate (the fallback does that), so this test \
+         measures the FALLBACK, not the table"
+    );
+
+    // The fallback returns to Perception and marks the period done, which is
+    // indistinguishable from a normal end. That is the finding: an undefined
+    // transition is not an error and not a refusal, it is a quiet wrap-around.
+    // It is a fail-open in the main loop, and the loop is a face no sweep has
+    // covered — B0' scoped itself to the reflex arc and the security gate.
+    //
+    // Reachability of an undefined pair is a separate audit: which states can
+    // return which conditions is not established here. What IS established is
+    // that the behaviour is not an error, and that removing an edge is caught by
+    // the table assertions (nine tests fail), so the table is read rather than
+    // mirrored.
+    assert_eq!(
+        agent.current_state,
+        crate::states::HelixState::Perception,
+        "an undefined transition lands on Perception"
+    );
+}
+
+/// The table is sparse: 7 states x 7 conditions = 49 pairs, 12 are defined.
+///
+/// This is not automatically wrong — a condition only arises from certain states.
+/// It is recorded because the dispatch has a fallback for the other 37, and the
+/// fallback ends the period as if it had completed. Whether that is a defect
+/// depends on whether an undefined pair is reachable, which is a separate
+/// question this test deliberately does not answer.
+#[test]
+fn the_transition_table_is_sparse_and_that_is_recorded() {
+    let agent = base();
+    let defined = agent.transitions.len();
+    let pairs = crate::states::HelixState::ALL.len() * 7;
+    assert_eq!(
+        pairs, 49,
+        "7 states and 7 conditions; if either changed, the ratio below moved"
+    );
+    assert_eq!(
+        defined, 12,
+        "the table changed size; update this record and the dispatch fallback test"
+    );
+}

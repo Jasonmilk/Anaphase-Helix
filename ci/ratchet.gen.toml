@@ -14,6 +14,9 @@ ncloc  = 13
 target = "build.rs"
 ncloc  = 13
 [[ratchet]]
+target = "src/"
+ncloc  = 3499
+[[ratchet]]
 target = "src/adapters/"
 ncloc  = 1246
 [[ratchet]]
