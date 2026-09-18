@@ -123,7 +123,7 @@ target = "src/run_cycle/"
 ncloc  = 1156
 [[ratchet]]
 target = "src/run_cycle/mod.rs"
-ncloc  = 1141
+ncloc  = 1142
 [[ratchet]]
 target = "src/run_cycle/usage.rs"
 ncloc  = 18

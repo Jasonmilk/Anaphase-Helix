@@ -368,6 +368,17 @@ impl AgentLoop {
         transitions.insert((HelixState::Reasoning, TransitionCondition::NeedsTool), HelixState::ReflexCheck);
         transitions.insert((HelixState::Reasoning, TransitionCondition::NoToolNeeded), HelixState::Reflection);
         transitions.insert((HelixState::Reasoning, TransitionCondition::Impass), HelixState::Reflection);
+        // (Reasoning, Failure) is REACHABLE: a reply shaped like a plan whose
+        // schema is rejected returns Failure (P0-D-1, fail-closed on contract
+        // violations). Without this edge that path hit the undefined-transition
+        // fallback — which before the fail-closed fix reported a completed period
+        // and afterwards reports an incomplete one, and neither is right: the
+        // machine knows exactly where a rejected plan should go.
+        //
+        // Found by `every_returned_condition_has_a_rule`, which scans this file's
+        // own source. A manual audit had missed it by mis-attributing the return
+        // site to the following function.
+        transitions.insert((HelixState::Reasoning, TransitionCondition::Failure), HelixState::Reflection);
         transitions.insert((HelixState::ReflexCheck, TransitionCondition::ReflexPassed), HelixState::Execution);
         transitions.insert((HelixState::ReflexCheck, TransitionCondition::ReflexBlocked), HelixState::Reflection);
         transitions.insert((HelixState::Execution, TransitionCondition::Success), HelixState::Reflection);

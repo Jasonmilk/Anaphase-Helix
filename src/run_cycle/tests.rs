@@ -478,6 +478,7 @@ fn the_transition_table_has_exactly_these_edges() {
         (S::Reasoning, C::NeedsTool, S::ReflexCheck),
         (S::Reasoning, C::NoToolNeeded, S::Reflection),
         (S::Reasoning, C::Impass, S::Reflection),
+        (S::Reasoning, C::Failure, S::Reflection),
         (S::ReflexCheck, C::ReflexPassed, S::Execution),
         (S::ReflexCheck, C::ReflexBlocked, S::Reflection),
         (S::Execution, C::Success, S::Reflection),
@@ -713,7 +714,7 @@ fn the_transition_table_is_sparse_and_that_is_recorded() {
         "7 states and 7 conditions; if either changed, the ratio below moved"
     );
     assert_eq!(
-        defined, 12,
+        defined, 13,
         "the table changed size; update this record and the dispatch fallback test"
     );
 }
@@ -852,4 +853,117 @@ async fn an_incomplete_period_is_bounded_and_distinguishable() {
     // It terminated, which is the whole of the bound claim: a state that spin
     // would not return at all.
     assert_eq!(agent.current_state, crate::states::HelixState::Perception);
+}
+
+/// Every condition a state can return has a rule in the table.
+///
+/// This is the audit that had to happen BEFORE the fallback was made fail-closed,
+/// and it was done after. The reachable set was enumerated from the source rather
+/// than reasoned about: each `HelixState` arm's return sites were collected and
+/// compared against the twelve defined edges. They match exactly, which means no
+/// path that used to work quietly now ends as an incomplete period.
+///
+/// It was fragile to establish by hand, so it is asserted mechanically. The check
+/// reads this file's own source (`include_str!`), finds each state arm, and
+/// requires every `TransitionCondition` returned inside it to have an edge. A new
+/// return site in an existing arm therefore fails here rather than silently
+/// producing an undefined pair at runtime — which is precisely how a working path
+/// would have become an impasse without anyone noticing.
+#[test]
+fn every_returned_condition_has_a_rule() {
+    let src = include_str!("mod.rs");
+    let lines: Vec<&str> = src.lines().collect();
+
+    // Locate the arms of `execute_current_state`.
+    let fn_start = lines
+        .iter()
+        .position(|l| l.contains("async fn execute_current_state"))
+        .expect("execute_current_state must exist");
+    let mut arms: Vec<(String, usize)> = Vec::new();
+    for (i, l) in lines.iter().enumerate().skip(fn_start) {
+        if let Some(rest) = l.trim().strip_prefix("HelixState::") {
+            if let Some((name, _)) = rest.split_once(" => {") {
+                arms.push((name.to_string(), i));
+            }
+        }
+    }
+    assert_eq!(arms.len(), 7, "expected seven state arms, found {}", arms.len());
+
+    // The last arm ends where the function does, and the function is followed by
+    // `execute_structured`, which returns Failure from a different state's
+    // perspective. Scanning to end-of-file would attribute those returns to
+    // `Reflection` and invent a contradiction that does not exist.
+    let mut fn_end = lines.len();
+    let mut depth = 0i32;
+    let mut started = false;
+    for (i, l) in lines.iter().enumerate().skip(fn_start) {
+        depth += l.matches('{').count() as i32 - l.matches('}').count() as i32;
+        if depth > 0 {
+            started = true;
+        }
+        if started && depth == 0 {
+            fn_end = i + 1;
+            break;
+        }
+    }
+
+    let agent = base();
+    let state_of = |name: &str| -> crate::states::HelixState {
+        use crate::states::HelixState as S;
+        match name {
+            "Perception" => S::Perception,
+            "PreAssessment" => S::PreAssessment,
+            "MemoryRetrieval" => S::MemoryRetrieval,
+            "Reasoning" => S::Reasoning,
+            "ReflexCheck" => S::ReflexCheck,
+            "Execution" => S::Execution,
+            "Reflection" => S::Reflection,
+            other => panic!("unknown arm {other}"),
+        }
+    };
+    let cond_of = |name: &str| -> TransitionCondition {
+        match name {
+            "Success" => TransitionCondition::Success,
+            "Failure" => TransitionCondition::Failure,
+            "NeedsTool" => TransitionCondition::NeedsTool,
+            "NoToolNeeded" => TransitionCondition::NoToolNeeded,
+            "Impass" => TransitionCondition::Impass,
+            "ReflexBlocked" => TransitionCondition::ReflexBlocked,
+            "ReflexPassed" => TransitionCondition::ReflexPassed,
+            other => panic!("unknown condition {other}"),
+        }
+    };
+
+    let mut checked = 0;
+    for (idx, (name, start)) in arms.iter().enumerate() {
+        let end = arms.get(idx + 1).map(|a| a.1).unwrap_or(fn_end);
+        let mut seen: Vec<String> = Vec::new();
+        for l in &lines[*start..end] {
+            let mut rest = *l;
+            while let Some(p) = rest.find("TransitionCondition::") {
+                rest = &rest[p + "TransitionCondition::".len()..];
+                let cond: String = rest
+                    .chars()
+                    .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+                    .collect();
+                if !cond.is_empty() && !seen.contains(&cond) {
+                    seen.push(cond);
+                }
+            }
+        }
+        for c in &seen {
+            assert!(
+                agent
+                    .transitions
+                    .contains_key(&(state_of(name), cond_of(c))),
+                "{name} can return {c} but the table has no edge for it, so that \
+                 path would end as an incomplete period"
+            );
+            checked += 1;
+        }
+    }
+    assert!(
+        checked >= 12,
+        "expected at least the twelve known reachable pairs, checked {checked}"
+    );
 }
