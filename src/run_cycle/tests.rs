@@ -447,3 +447,84 @@ mod remember_parents_tests {
     }
 }
 
+
+/// The transition table, edge by edge.
+///
+/// Two proofs for this file already existed and neither can see the table. The
+/// symbol set counts functions, so deleting a match arm changes nothing it
+/// measures. The cycle snapshot drives exactly one path, so eleven of the twelve
+/// edges are outside its input space — a broken edge there is invisible to both,
+/// and this is the file whose whole content is that table.
+///
+/// So the edges are asserted as data. Cheap, stable, and it covers precisely what
+/// the snapshot cannot: the eleven paths nothing walks.
+///
+/// It also settles a question that had been open since the early rounds: an
+/// impasse goes to Reflection. That is now an assertion rather than something to
+/// look up again.
+#[test]
+fn the_transition_table_has_exactly_these_edges() {
+    use crate::states::HelixState as S;
+    use TransitionCondition as C;
+
+    // Every edge, written out. Not derived from the table: a list that read the
+    // table could only ever agree with it.
+    let expected: &[(S, C, S)] = &[
+        (S::Perception, C::Success, S::PreAssessment),
+        (S::PreAssessment, C::Success, S::MemoryRetrieval),
+        (S::MemoryRetrieval, C::Success, S::Reasoning),
+        (S::MemoryRetrieval, C::Failure, S::Reflection),
+        (S::Reasoning, C::NeedsTool, S::ReflexCheck),
+        (S::Reasoning, C::NoToolNeeded, S::Reflection),
+        (S::Reasoning, C::Impass, S::Reflection),
+        (S::ReflexCheck, C::ReflexPassed, S::Execution),
+        (S::ReflexCheck, C::ReflexBlocked, S::Reflection),
+        (S::Execution, C::Success, S::Reflection),
+        (S::Execution, C::Failure, S::Reflection),
+        (S::Reflection, C::Success, S::Perception),
+    ];
+
+    let agent = base();
+    let table = &agent.transitions;
+
+    assert_eq!(
+        table.len(),
+        expected.len(),
+        "the table has {} edges, the list names {}",
+        table.len(),
+        expected.len()
+    );
+    for (from, cond, to) in expected {
+        assert_eq!(
+            table.get(&(from.clone(), cond.clone())),
+            Some(to),
+            "missing or wrong edge: {from:?} + {cond:?} should reach {to:?}"
+        );
+    }
+
+    // And nothing the list does not name, so an added edge has to be declared
+    // here too rather than slipping in unexamined.
+    for (key, to) in table {
+        assert!(
+            expected.contains(&(key.0.clone(), key.1.clone(), to.clone())),
+            "undocumented edge in the table: {:?} + {:?} -> {:?}",
+            key.0,
+            key.1,
+            to
+        );
+    }
+}
+
+/// The impasse path specifically, because it is the one the early rounds kept
+/// asking about and because nothing else walks it.
+#[test]
+fn an_impasse_goes_to_reflection() {
+    use crate::states::HelixState as S;
+    assert_eq!(
+        base()
+            .transitions
+            .get(&(S::Reasoning, TransitionCondition::Impass)),
+        Some(&S::Reflection),
+        "an impasse must reach Reflection, where the outcome is marked"
+    );
+}

@@ -296,6 +296,25 @@ def run(root, budget, branch_budget, max_line, check, line_mode='warn', ratchet=
         today = date(y, m, d)
 
     waivers_path = os.path.join(root, "ci", "baseline.toml")
+    # A waiver whose target no longer exists exempts nothing while looking
+    # present. The check does fail for it, but it reported the symptom ("file over
+    # budget") rather than the cause ("this key is stale"), so whoever read the red
+    # went looking at line counts. Same family as everything else here: an object
+    # that appears to work and does not.
+    all_waiver_targets = set()
+    try:
+        with open(waivers_path, encoding="utf-8") as fh:
+            _chk = None
+            for line in fh:
+                t = line.strip()
+                if t == "[[waiver]]":
+                    _chk = None
+                elif t.startswith("check"):
+                    _chk = t.partition("=")[2].strip().strip('"')
+                elif t.startswith("target") and _chk == check:
+                    all_waiver_targets.add(t.partition("=")[2].strip().strip('"'))
+    except OSError:
+        pass
     try:
         waived, expired = load_waivers(waivers_path, check, today)
     except WaiverError as e:
@@ -396,6 +415,19 @@ def run(root, budget, branch_budget, max_line, check, line_mode='warn', ratchet=
         except OSError as e:
             print(f"CHECKER ERROR: cannot write {ratchet_path}: {e}", file=sys.stderr)
             return 3
+
+    # Targets that are neither an existing file nor a directory entry.
+    seen_paths = set(current)
+    stale = sorted(
+        t for t in all_waiver_targets
+        if t not in seen_paths and not t.endswith("/")
+    )
+    if stale and not emit:
+        print(f"STALE_EXEMPTION  {len(stale)} waiver(s) name a path that no longer exists:")
+        for t in stale:
+            print(f"        {t}  (this key exempts nothing; update it or delete it)")
+        if line_mode != "off":
+            blocking = True
 
     if emit:
         print("[[ratchet]] entries for ci/baseline.toml:")
