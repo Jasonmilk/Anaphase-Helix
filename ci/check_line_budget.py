@@ -131,6 +131,59 @@ def load_ratchet(path):
     return out
 
 
+def load_split_windows(path, today):
+    """dir -> headroom allowed while a refactor is in flight.
+
+    A pure-move split cannot be zero-delta on NCLOC, and the measurement says why:
+    `criteria/mod.rs` went from 291 to 295 when split into three files, because
+    `mod.rs` gains a `pub use` line per part that did not exist before. That part
+    of the increase is permanent, and the rest is the ordinary weight of files
+    naming what they use.
+
+    That matters because the directory ratchet would otherwise go red on the
+    first day of a split, and the red would be the checker working correctly. The
+    wrong fixes are to make the ratchet report-only or to waive it — both teach
+    that refactoring means switching the gate off. Instead the increase is
+    authorized IN ADVANCE, with a number, a reason and a date, so it is a bounded
+    and auditable allowance rather than a hole.
+    """
+    if not os.path.exists(path):
+        return {}
+    out = {}
+    target = reason = due = None
+    allow = 0
+
+    def flush():
+        if not target or not due:
+            return
+        try:
+            y, m, d = (int(x) for x in due.split("-"))
+            when = date(y, m, d)
+        except Exception:
+            raise WaiverError(f"split window for {target!r} has an unparseable due date: {due!r}")
+        if when >= today and allow:
+            out[target] = allow
+
+    for raw in open(path, encoding="utf-8"):
+        line = raw.strip()
+        if line == "[[split_window]]":
+            flush()
+            target = reason = due = None
+            allow = 0
+        elif line.startswith("["):
+            flush()
+            target = reason = due = None
+            allow = 0
+        elif line.startswith("target"):
+            target = line.partition("=")[2].strip().strip('"')
+        elif line.startswith("allowance"):
+            allow = int(line.partition("=")[2].strip())
+        elif line.startswith("due"):
+            due = line.partition("=")[2].strip().strip('"')
+    flush()
+    return out
+
+
 def load_waivers(path, check, today):
     """Returns (active_targets, expired_targets).
 
@@ -242,6 +295,7 @@ def run(root, budget, branch_budget, max_line, check, line_mode='warn', ratchet=
     # must not live somewhere a human signs.
     ratchet_path = os.path.join(root, RATCHET_FILE)
     ratchet_base = load_ratchet(ratchet_path) if ratchet else {}
+    split_windows = load_split_windows(waivers_path, date.today()) if ratchet else {}
     grown = []
     current = {}
     dir_totals = {}
@@ -293,8 +347,11 @@ def run(root, budget, branch_budget, max_line, check, line_mode='warn', ratchet=
     dir_grown = []
     for k, v in dir_totals.items():
         dk = k + "/"
-        if dk in ratchet_base and v > ratchet_base[dk]:
-            dir_grown.append((k, ratchet_base[dk], v))
+        if dk not in ratchet_base:
+            continue
+        limit = ratchet_base[dk] + split_windows.get(dk, 0)
+        if v > limit:
+            dir_grown.append((k, ratchet_base[dk], v, split_windows.get(dk, 0)))
     blocking = over_budget or marker_failures or expired_note or grown or dir_grown
     if line_mode == "fail":
         blocking = blocking or long_lines
@@ -309,6 +366,10 @@ def run(root, budget, branch_budget, max_line, check, line_mode='warn', ratchet=
             merged[k] = min(merged[k], v) if k in merged else v
         for k, v in dir_totals.items():
             dk = k + "/"
+            if dk in split_windows:
+                # Inside an authorized window the number moves for reasons that
+                # are not shrink-or-grow signal; re-seeded when the window closes.
+                continue
             merged[dk] = min(merged[dk], v) if dk in merged else v
         for k in list(merged):
             # A source that vanished stops being a baseline; leaving it would
@@ -341,8 +402,9 @@ def run(root, budget, branch_budget, max_line, check, line_mode='warn', ratchet=
 
     if dir_grown:
         print(f"FAIL  {len(dir_grown)} directory total(s) grew past their ratchet:")
-        for k, was, now in dir_grown:
-            print(f"        {k}/  {was} -> {now}")
+        for k, was, now, allow in dir_grown:
+            extra = f" (with a +{allow} split allowance)" if allow else ""
+            print(f"        {k}/  {was} -> {now}{extra}")
     if grown:
         print(f"FAIL  {len(grown)} file(s) grew past their ratchet:")
         for rel, was, now in grown:

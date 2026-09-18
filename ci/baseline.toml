@@ -68,3 +68,25 @@ target  = "src/run_cycle.rs"
 reason  = "整个状态机；拆分定界方案见 ADR-0042"
 owner   = "TBD"
 due     = "2026-12-11"
+
+# ─── split window (ADR-0042) ────────────────────────────────────────────────
+# A pure-move split CANNOT be zero-delta on NCLOC, and that was measured rather
+# than assumed: splitting src/criteria/mod.rs (291) into three files produced 295,
+# because `mod.rs` gains a `pub use` line per part that did not exist before.
+# Part of that increase is permanent (the re-export surface) and the rest is the
+# ordinary weight of files naming what they use.
+#
+# Without an allowance the directory ratchet goes red on the first day of the
+# split, and it would be red because the checker is working correctly. Making the
+# ratchet report-only for the duration, or waiving it, would both teach that
+# refactoring means switching the gate off. So the increase is authorized here in
+# advance: a number, a reason and a date.
+#
+# The allowance is an ESTIMATE from one measurement (about +6 per split file:
+# module header plus re-exports, times seven parts for run_cycle.rs, rounded up).
+# It is not a target, and the window closes with the split.
+[[split_window]]
+target    = "src/"
+allowance = 60
+reason    = "ADR-0042 pure-move split of run_cycle.rs: re-export surface and per-file headers. Measured basis: criteria/mod.rs 291 -> 295 when split into three."
+due       = "2026-10-09"
