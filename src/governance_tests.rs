@@ -114,7 +114,7 @@ fn the_health_payload_carries_governance_separately_from_ok() {
 /// moved it is told to re-derive the states and test whatever now handles
 /// `governed`. The failure message says that, because the assertion's job is to
 /// force a decision, not merely to be red.
-// guards: governed-is-dead
+// guards: governed-is-dead,config-fields-classified
 #[test]
 fn governed_is_dead_code_until_a_precondition_gains_a_source() {
     let known = known_preconditions();
@@ -164,4 +164,103 @@ fn the_payload_counts_come_from_the_same_lists() {
         unknown_preconditions().len()
     );
     assert_eq!(v["preconditions_total"], PRECONDITIONS);
+}
+
+/// `unknown_preconditions()` cannot express "we do not know what we do not know".
+///
+/// Its own list is the only source of truth for what is unknown, so a fourth
+/// precondition added to the config tomorrow would appear in neither list and
+/// `known + unknown == PRECONDITIONS` would still be green. That is the bound of
+/// any self-reporting set: it can enumerate what it has been told, not what it has
+/// not.
+///
+/// So the classification is checked against the **source** instead of against
+/// itself. Every `Option` field in the config must be accounted for: either it is
+/// a governance precondition, or it is named here as explicitly not one. A new
+/// `Option` field therefore cannot arrive silently — it must be classified, and
+/// classifying it is the moment someone decides whether governance depends on it.
+///
+/// P15: the label is an index, the criterion is the gate. This list is the label;
+/// the scan in `every_option_config_field_is_classified` is the gate.
+#[test]
+fn every_option_config_field_is_classified() {
+    // Fields whose absence cannot change whether the engine is governed. The list
+    // is the claim; the scan below is what makes the claim have to be complete.
+    const NOT_A_PRECONDITION: &[&str] = &[
+        // Organ endpoints that B17 does not name. Whether they *should* be
+        // preconditions is a B17 question, not this test's; what this test forbids
+        // is adding one without deciding.
+        "cellrix_endpoint", "flowmodus_endpoint", "mind_endpoint", "tentacle_endpoint",
+        // Reasoning configuration: a model choice, not a guarantee.
+        "reasoning_api_key", "reasoning_endpoint", "reasoning_max_tokens", "reasoning_model",
+        "reasoning_redact_patterns", "reasoning_route_tier", "reasoning_trace_max_chars",
+        "judge_endpoint", "judge_model",
+        // Local paths: data placement, not governance authority.
+        "bind_state_path", "events_log_path", "gene_lock_path", "reasoning_trace_path",
+        "session_events_path", "session_notes_path",
+        // Operator input for a smoke run.
+        "smoke_input",
+    ];
+
+    let src = include_str!("config.rs");
+    let mut found: Vec<String> = Vec::new();
+    for line in src.lines() {
+        let t = line.trim();
+        if let Some(rest) = t.strip_prefix("pub ") {
+            if let Some((name, ty)) = rest.split_once(':') {
+                if ty.trim_start().starts_with("Option<") {
+                    found.push(name.trim().to_string());
+                }
+            }
+        }
+    }
+    found.sort();
+    found.dedup();
+    assert!(
+        found.len() > 15,
+        "the scan found only {} Option field(s); it has probably stopped matching \
+         the config's shape, which would make this test pass by finding nothing: {found:?}",
+        found.len()
+    );
+
+    let mut unclassified = Vec::new();
+    for name in &found {
+        let is_precondition =
+            known_preconditions().contains(&name.as_str()) || unknown_preconditions().contains(&name.as_str());
+        if !is_precondition && !NOT_A_PRECONDITION.contains(&name.as_str()) {
+            unclassified.push(name.clone());
+        }
+    }
+    assert!(
+        unclassified.is_empty(),
+        "new Option config field(s) {unclassified:?} are in neither the governance \
+         preconditions nor the not-a-precondition list. Decide which: if its absence \
+         can change whether the engine is governed, it belongs in one of the two \
+         lists in `governance.rs` (and `PRECONDITIONS` must grow with it); if not, \
+         add it to NOT_A_PRECONDITION here with the reason."
+    );
+
+    // Reverse check, for the KNOWN list only: a name declared as a precondition
+    // this build can read must actually be readable.
+    //
+    // Deliberately not applied to the unknown list, and the first version DID apply
+    // it and went red — which turned out to be a real distinction rather than a bug.
+    // "No such field in this crate" is what makes a precondition *unknown*, so
+    // asserting the opposite would contradict the definition. But that failure also
+    // showed the unknown list holds two different things:
+    //
+    //   `tuck_audit_path`   — has a source, in ANOTHER organ (Tuck's config)
+    //   `anaphase_endpoint` — has no source anywhere yet: not unreadable-here,
+    //                         but undefined
+    //
+    // Both are ungovernable from this crate today, so both stay in the unknown
+    // bucket. Naming the difference matters because the fix differs: one needs a
+    // cross-organ read, the other needs the field to exist first.
+    for name in known_preconditions() {
+        assert!(
+            found.contains(&name.to_string()),
+            "`{name}` is declared a precondition this build can READ, but no such \
+             Option field exists in config.rs, so the declaration has outlived its subject"
+        );
+    }
 }

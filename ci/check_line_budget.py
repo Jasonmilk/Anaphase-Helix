@@ -319,6 +319,54 @@ def load_pits(path):
     return out
 
 
+def load_seeds(path):
+    """Hand-signed seed values for keys that have no baseline yet.
+
+    A new key is the one place the ratchet can move UP: `min(old, current)` never
+    raises an existing value, so the only way a baseline grows is by being absent
+    and re-seeded. Left automatic, that is the checker raising its own bound -- the
+    round-25 defect (the ratchet could write the value it checks) through a
+    different door.
+
+    So a seed is a decision, and it is signed here, out of band, citing the pit or
+    ADR that justifies it. The automatic write-back may only CONSUME a signature;
+    when it meets a key with none, it refuses and says so.
+    """
+    if not os.path.exists(path):
+        return {}
+    out = {}
+    cur = None
+
+    def flush():
+        if cur is None:
+            return
+        if not cur.get("target"):
+            return
+        if not (cur.get("k_id") or cur.get("adr")):
+            raise WaiverError(
+                f"seed for {cur['target']!r} cites neither a k_id nor an adr. A seed "
+                "without a pit is just a number someone wanted."
+            )
+        if not cur.get("ncloc"):
+            raise WaiverError(f"seed for {cur['target']!r} has no ncloc")
+        out[cur["target"]] = int(cur["ncloc"])
+
+    in_seed = False
+    for raw in open(path, encoding="utf-8"):
+        line = raw.strip()
+        if line.startswith("["):
+            flush()
+            cur = {} if line == "[[seed]]" else None
+            in_seed = line == "[[seed]]"
+            continue
+        if not in_seed or "=" not in line or line.startswith("#"):
+            continue
+        k, _, v = line.partition("=")
+        cur[k.strip()] = v.strip().strip('"')
+    flush()
+    return out
+
+
 def load_waivers(path, check, today):
     """Returns (active_targets, expired_targets).
 
@@ -478,6 +526,7 @@ def run(root, budget, branch_budget, max_line, check, line_mode='warn', ratchet=
         fix_windows = (
             load_fix_windows(waivers_path, cap_base, load_pits(pits_path)) if ratchet else {}
         )
+        seeds = load_seeds(waivers_path) if ratchet else {}
     except WaiverError as e:
         print(f"CHECKER ERROR: {waivers_path}: {e}", file=sys.stderr)
         return 3
@@ -488,6 +537,8 @@ def run(root, budget, branch_budget, max_line, check, line_mode='warn', ratchet=
         # baseline into another's run.
         ratchet_base[override[0]] = override[1]
     grown = []
+    unseeded = []
+    oversigned = []
     current = {}
     dir_totals = {}
     # A split renames files, so every segment produces a file with no waiver key
@@ -570,7 +621,7 @@ def run(root, budget, branch_budget, max_line, check, line_mode='warn', ratchet=
         limit = ratchet_base[dk] + allow + fix_allow
         if v > limit:
             dir_grown.append((k, ratchet_base[dk], v, split_windows.get(dk, 0), fix_allow))
-    blocking = marker_failures or expired_note or grown or dir_grown
+    blocking = marker_failures or expired_note or grown or dir_grown or unseeded or oversigned
     if not split_window_open:
         blocking = blocking or bool(over_budget)
     if line_mode == "fail":
@@ -582,10 +633,47 @@ def run(root, budget, branch_budget, max_line, check, line_mode='warn', ratchet=
     # and it is derived, so nobody types a number (P8).
     # A forced baseline is a test affordance; writing it back would persist the
     # fabricated value into the real baseline and break every later run.
+    # Seed validation is a PRE-PASS, not a report after the fact. Two reasons, and
+    # the first version got both wrong: `blocking` is computed above, so a check
+    # placed after the write-back sat behind `return 0` and could never fire -- it
+    # passed its own positive control by doing nothing. And more importantly, an
+    # invalid seed must stop the write-back rather than be reported alongside it,
+    # or the checker has already taken the upward step it is complaining about.
+    if ratchet and not emit:
+        for k, v in current.items():
+            if k in ratchet_base:
+                continue
+            signed = seeds.get(k)
+            if signed is None:
+                unseeded.append(k)
+            elif v > signed:
+                oversigned.append((k, signed, v))
+        if unseeded or oversigned:
+            print(f"CHECKER ERROR: {len(unseeded) + len(oversigned)} key(s) have no valid signed seed:", file=sys.stderr)
+            for k in unseeded:
+                print(f"        {k}: no [[seed]] entry, so the automatic write-back would be "
+                      f"setting a baseline for the first time. A seed is a decision: add "
+                      f"[[seed]] target = \"{k}\" ncloc = <current> k_id = \"<pit>\".", file=sys.stderr)
+            for k, signed, v in oversigned:
+                print(f"        {k}: signed for {signed} but measures {v}. Re-take the seed by "
+                      f"editing baseline.toml deliberately; letting the checker follow the code "
+                      f"upward is the one direction a ratchet must not move.", file=sys.stderr)
+            return 3
+
     if ratchet and not emit and not override:
         merged = dict(ratchet_base)
         for k, v in current.items():
-            merged[k] = min(merged[k], v) if k in merged else v
+            if k in merged:
+                merged[k] = min(merged[k], v)
+                continue
+            signed = seeds.get(k)
+            if signed is None:
+                unseeded.append(k)
+                continue
+            if v > signed:
+                oversigned.append((k, signed, v))
+                continue
+            merged[k] = v
         for k, v in dir_totals.items():
             dk = k + "/"
             if split_window_open:

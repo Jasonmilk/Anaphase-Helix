@@ -91,6 +91,42 @@ allowance = 60
 reason    = "ADR-0042 pure-move split of run_cycle.rs: re-export surface and per-file headers. Measured basis: criteria/mod.rs 291 -> 295 when split into three. Estimate assumed 7 segments; the real count is 8 (usage.rs was added after emit_usage proved observable). The estimate is kept as-is so the closing record can compare it against the actual."
 due       = "2026-10-09"
 
+# ---------------------------------------------------------------- signed seeds
+#
+# A new key is the one place the ratchet can move UP: `min(old, current)` never
+# raises an existing value, so the only way a baseline grows is by being absent and
+# re-seeded. Automatic, that is the checker raising its own bound — the round-25
+# defect (the ratchet could write the value it checks) through a different door.
+#
+# So a seed is a decision, signed here, out of band, citing the pit that justifies
+# it. The automatic write-back may only CONSUME a signature: a key with none is
+# refused, and a key that measures larger than its signature is refused too, so a
+# re-seed at a higher number requires editing this file on purpose.
+#
+# The three below are grandfathered rather than signed-by-rule: they were seeded
+# automatically before this gate existed. Signing them now makes their values
+# explicit and puts them under the rule from here on. `governance.rs` is signed at
+# 60 while its ratchet value is 56 — the difference is the fix_window cap of 4, and
+# the two are deliberately not collapsed: the seed records what was written, the
+# cap records what this work unit was allowed to add.
+[[seed]]
+target = "src/run_cycle/verdict.rs"
+ncloc  = 102
+k_id   = "K-035,B22"
+reason = "period verdict module, seeded automatically before the seed gate existed"
+
+[[seed]]
+target = "src/run_cycle/safety_gate.rs"
+ncloc  = 53
+k_id   = "K-033"
+reason = "the safety gate, a pure move out of the Execution arm, seeded automatically before the seed gate existed"
+
+[[seed]]
+target = "src/governance.rs"
+ncloc  = 60
+k_id   = "B17"
+reason = "B17 governance visibility, seeded mid-development at 56 and grown by its own accessors"
+
 # ---------------------------------------------------------------- fix windows
 #
 # The third class. A waiver is a DEBT ("I will repay it") and carries owner+due;

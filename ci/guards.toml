@@ -82,3 +82,12 @@ file   = "ci/check_line_budget.py"
 from   = "            if cap > ceiling:"
 to     = "            if False:"
 k_id   = "B17"
+
+[[guard]]
+id     = "config-fields-classified"
+test   = "every_option_config_field_is_classified"
+kind   = "lib"
+file   = "src/governance_tests.rs"
+from   = "        \"bind_state_path\", \"events_log_path\", \"gene_lock_path\", \"reasoning_trace_path\","
+to     = "        \"events_log_path\", \"gene_lock_path\", \"reasoning_trace_path\","
+k_id   = "B17"

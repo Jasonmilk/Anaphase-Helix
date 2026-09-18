@@ -1,18 +1,38 @@
-//! CI-7 — the guard manifest, run by the same command as everything else.
+//! CI-7 — **not part of `cargo test`, on purpose.**
 //!
-//! The checker is `ci/check_guards.py`; this exists so `cargo test` is the single
-//! entry point and so a checker that CANNOT RUN is not read as a checker that
-//! passed. Same reason `tests/ci_line_budget.rs` exists, and the same exit-code
-//! split: 0 ran and clean, 1 ran and found decoration, 3 could not run.
+//! CI-7 proves each guard test can go red by mutating the source and rebuilding.
+//! That is incompatible with running inside the suite it mutates. While it held a
+//! mutation in `src/run_cycle/mod.rs`, `cargo test` was free to rebuild
+//! `tests/run_cycle_pipeline.rs` from the mutated tree, and a full-suite run failed
+//! in `run_cycle_deterministic_replay` for no reason of its own. A second run
+//! passed. That is the shape this ledger keeps recording: not a wrong answer, an
+//! intermittent one, which is worse because it trains you to re-run until green.
 //!
-//! It is slow on purpose. Proving a guard is real means running its test twice —
-//! once mutated, once not — so CI-7 costs seconds per guard. That is the price of
-//! not shipping a suite of tests that have only ever agreed with themselves.
+//! So the check is a separate gate:
+//!
+//! ```text
+//! python3 ci/check_guards.py          # all guards
+//! python3 ci/check_guards.py --skip-slow
+//! ```
+//!
+//! The test below is `#[ignore]`d rather than deleted so the reason is discoverable
+//! from inside the suite, and so it can be run deliberately on a quiet tree:
+//!
+//! ```text
+//! cargo test --test ci_guards -- --ignored --test-threads=1
+//! ```
+//!
+//! **Upgrade path** to bring it back into the default suite: run it against a
+//! `git worktree` — mutate the copy, build and test there, leave this tree alone.
+//! That costs one full compile per run, which is why it is not done yet, and it is
+//! the honest price of "prove the guard can fail" if it must run alongside
+//! everything else.
 
 use std::path::Path;
 use std::process::Command;
 
 #[test]
+#[ignore = "mutates src/ and rebuilds; must not run concurrently with the rest of the suite. Run: python3 ci/check_guards.py"]
 fn every_guard_is_reddened_by_its_declared_mutation() {
     let root = env!("CARGO_MANIFEST_DIR");
     let script = Path::new(root).join("ci/check_guards.py");
