@@ -371,10 +371,14 @@ fn an_unknown_target_still_has_to_cite_a_recorded_pit() {
 fn a_waiver_above_a_fix_window_is_not_read_as_one() {
     let both = "[[waiver]]\ncheck=\"CI-6\"\ntarget=\"src/a.rs\"\nreason=\"x\"\nowner=\"o\"\ndue=\"2099-01-01\"\n\n\
                 [[fix_window]]\ntarget=\"src/b.rs\"\ncap=10\nk_id=\"K-999\"\nreason=\"y\"\n";
+    // `src/a.rs` is 400 lines so the fixture's waiver actually EXEMPTS something. It
+    // was 100, and the idle-waiver check added in round 36 flagged it — correctly: a
+    // waiver on a file inside its budget exempts nothing, and this fixture was not
+    // written to be a case of that.
     let root = scratch(
         "fixwin-order",
-        &[("src/a.rs", 100), ("src/b.rs", 110)],
-        &[("src/a.rs", 100), ("src/b.rs", 100)],
+        &[("src/a.rs", 400), ("src/b.rs", 110)],
+        &[("src/a.rs", 400), ("src/b.rs", 100)],
         both,
     );
     let (code, out, err) = run_checker_at(&root, &[]);

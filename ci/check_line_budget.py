@@ -954,6 +954,32 @@ def run(root, budget, branch_budget, max_line, check, line_mode='warn', ratchet=
                   f"would produce a confident wrong number.", file=sys.stderr)
         return 3
 
+    # Misuse detection: a waiver that exempts NOTHING.
+    #
+    # The first attempt at this was wrong and I nearly recorded it as done. It flagged
+    # a target holding both a waiver and a fix_window — but those govern different
+    # rules (the waiver the 300-line budget, the fix_window the ratchet), so holding
+    # both is correct bookkeeping, and the two hits it produced were legitimate. A
+    # check that fires on correct input trains people to ignore it.
+    #
+    # What is actually checkable and actually wrong is a waiver whose target is inside
+    # its effective budget: it exempts nothing while looking like a granted exception,
+    # and it holds a slot that reads as "this file is a known problem". The existing
+    # stale check only catches a target that no longer EXISTS; this catches one that
+    # exists and no longer needs the exemption.
+    idle = sorted(
+        t for t in waived
+        if t in current and current[t] <= budget
+    )
+    if idle:
+        print(f"CHECKER ERROR: {len(idle)} waiver(s) exempt nothing — the target is inside "
+              f"its budget:", file=sys.stderr)
+        for t in idle:
+            print(f"        {t}: {current[t]} <= {budget}. Either it is stale and should be "
+                  f"removed, or it was granted against a size the file no longer has. A "
+                  f"waiver that exempts nothing still reads as 'known problem'.", file=sys.stderr)
+        return 3
+
     expired_seeds = []
     if today is not None:
         for k, (_n, gf, _c, _id) in seeds.items():

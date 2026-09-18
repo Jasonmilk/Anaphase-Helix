@@ -150,10 +150,10 @@ reason = "CI-7 itself. CORRECTED: recorded as 343 and re-taken there, then round
 
 [[seed]]
 target = "ci/check_line_budget.py"
-ncloc  = 823
+ncloc  = 913
 counter = 2
 k_id   = "K-038"
-reason = "CI-6 itself. CORRECTED: recorded as 811, true value 761, same `#`-comment miscount. Still long past 300 and waived below"
+reason = "CI-6 itself. CORRECTED twice: recorded 811, true 761 under counter v1, then 913 after the counter versioning, the language whitelist, the tooling tier and the misuse check landed in it. It now exceeds its own 900-line tooling tier, which is the signal that it is due a split rather than another re-take"
 
 # ------------------------------------------------------------------- tooling tier
 #
