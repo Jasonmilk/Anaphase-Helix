@@ -20,14 +20,11 @@ ncloc  = 1057
 target = "ci/canary/"
 ncloc  = 52
 [[ratchet]]
-target = "ci/canary/ncloc_known.rs"
-ncloc  = 52
-[[ratchet]]
 target = "ci/check_guards.py"
 ncloc  = 300
 [[ratchet]]
 target = "ci/check_line_budget.py"
-ncloc  = 757
+ncloc  = 687
 [[ratchet]]
 target = "src/"
 ncloc  = 9110

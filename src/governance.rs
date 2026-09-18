@@ -143,10 +143,42 @@ pub fn status(cfg: &AnaphaseConfig, probes: bool) -> Value {
         // Deliberately not called "unknown". A name with no definition is not an
         // unknown precondition; it is a name with no definition.
         "undefined_names": undefined,
+        // Non-null exactly while `governed` is unreachable, and naming the action
+        // that would make it reachable. A dead state with no unblock is dead on
+        // purpose; this one is not.
+        "unblock_governed": unblock_for_governed(),
         "unmet": unmet,
         "detail": detail.join("; "),
     })
 }
+
+/// What would make `governed` reachable, and where that work lives.
+///
+/// **Every unreachable state must carry its unblock, or it gets deleted.** Round
+/// 35's point: `governed` is unreachable *today* because a cross-organ read has not
+/// been written — that is a to-do, not an impossibility. Without a field saying so,
+/// the next person sees a dead `Governed => …` arm, concludes it is dead code, and
+/// removes it — and it is exactly the arm that must come alive on the day the read
+/// lands. Collapsing "not yet" into "never" is the same defect as collapsing
+/// "unknown" into "met".
+///
+/// `unblock` is `None` only when the state is reachable. A state that is unreachable
+/// with no unblock is a state nobody intends to reach, and that should be said
+/// outright rather than implied by a missing field.
+pub fn unblock_for_governed() -> Option<&'static str> {
+    if !unlocated_preconditions().is_empty() {
+        return Some(
+            "read Tuck's `audit_path` from Tuck's own config (a cross-organ read).              Until then the engine cannot establish whether the audit chain is              intact, which is what `governed` claims.",
+        );
+    }
+    if !undefined_preconditions().is_empty() {
+        return Some(
+            "B17 names a precondition this repository cannot define. Either give it              a config field or delete it from B17 — see the B17 revision in              CI-144_决策索引.md.",
+        );
+    }
+    None
+}
+
 
 /// B17, for the startup path: a line to log when the engine is not governed.
 ///

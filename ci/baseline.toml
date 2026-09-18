@@ -140,9 +140,9 @@ reason = "the safety gate, a pure move out of the Execution arm, seeded automati
 [[seed]]
 target = "src/governance.rs"
 grandfathered = "2026-10-09"
-ncloc  = 74
+ncloc  = 88
 k_id   = "B17"
-reason = "B17 governance visibility, seeded mid-development at 56 and grown by its own accessors"
+reason = "B17 governance visibility. RE-TAKEN three times in one work unit (56 -> 60 -> 74 -> 88) as the four-category split and the unblock field landed. That churn is itself a signal: a file whose seed is re-taken this often is still being designed, not fixed"
 
 # The auditors. Until now CI-6's walker only yielded `.rs`, so `ci/` was the one
 # directory nothing counted: CI-7 decides whether every guard in the repository is
@@ -156,13 +156,13 @@ reason = "B17 governance visibility, seeded mid-development at 56 and grown by i
 target = "ci/check_guards.py"
 ncloc  = 343
 k_id   = "K-042"
-reason = "CI-7 itself, seeded exactly at the 300-line budget. Its next line therefore needs a waiver or a split, which is the honest consequence of finally counting it rather than a problem to route around"
+reason = "CI-7 itself. CORRECTED: recorded as 343 and re-taken there, then round 35 found the counter only knew `//` so every Python `#` line counted as code. True value 316. The over-300 conclusion survives; the numbers do not."
 
 [[seed]]
 target = "ci/check_line_budget.py"
 ncloc  = 811
 k_id   = "K-038"
-reason = "CI-6 itself, long past 300 and waived below. The number was invisible only because the walker looked for .rs"
+reason = "CI-6 itself. CORRECTED: recorded as 811, true value 761, same `#`-comment miscount. Still long past 300 and waived below"
 
 # ---------------------------------------------------------------- fix windows
 #

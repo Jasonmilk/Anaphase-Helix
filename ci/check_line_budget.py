@@ -53,12 +53,89 @@ _BLOCK_OPEN = "/*"
 _BLOCK_CLOSE = "*/"
 
 
-def ncloc(text):
-    """Non-comment, non-blank physical lines."""
+TRIPLE_QUOTES = ('"""', "'''")
+SINGLE_QUOTES = ('"', "'")
+
+
+def _py_line_counts(line, in_str=None):
+    """(is_this_line_code, string_state_at_end_of_line) — quote-aware.
+
+    `#` inside a string is not a comment. A naive `line.split("#", 1)[0]` is right
+    whenever there is code before the marker — which is why the first version
+    survived a casual look — and wrong for a line that is *only* a string containing
+    `#`. That is the same trap the Rust canary pins for `//` inside a string
+    literal, and the Python path had no canary at all until round 35 asked for one.
+
+    **State is carried across lines** because the declared choice is that docstrings
+    count as code, and a docstring spans lines: its continuation lines contain
+    neither a `#` nor a triple quote, so a stateless scan reads them as blank and
+    drops them. The first version did exactly that and the unit case caught it.
+    A line inside a docstring therefore counts.
+    """
+    was_in_str = in_str is not None
+    saw_triple = False
+    i = 0
+    out = []
+    while i < len(line):
+        if in_str:
+            if line.startswith(in_str, i):
+                i += len(in_str)
+                in_str = None
+                continue
+            if line[i] == "\\":
+                i += 2
+                continue
+            i += 1
+            continue
+        if line[i] == "#":
+            break
+        triple = next((q for q in TRIPLE_QUOTES if line.startswith(q, i)), None)
+        if triple is not None:
+            in_str = triple
+            saw_triple = True
+            i += 3
+            continue
+        if line[i] in SINGLE_QUOTES:
+            # A single-quoted string cannot span a physical line; if it is left open
+            # the line still counts, which is the conservative answer.
+            in_str = line[i]
+            i += 1
+            continue
+        out.append(line[i])
+        i += 1
+    if in_str in SINGLE_QUOTES:
+        in_str = None
+    code = bool("".join(out).strip()) or was_in_str or saw_triple
+    return code, in_str
+
+
+def ncloc(text, lang="rust"):
+    """Non-comment, non-blank physical lines.
+
+    **`lang` was added late, and its absence was a real miscount.** The counter only
+    knew `//` and `/* */`, so every `#` line in a Python file was counted as code:
+    `ci/check_guards.py` read 343 when it was 311, and `ci/check_line_budget.py` 811
+    when it was 667. The canary did not catch it because the canary was Rust — it
+    proved the counter correct on the path it tested, while a second path went
+    untested. Same family as a numerator right and a denominator wrong.
+
+    Deliberate choice, stated rather than implied: **Python docstrings count as
+    code.** They are string literals that are part of the program, and unlike a `#`
+    comment they can be read at runtime. Treating them as comments would need a
+    parser to know whether a triple quote is a docstring or a value, and guessing
+    would make the number depend on formatting. `[ENG]`: this over-counts heavily
+    documented Python relative to Rust, where `///` is unambiguous.
+    """
     count = 0
     depth = 0
+    py_str = None
     for raw in text.splitlines():
         line = raw
+        if lang == "py":
+            counts, py_str = _py_line_counts(line, py_str)
+            if counts:
+                count += 1
+            continue
         out = []
         i = 0
         while i < len(line):
@@ -440,6 +517,31 @@ def load_waivers(path, check, today):
 # ── the check ───────────────────────────────────────────────────────────────
 
 DATA_ONLY_MARK = "//! DATA-ONLY"
+
+
+def declares_data_only(text, lang="rust"):
+    """Is this file DECLARING that it is DATA-ONLY?
+
+    Two tightenings, both forced by scanning `ci/` for the first time:
+
+      - **language**: the marker is `//! DATA-ONLY`, a Rust inner doc attribute. A
+        Python file cannot carry one, so a substring test on Python is a false
+        positive by construction — and it fired immediately, because
+        `check_line_budget.py` contains the marker as a string literal in this very
+        definition. The checker was marking itself DATA-ONLY and then failing itself
+        for having too many branches.
+      - **anchor**: it must start a line. Otherwise a file that merely *mentions* the
+        marker inside a string is declaring itself.
+
+    Same shape as the keys that matched nothing and the section that matched
+    everything: a test that is satisfied by a mention rather than a declaration.
+    """
+    if lang != "rust":
+        return False
+    for line in text.splitlines():
+        if line.startswith(DATA_ONLY_MARK):
+            return True
+    return False
 RATCHET_FILE = "ci/ratchet.gen.toml"
 PITS_FILE = "ci/pits.toml"
 # A fix may add at most this fraction of a target's own baseline. The absolute
@@ -478,9 +580,9 @@ def iter_sources(root):
         for name in sorted(filenames):
             rel = os.path.relpath(os.path.join(dirpath, name), root)
             if name.endswith(".rs"):
-                yield rel
+                yield rel, "rust"
             elif name.endswith(".py") and rel.replace(os.sep, "/").startswith("ci/"):
-                yield rel
+                yield rel, "py"
 
 
 def is_test_path(rel):
@@ -494,6 +596,10 @@ def is_test_path(rel):
     """
     parts = rel.split(os.sep)
     if "tests" in parts[:-1] or rel.endswith("_test.rs"):
+        return True
+    # `ci/canary/` is a fixture: a file whose line count is known by construction and
+    # read by a test. Budgeting it would be budgeting the ruler.
+    if "canary" in parts[:-1]:
         return True
     base = os.path.basename(rel)
     # A file whose stem is `tests` inside a module directory.
@@ -593,7 +699,7 @@ def run(root, budget, branch_budget, max_line, check, line_mode='warn', ratchet=
     split_window_open = bool(split_windows)
 
     violations, marker_failures, long_lines, over_budget = [], [], [], []
-    for rel in iter_sources(root):
+    for rel, lang in iter_sources(root):
         if is_test_path(rel):
             continue
         path = os.path.join(root, rel)
@@ -607,8 +713,8 @@ def run(root, budget, branch_budget, max_line, check, line_mode='warn', ratchet=
         # passes the branch budget below. The marker is a claim, and the claim
         # gets checked — that is the difference between this and a file signing
         # its own pass.
-        data_only = DATA_ONLY_MARK in text
-        n = ncloc(text)
+        data_only = declares_data_only(text, lang)
+        n = ncloc(text, lang)
         current[rel.replace(os.sep, "/")] = n
         key = rel.replace(os.sep, "/")
         # A fix window is the one allowance that reaches FILES. The split window

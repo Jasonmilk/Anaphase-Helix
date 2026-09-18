@@ -4,8 +4,8 @@
 //! the checker excludes `*_tests.rs` (spec §3).
 
 use crate::governance::{
-    known_preconditions, status, undefined_preconditions, unlocated_preconditions, warning,
-    PRECONDITIONS,
+    known_preconditions, status, unblock_for_governed, undefined_preconditions,
+    unlocated_preconditions, warning, PRECONDITIONS,
 };
 use crate::config::AnaphaseConfig;
 use std::net::TcpListener;
@@ -356,4 +356,43 @@ fn b17s_undefined_precondition_is_still_unresolved() {
         v["preconditions_total"], PRECONDITIONS,
         "the undefined name must not be counted in the total"
     );
+}
+
+/// An unreachable state must carry the condition that would unblock it.
+///
+/// `governed` cannot be reached today, and the temptation for the next reader is to
+/// see a `Governed => …` arm that never runs and delete it as dead code. But it is
+/// not dead — it is *not yet*, because a cross-organ read has not been written. The
+/// two are different and a missing field makes them look the same.
+///
+/// So: while `governed` is unreachable, `unblock_for_governed()` must be `Some`, and
+/// it must name an action rather than a condition. When the precondition set empties
+/// and `governed` becomes reachable, this goes red — and the right response is to
+/// delete the unblock, not to invent one.
+#[test]
+fn an_unreachable_state_must_say_what_would_unblock_it() {
+    let unreachable = governed_is_unreachable();
+    let unblock = unblock_for_governed();
+    assert_eq!(
+        unreachable,
+        unblock.is_some(),
+        "reachability and the unblock field must agree: unreachable={unreachable}, \
+         unblock={unblock:?}. A state that is unreachable with no unblock is a state \
+         nobody intends to reach; a reachable state with one is a stale instruction."
+    );
+    let text = unblock.expect("governed is unreachable, so it must be unblockable");
+    assert!(
+        text.contains("read") || text.contains("give it") || text.contains("delete"),
+        "the unblock must name an ACTION, not restate the condition: {text:?}"
+    );
+    // And it must reach the payload, or it is a private note.
+    let v = status(&configured(None), false);
+    assert!(
+        v["unblock_governed"].is_string(),
+        "the unblock must be queryable at /v1/health: {v}"
+    );
+}
+
+fn governed_is_unreachable() -> bool {
+    !unlocated_preconditions().is_empty() || !undefined_preconditions().is_empty()
 }

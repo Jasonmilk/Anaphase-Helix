@@ -369,3 +369,80 @@ fn a_waiver_above_a_fix_window_is_not_read_as_one() {
     );
 }
 
+
+/// The counter's SECOND path has its own fixture.
+///
+/// The Rust canary proved the counter correct on the path it tested, and the
+/// Python path went untested — so every `#` comment in a Python file was counted as
+/// code. `ci/check_guards.py` read 343 when it was 311 and
+/// `ci/check_line_budget.py` 811 when it was 667. The conclusion "CI-7 is over the
+/// 300-line budget" survived; the numbers did not, and they had been written into
+/// signed seeds.
+///
+/// Round 35's framing, which is the right one: a canary safeguards the path it
+/// exercises, and the count went down a different one. Same family as a numerator
+/// that is right and a denominator that is not.
+///
+/// The fixture carries the trap on purpose: a line that is only a string containing
+/// `#`, and a multi-line docstring whose continuation lines contain neither `#` nor
+/// a triple quote. A naive scan gets both wrong.
+#[test]
+fn the_counter_reports_a_known_value_for_the_python_canary() {
+    let root = env!("CARGO_MANIFEST_DIR");
+    let out = Command::new("python3")
+        .arg("-c")
+        .arg(format!(
+            "import importlib.util\n\
+             s = importlib.util.spec_from_file_location('clb', {root:?} + '/ci/check_line_budget.py')\n\
+             m = importlib.util.module_from_spec(s); s.loader.exec_module(m)\n\
+             t = open({root:?} + '/ci/canary/ncloc_known.py', encoding='utf-8').read()\n\
+             print(m.ncloc(t, 'py'), m.ncloc(t, 'rust'))"
+        ))
+        .output()
+        .unwrap_or_else(|e| panic!("cannot run the counter: {e}"));
+    let got = String::from_utf8_lossy(&out.stdout);
+    let mut parts = got.split_whitespace();
+    let py: i64 = parts.next().and_then(|x| x.parse().ok()).unwrap_or(-1);
+    let rust: i64 = parts.next().and_then(|x| x.parse().ok()).unwrap_or(-1);
+    assert_eq!(
+        py, 45,
+        "the PYTHON path no longer agrees with its canary. 45 = 40 code lines + 1 \
+         inline-comment line + 1 bare-string line + 3 docstring lines; the 15 `#` \
+         lines do not count. Got {py}."
+    );
+    assert_eq!(
+        rust, 65,
+        "reading the Python fixture with the RUST rules must give a visibly different \
+         number — that gap is the defect this canary was built for, and if it has \
+         closed, the two paths have merged and one of them is now untested. Got {rust}."
+    );
+}
+
+/// The DATA-ONLY marker is a declaration, not a mention.
+///
+/// Scanning `ci/` for the first time made the checker mark ITSELF data-only: the
+/// marker string appears in `ci/check_line_budget.py` inside the definition of the
+/// marker. It then failed itself for having too many branches. The marker is a Rust
+/// inner doc attribute, so a Python file cannot carry one, and it must start a line.
+#[test]
+fn the_data_only_marker_requires_a_declaration_not_a_mention() {
+    let root = env!("CARGO_MANIFEST_DIR");
+    let out = Command::new("python3")
+        .arg("-c")
+        .arg(format!(
+            "import importlib.util\n\
+             s = importlib.util.spec_from_file_location('clb', {root:?} + '/ci/check_line_budget.py')\n\
+             m = importlib.util.module_from_spec(s); s.loader.exec_module(m)\n\
+             print(m.declares_data_only(open({root:?} + '/src/config.rs', encoding='utf-8').read(), 'rust'),\n\
+             \x20     m.declares_data_only(open({root:?} + '/ci/check_line_budget.py', encoding='utf-8').read(), 'py'),\n\
+             \x20     m.declares_data_only('let x = \\\"//! DATA-ONLY\\\";', 'rust'))"
+        ))
+        .output()
+        .unwrap_or_else(|e| panic!("cannot run the checker: {e}"));
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout).trim(),
+        "True False False",
+        "expected: config.rs declares it (True), a Python file cannot (False), and a \
+         Rust string that merely MENTIONS the marker must not (False)"
+    );
+}
