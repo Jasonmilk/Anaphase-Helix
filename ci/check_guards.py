@@ -46,6 +46,7 @@ Exit codes: 0 = ran, every guard real; 1 = ran, some guard is decoration or the
 budget is exceeded; 3 = could not run, so it judged nothing.
 """
 
+import json
 import os
 import re
 import subprocess
@@ -343,7 +344,8 @@ def main():
     # actually wrong: a decoration guard, an already-red test, a mutation that does
     # not compile.
     budget = settings["budget_seconds"]
-    if elapsed > budget:
+    over = elapsed > budget
+    if over:
         print(f"WARN  CI-7 took {elapsed:.0f}s against a declared budget of {budget}s "
               f"with {len(selected)} guard(s).")
         print("        Not a failure: a check that is expensive to extend is one that stops")
@@ -353,6 +355,30 @@ def main():
     note = f" ({len(skipped)} slow guard(s) skipped by --skip-slow)" if skipped else ""
     print(f"OK    {len(selected)} guard(s) verified: each declared mutation reddens its NAMED test, "
           f"the build still compiles, and every test is green without it. {elapsed:.0f}s of {budget}s.{note}")
+
+    # A WARN nobody can read is K-029: a ledger with no reader. So the cost numbers
+    # get a consumer in two shapes — a machine-readable line for whatever collects
+    # CI output, and a file on disk for anyone who asks later. `over_budget` is an
+    # explicit boolean rather than something to infer from two numbers, because
+    # inferring it is how a reader gets it wrong once and stops trusting it.
+    summary = {
+        "guards": len(selected),
+        "skipped_slow": len(skipped),
+        "seconds": round(elapsed, 1),
+        "budget_seconds": budget,
+        "over_budget": bool(over),
+        "decoration": 0,
+    }
+    print("CI7-SUMMARY " + json.dumps(summary, sort_keys=True))
+    try:
+        os.makedirs(os.path.join(root, "target"), exist_ok=True)
+        with open(os.path.join(root, "target", "ci7-report.json"), "w", encoding="utf-8") as fh:
+            json.dump(summary, fh, sort_keys=True, indent=1)
+    except OSError as e:
+        # Not fatal: the line above is the primary consumer. But it must not be
+        # silent, because a report that quietly fails to be written is the same
+        # class of thing as a ledger nobody reads.
+        print(f"WARN  could not write target/ci7-report.json: {e}", file=sys.stderr)
     return 0
 
 

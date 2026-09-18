@@ -38,3 +38,4 @@ events.jsonl
 # goes dirty on every run and reads as a "file a human is editing" when it is
 # nothing of the kind.
 session_notes.json
+target/

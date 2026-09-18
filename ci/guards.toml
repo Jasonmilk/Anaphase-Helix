@@ -60,17 +60,29 @@ id     = "governed-is-dead"
 test   = "governed_is_dead_code_until_a_precondition_gains_a_source"
 kind   = "lib"
 file   = "src/governance.rs"
-from   = "    &[\"anaphase_endpoint\", \"tuck_audit_path\"]"
+from   = "    &[\"tuck_audit_path\"]"
 to     = "    &[]"
 k_id   = "B17"
 
 [[guard]]
 id     = "governance-states"
-test   = "a_missing_precondition_is_reported_as_ungoverned_not_as_ok"
+test   = "preconditions_that_are_not_readable_here_do_not_let_the_engine_claim_governed"
 kind   = "lib"
 file   = "src/governance.rs"
-from   = "    let state = if !unmet.is_empty() {\n        \"ungoverned\"\n    } else if !unknown.is_empty() {\n        \"indeterminate\"\n    } else {\n        \"governed\"\n    };"
-to     = "    let state = \"governed\";"
+from   = "    } else if !unlocated.is_empty() || !undefined.is_empty() {"
+to     = "    } else if false {"
+k_id   = "B17"
+
+# The ghost pin. A name B17 lists that this repository cannot define is reported in
+# its own field and excluded from the total; the mutation simulates someone finally
+# resolving it, which must force the re-derivation K-040 asked for.
+[[guard]]
+id     = "undefined-names-stay-loud"
+test   = "b17s_undefined_precondition_is_still_unresolved"
+kind   = "lib"
+file   = "src/governance.rs"
+from   = "    &[\"anaphase_endpoint\"]"
+to     = "    &[]"
 k_id   = "B17"
 
 [[guard]]

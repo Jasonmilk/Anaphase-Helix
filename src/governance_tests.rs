@@ -3,7 +3,10 @@
 //! Split out rather than inline so the test code is not budgeted as production;
 //! the checker excludes `*_tests.rs` (spec §3).
 
-use crate::governance::{known_preconditions, status, unknown_preconditions, warning, PRECONDITIONS};
+use crate::governance::{
+    known_preconditions, status, undefined_preconditions, unlocated_preconditions, warning,
+    PRECONDITIONS,
+};
 use crate::config::AnaphaseConfig;
 use std::net::TcpListener;
 
@@ -36,8 +39,13 @@ fn a_missing_precondition_is_reported_as_ungoverned_not_as_ok() {
     let detail = v["detail"].as_str().unwrap();
     assert!(detail.contains("not configured"), "{detail}");
     assert!(
-        detail.contains("no config source"),
-        "and the preconditions this build cannot see must be stated: {detail}"
+        detail.contains("defined outside this crate"),
+        "and the preconditions this build cannot read must be stated: {detail}"
+    );
+    assert!(
+        detail.contains("no definition anywhere"),
+        "and B17's undefined name must be reported as a defect in its text, not as \
+         an uncertainty here: {detail}"
     );
 }
 
@@ -46,7 +54,7 @@ fn a_missing_precondition_is_reported_as_ungoverned_not_as_ok() {
 /// source rather than a missing guarantee. Hence the third state, and hence
 /// `governed` being unreachable while two preconditions have no source.
 #[test]
-fn unknown_preconditions_do_not_let_the_engine_claim_governed() {
+fn preconditions_that_are_not_readable_here_do_not_let_the_engine_claim_governed() {
     let (_l, addr) = live_endpoint();
     let v = status(&configured(Some(&addr)), true);
     assert_eq!(
@@ -55,10 +63,17 @@ fn unknown_preconditions_do_not_let_the_engine_claim_governed() {
          governed: {v}"
     );
     assert!(v["unmet"].as_array().unwrap().is_empty(), "{v}");
-    assert_eq!(v["preconditions_known"], 1);
-    assert_eq!(v["preconditions_total"], PRECONDITIONS);
+    assert_eq!(
+        v["preconditions_readable"].as_array().unwrap().len(),
+        1,
+        "only tuck_endpoint is readable here"
+    );
+    assert_eq!(
+        v["preconditions_total"], PRECONDITIONS,
+        "and the total counts only names with a definition"
+    );
     assert!(
-        v["unknown"].as_array().unwrap().contains(&serde_json::json!("tuck_audit_path")),
+        v["preconditions_unlocated"].as_array().unwrap().contains(&serde_json::json!("tuck_audit_path")),
         "{v}"
     );
 }
@@ -79,7 +94,7 @@ fn an_unreachable_precondition_is_reported_with_its_endpoint() {
 fn the_startup_warning_fires_for_every_non_governed_state() {
     let ungoverned = warning(&configured(None)).expect("must warn");
     assert!(ungoverned.contains("ungoverned"), "{ungoverned}");
-    assert!(ungoverned.contains("known: 1/3"), "and give the count: {ungoverned}");
+    assert!(ungoverned.contains("known: 1/2"), "and give the count: {ungoverned}");
 
     let (_l, addr) = live_endpoint();
     let indeterminate = warning(&configured(Some(&addr))).expect("must warn");
@@ -110,29 +125,37 @@ fn the_health_payload_carries_governance_separately_from_ok() {
 /// nothing to say so.
 ///
 /// So unreachability is pinned rather than tolerated. When a precondition gains a
-/// config source, `unknown_preconditions` shrinks, this goes red, and whoever
+/// config source, `unlocated`/`undefined` shrink, this goes red, and whoever
 /// moved it is told to re-derive the states and test whatever now handles
 /// `governed`. The failure message says that, because the assertion's job is to
 /// force a decision, not merely to be red.
-// guards: governed-is-dead,config-fields-classified
+// guards: governed-is-dead,config-fields-classified,undefined-names-stay-loud
 #[test]
 fn governed_is_dead_code_until_a_precondition_gains_a_source() {
     let known = known_preconditions();
-    let unknown = unknown_preconditions();
+    let unlocated = unlocated_preconditions();
+    let undefined = undefined_preconditions();
 
     assert_eq!(
-        known.len() + unknown.len(),
+        known.len() + unlocated.len(),
         PRECONDITIONS,
-        "the two lists must account for every precondition B17 names, or one is \
-         being counted nowhere"
+        "the DEFINED preconditions must account for the total. `undefined` is not \
+         part of it: a name with no definition is not a precondition, it is a defect \
+         in B17's text, and counting it would make the total describe a list that \
+         does not exist"
     );
+    for (a, b, an, bn) in [
+        (known, unlocated, "known", "unlocated"),
+        (known, undefined, "known", "undefined"),
+        (unlocated, undefined, "unlocated", "undefined"),
+    ] {
+        assert!(
+            a.iter().all(|k| !b.contains(k)),
+            "a name cannot be in both {an} and {bn}: {a:?} vs {b:?}"
+        );
+    }
     assert!(
-        known.iter().all(|k| !unknown.contains(k)),
-        "a precondition cannot both have and lack a config source: known={known:?} \
-         unknown={unknown:?}"
-    );
-    assert!(
-        !unknown.is_empty(),
+        !(unlocated.is_empty() && undefined.is_empty()),
         "a precondition gained a config source, so `governed` may now be REACHABLE. \
          This assertion exists to make that day loud. Before deleting it: re-derive \
          the three states, check whether anything handles `governed` — and if it \
@@ -158,15 +181,22 @@ fn governed_is_dead_code_until_a_precondition_gains_a_source() {
 #[test]
 fn the_payload_counts_come_from_the_same_lists() {
     let v = status(&configured(None), false);
-    assert_eq!(v["preconditions_known"], known_preconditions().len());
     assert_eq!(
-        v["unknown"].as_array().unwrap().len(),
-        unknown_preconditions().len()
+        v["preconditions_readable"].as_array().unwrap().len(),
+        known_preconditions().len()
+    );
+    assert_eq!(
+        v["preconditions_unlocated"].as_array().unwrap().len(),
+        unlocated_preconditions().len()
+    );
+    assert_eq!(
+        v["undefined_names"].as_array().unwrap().len(),
+        undefined_preconditions().len()
     );
     assert_eq!(v["preconditions_total"], PRECONDITIONS);
 }
 
-/// `unknown_preconditions()` cannot express "we do not know what we do not know".
+/// A self-reporting set cannot express "we do not know what we do not know".
 ///
 /// Its own list is the only source of truth for what is unknown, so a fourth
 /// precondition added to the config tomorrow would appear in neither list and
@@ -226,7 +256,9 @@ fn every_option_config_field_is_classified() {
     let mut unclassified = Vec::new();
     for name in &found {
         let is_precondition =
-            known_preconditions().contains(&name.as_str()) || unknown_preconditions().contains(&name.as_str());
+            known_preconditions().contains(&name.as_str())
+                || unlocated_preconditions().contains(&name.as_str())
+                || undefined_preconditions().contains(&name.as_str());
         if !is_precondition && !NOT_A_PRECONDITION.contains(&name.as_str()) {
             unclassified.push(name.clone());
         }
@@ -256,11 +288,72 @@ fn every_option_config_field_is_classified() {
     // Both are ungovernable from this crate today, so both stay in the unknown
     // bucket. Naming the difference matters because the fix differs: one needs a
     // cross-organ read, the other needs the field to exist first.
-    for name in known_preconditions() {
+    for name in known_preconditions().iter().chain(unlocated_preconditions()) {
+        // `unlocated` names are exempt from the "must exist in config.rs" rule
+        // only when they are declared as belonging to another organ. The one that
+        // does is Tuck's, so it is checked against a stated list rather than
+        // against this crate's config.
+        if !known_preconditions().contains(name) {
+            continue;
+        }
         assert!(
             found.contains(&name.to_string()),
             "`{name}` is declared a precondition this build can READ, but no such \
              Option field exists in config.rs, so the declaration has outlived its subject"
         );
     }
+}
+
+/// B17's undefined precondition is **still unresolved**, and this pin makes
+/// resolving it loud.
+///
+/// Round 34's point, and it is the sharpest thing said about this module: because
+/// `anaphase_endpoint` sat in the "unknown" bucket, `unknown` was non-empty, so
+/// `governed` was unreachable — and that "unreachability" might have been a naming
+/// accident rather than an architectural fact. **A mechanism for detecting what
+/// cannot be seen must not be blind to what it is locked by.**
+///
+/// So the ghost is reported in its own field and excluded from the total, and this
+/// test states the current truth: the name is unresolved. The day someone defines
+/// it (a real config field) or deletes it from B17, this goes red, and whoever
+/// moved it is told to re-derive the three states — which is exactly the
+/// re-derivation K-040 asked for.
+///
+/// Note that K-040's mutation still holds either way: emptying `unlocated` and
+/// `undefined` together still reddens the unreachability assertion. What changed is
+/// *why* `governed` is unreachable — and the reason is now a fact rather than a
+/// possible typo.
+#[test]
+fn b17s_undefined_precondition_is_still_unresolved() {
+    let undefined = undefined_preconditions();
+    assert_eq!(
+        undefined,
+        &["anaphase_endpoint"],
+        "B17's undefined precondition has been defined or removed. Before updating \
+         this test: re-derive the three states, check whether `governed` became \
+         reachable, and if it did, note that whatever handles it stops being dead \
+         code. If the name was DELETED from B17 rather than given a field, also \
+         correct PRECONDITIONS and the B17 entry in the decision index."
+    );
+
+    // And the reason `governed` is unreachable must be a fact, not the ghost:
+    // the cross-organ source is what actually keeps it out of reach.
+    assert!(
+        !unlocated_preconditions().is_empty(),
+        "if `unlocated` ever empties while `undefined` is non-empty, then the only \
+         thing blocking `governed` would be the ghost name — which would mean the \
+         module is reporting a typo as architectural uncertainty"
+    );
+
+    // The ghost must not leak into the arithmetic.
+    assert_eq!(
+        known_preconditions().len() + unlocated_preconditions().len(),
+        PRECONDITIONS
+    );
+    let v = status(&configured(None), false);
+    assert_eq!(v["undefined_names"][0], "anaphase_endpoint");
+    assert_eq!(
+        v["preconditions_total"], PRECONDITIONS,
+        "the undefined name must not be counted in the total"
+    );
 }

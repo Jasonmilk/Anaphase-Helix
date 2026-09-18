@@ -319,7 +319,7 @@ def load_pits(path):
     return out
 
 
-def load_seeds(path):
+def load_seeds(path, today=None):
     """Hand-signed seed values for keys that have no baseline yet.
 
     A new key is the one place the ratchet can move UP: `min(old, current)` never
@@ -331,6 +331,14 @@ def load_seeds(path):
     So a seed is a decision, and it is signed here, out of band, citing the pit or
     ADR that justifies it. The automatic write-back may only CONSUME a signature;
     when it meets a key with none, it refuses and says so.
+
+    **`grandfathered` is a migration window, not a permanent category.** Three keys
+    were seeded automatically before this gate existed and were signed afterwards.
+    Signing them after the fact is honest but it dilutes the rule: if any past value
+    can be signed retroactively, "hand-signed" stops meaning "decided in advance".
+    So a grandfathered seed carries a deadline, and past it the checker refuses —
+    the seed must be re-taken deliberately, or the file split, or the entry removed.
+    Same shape as `[[split_window]]`: bounded, dated, and it expires on its own.
     """
     if not os.path.exists(path):
         return {}
@@ -349,7 +357,7 @@ def load_seeds(path):
             )
         if not cur.get("ncloc"):
             raise WaiverError(f"seed for {cur['target']!r} has no ncloc")
-        out[cur["target"]] = int(cur["ncloc"])
+        out[cur["target"]] = (int(cur["ncloc"]), cur.get("grandfathered"))
 
     in_seed = False
     for raw in open(path, encoding="utf-8"):
@@ -527,7 +535,27 @@ def run(root, budget, branch_budget, max_line, check, line_mode='warn', ratchet=
     ratchet_base = load_ratchet(ratchet_path) if ratchet else {}
     # Captured BEFORE any override: an override is a test affordance, and letting
     # it inflate a fix cap would mean a forced baseline could widen an allowance.
+    # A signed seed may also RE-TAKE an existing key. `min(old, current)` keeps the
+    # automatic path one-directional, but it left no sanctioned way to raise a
+    # baseline at all -- and the fix_window's 10% ratio then blocks genuinely small
+    # files, whose floor is 5 lines. A correctness fix to a 56-line module cannot be
+    # squeezed into 5 lines, and pretending otherwise pushes the author toward a
+    # worse design to satisfy a budget.
+    #
+    # So a seed whose `ncloc` exceeds the recorded baseline IS the raise, and it is
+    # hand-signed with a pit id in `baseline.toml`. The protection is not that raises
+    # are impossible; it is that no AUTOMATIC path can make one. Every re-take is
+    # reported below, by name, so it appears in the output rather than in a diff
+    # nobody reads.
+    try:
+        seeds = load_seeds(waivers_path, today) if ratchet else {}
+    except WaiverError as e:
+        print(f"CHECKER ERROR: {waivers_path}: {e}", file=sys.stderr)
+        return 3
     cap_base = dict(ratchet_base)
+    retaken = sorted(k for k, (n, _g) in seeds.items() if k in ratchet_base and n > ratchet_base[k])
+    for k in retaken:
+        cap_base[k] = seeds[k][0]
     pits_path = os.path.join(root, PITS_FILE)
     try:
         waived, expired = load_waivers(waivers_path, check, today)
@@ -542,7 +570,6 @@ def run(root, budget, branch_budget, max_line, check, line_mode='warn', ratchet=
         fix_windows = (
             load_fix_windows(waivers_path, cap_base, load_pits(pits_path)) if ratchet else {}
         )
-        seeds = load_seeds(waivers_path) if ratchet else {}
     except WaiverError as e:
         print(f"CHECKER ERROR: {waivers_path}: {e}", file=sys.stderr)
         return 3
@@ -590,8 +617,9 @@ def run(root, budget, branch_budget, max_line, check, line_mode='warn', ratchet=
         # add them to one file. A fix does add them to one file, and it says
         # which one.
         fix_allow = fix_windows.get(key, (0, None))[0]
-        if key in ratchet_base and n > ratchet_base[key] + fix_allow:
-            grown.append((rel, ratchet_base[key], n, fix_allow))
+        eff_base = cap_base.get(key, ratchet_base.get(key, 0))
+        if key in ratchet_base and n > eff_base + fix_allow:
+            grown.append((rel, eff_base, n, fix_allow))
         # Directory totals too: a file-level ratchet alone can be dodged by
         # splitting one file into two, because new files have no baseline. The
         # directory total cannot be dodged that way — moving lines around inside
@@ -655,11 +683,24 @@ def run(root, budget, branch_budget, max_line, check, line_mode='warn', ratchet=
     # passed its own positive control by doing nothing. And more importantly, an
     # invalid seed must stop the write-back rather than be reported alongside it,
     # or the checker has already taken the upward step it is complaining about.
+    expired_seeds = []
+    if today is not None:
+        for k, (_n, gf) in seeds.items():
+            if not gf:
+                continue
+            try:
+                y, m, d = (int(x) for x in gf.split("-"))
+                # strict <: on the due date itself the window is still open
+                if date(y, m, d) < today:
+                    expired_seeds.append((k, gf))
+            except ValueError:
+                raise WaiverError(f"seed for {k!r} has an unparseable grandfathered date: {gf!r}")
+
     if ratchet and not emit:
         for k, v in current.items():
-            if k in ratchet_base:
+            if k in cap_base:
                 continue
-            signed = seeds.get(k)
+            signed = (seeds.get(k) or (None, None))[0]
             if signed is None:
                 unseeded.append(k)
             elif v > signed:
@@ -765,9 +806,21 @@ def run(root, budget, branch_budget, max_line, check, line_mode='warn', ratchet=
         print(f"{tag}  {len(over_budget)} file(s) over {budget} NOCL with no waiver:{note}")
         for rel, n in over_budget:
             print(f"        {rel}  {n}")
-    # Printed BEFORE the early PASS return. It used to sit after it, so the
-    # advisory appeared only when something else had already failed -- a file 757
-    # lines over a 300-line budget was reported to nobody on a clean run.
+    # Both advisories print BEFORE the early PASS return. The over-300 one used to
+    # sit after it, so it appeared only when something else had already failed -- a
+    # file 757 lines over a 300-line budget was reported to nobody on a clean run.
+    if retaken:
+        print(f"WARN  {len(retaken)} seed(s) were RE-TAKEN to a higher value by hand:")
+        for k in retaken:
+            print(f"        {k}  {ratchet_base.get(k)} -> {seeds[k][0]}  (k_id {seeds[k][1] and ''})")
+        print("        The automatic path can only lower. A raise is a decision, and these are the")
+        print("        decisions: each is signed in baseline.toml with a pit id.")
+    open_gf = [(k, seeds[k][1]) for k in sorted(seeds)
+               if k in current and seeds[k][1] and k not in {x for x, _ in expired_seeds}]
+    if open_gf:
+        print(f"WARN  {len(open_gf)} grandfathered seed(s) still inside their migration window:")
+        for k, gf in open_gf:
+            print(f"        {k}  (due {gf}) — signed after the rule existed; re-take it deliberately, or the rule means nothing")
     ok = not blocking
     if ok:
         extra = ""

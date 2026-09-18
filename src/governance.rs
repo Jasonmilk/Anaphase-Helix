@@ -32,10 +32,15 @@
 use crate::config::AnaphaseConfig;
 use serde_json::{json, Value};
 
-/// B17's precondition count. Named because `preconditions_known` only means
-/// something against it, and a bare `2` in a payload would be an unexplained
-/// number of exactly the kind this ledger keeps correcting.
-pub const PRECONDITIONS: usize = 3;
+/// How many of B17's preconditions this repository can talk about at all.
+///
+/// **Corrected from 3 to 2.** B17 names three, but one (`anaphase_endpoint`) is
+/// defined nowhere, so counting it made the total describe a list that does not
+/// exist — and made `preconditions_known` a fraction of a fiction. The two counted
+/// here are the ones with a definition: `tuck_endpoint` in this crate,
+/// `tuck_audit_path` in Tuck. The third is reported by
+/// [`undefined_preconditions`] as a defect in B17's own text.
+pub const PRECONDITIONS: usize = 2;
 
 /// The preconditions this build can actually read.
 ///
@@ -50,8 +55,33 @@ pub fn known_preconditions() -> &'static [&'static str] { &["tuck_endpoint"] }
 /// not assumed — see `governed_is_dead_code_until_a_precondition_gains_a_source`.
 /// The day one of these gains a source, that assertion goes red on purpose,
 /// because `governed` stops being dead and whatever handles it needs tests.
-pub fn unknown_preconditions() -> &'static [&'static str] {
-    &["anaphase_endpoint", "tuck_audit_path"]
+pub fn unlocated_preconditions() -> &'static [&'static str] {
+    &["tuck_audit_path"]
+}
+
+/// Names B17 lists as preconditions that **this repository cannot define at all**.
+///
+/// A fourth category on purpose, because folding it into "unknown" launders a
+/// defect into an honest uncertainty.
+///
+/// `anaphase_endpoint` is named in B17 and appears nowhere else: no config field,
+/// no reader, no writer. The nearest real thing is `cap_http_port`, a `u16` with a
+/// default, which **cannot be unmet** — so if that is what B17 means, it is not a
+/// precondition; if it means something else, that something does not exist. Either
+/// way B17's own text is wrong, and nothing in this repository distinguishes the
+/// two readings.
+///
+/// **Why it must not be reported as `unknown`.** In the output, "unknown" and
+/// "undefined" would be indistinguishable, and the next reader of `indeterminate`
+/// would take it for the system being candid about a precondition it cannot see —
+/// when it may only be reporting a naming accident. A mechanism for detecting what
+/// cannot be seen must not be blind to what it is locked by.
+///
+/// So it gets its own field, it does **not** count toward [`PRECONDITIONS`], and it
+/// is listed here so that resolving it — define the name, or delete it from B17 —
+/// is a deliberate act with an obvious place to happen.
+pub fn undefined_preconditions() -> &'static [&'static str] {
+    &["anaphase_endpoint"]
 }
 
 /// Which of the three hold, and which cannot be seen. See the module docs.
@@ -79,17 +109,27 @@ pub fn status(cfg: &AnaphaseConfig, probes: bool) -> Value {
 
     // No config source in this crate yet. Listed so their absence is stated
     // rather than silently counted as satisfied.
-    let unknown = unknown_preconditions();
-    detail.push(format!(
-        "{} of {} precondition(s) have no config source in this crate yet: {}",
-        unknown.len(),
-        PRECONDITIONS,
-        unknown.join(", ")
-    ));
+    let unlocated = unlocated_preconditions();
+    let undefined = undefined_preconditions();
+    if !unlocated.is_empty() {
+        detail.push(format!(
+            "{} precondition(s) are defined outside this crate: {}",
+            unlocated.len(),
+            unlocated.join(", ")
+        ));
+    }
+    if !undefined.is_empty() {
+        detail.push(format!(
+            "{} name(s) B17 lists as preconditions have no definition anywhere: {} \
+             — a defect in B17's own text, not an uncertainty here",
+            undefined.len(),
+            undefined.join(", ")
+        ));
+    }
 
     let state = if !unmet.is_empty() {
         "ungoverned"
-    } else if !unknown.is_empty() {
+    } else if !unlocated.is_empty() || !undefined.is_empty() {
         "indeterminate"
     } else {
         "governed"
@@ -98,9 +138,12 @@ pub fn status(cfg: &AnaphaseConfig, probes: bool) -> Value {
     json!({
         "state": state,
         "preconditions_total": PRECONDITIONS,
-        "preconditions_known": PRECONDITIONS - unknown.len(),
+        "preconditions_readable": known_preconditions(),
+        "preconditions_unlocated": unlocated,
+        // Deliberately not called "unknown". A name with no definition is not an
+        // unknown precondition; it is a name with no definition.
+        "undefined_names": undefined,
         "unmet": unmet,
-        "unknown": unknown,
         "detail": detail.join("; "),
     })
 }
@@ -118,7 +161,7 @@ pub fn warning(cfg: &AnaphaseConfig) -> Option<String> {
     Some(format!(
         "governance: {state} — {} (preconditions known: {}/{})",
         gov["detail"].as_str().unwrap_or(""),
-        gov["preconditions_known"].as_u64().unwrap_or(0),
+        gov["preconditions_readable"].as_array().map(|a| a.len()).unwrap_or(0),
         gov["preconditions_total"].as_u64().unwrap_or(0),
     ))
 }

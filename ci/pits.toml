@@ -57,3 +57,8 @@ summary  = "A runtime counter reporting 0 needs a positive control, because unli
 id       = "K-042"
 recorded = "2026-09-18"
 summary  = "CI-7 treated any non-zero exit as a red test, so a mutation that merely broke the build verified the guard. Sixth instance of the reachability-versus-capability family, and the discipline it violated had been written down the previous round"
+
+[[pit]]
+id       = "K-043"
+recorded = "2026-09-18"
+summary  = "One green run does not falsify an intermittent failure. Ten consecutive full suites on a frozen revision settled it; the first attempt was void because the tree was edited during the runs, and nothing in the script could say so"
