@@ -519,6 +519,10 @@ fn the_transition_table_has_exactly_these_edges() {
 
 /// The impasse path specifically, because it is the one the early rounds kept
 /// asking about and because nothing else walks it.
+///
+/// Scope note: this asserts the *edge* and nothing else. It used to say the
+/// outcome was marked in Reflection, which was never tested — and was false.
+/// See `a_declared_impasse_survives_to_the_outcome` below for the marking.
 #[test]
 fn an_impasse_goes_to_reflection() {
     use crate::states::HelixState as S;
@@ -527,7 +531,55 @@ fn an_impasse_goes_to_reflection() {
             .transitions
             .get(&(S::Reasoning, TransitionCondition::Impass)),
         Some(&S::Reflection),
-        "an impasse must reach Reflection, where the outcome is marked"
+        "an impasse must reach Reflection"
+    );
+}
+
+/// Reasoning that declares an impasse: `{"impasse": true}` is the model saying
+/// it cannot proceed.
+struct ImpasseReasoning;
+
+#[async_trait::async_trait]
+impl crate::adapters::ReasoningAdapter for ImpasseReasoning {
+    async fn reason(&self, _input: &str, _mode: &str, _trace_id: &str) -> Result<String, String> {
+        Ok("{\"impasse\":true}".to_string())
+    }
+}
+
+/// The model's own impasse has to survive to the outcome.
+///
+/// This is the case `an_impasse_goes_to_reflection` could not see. `outcome`
+/// recomputed `impasse` at period end from the condition that entered
+/// Perception, and the only edge into Perception is `(Reflection, Success)` —
+/// so a declared impasse was overwritten by that Success before anyone looked.
+/// `impasse` was true only for an undefined transition, i.e. a synonym for
+/// `!done` rather than the independent fact its doc comment advertised.
+///
+/// The pre-existing `an_incomplete_period_is_bounded_and_distinguishable` stayed
+/// green through all of this: it reaches `impasse = true` down the undefined
+/// path, so it cannot distinguish "an impasse was declared" from "a rule was
+/// missing". Both are impasses — but only one of them was ever reachable.
+#[tokio::test]
+async fn a_declared_impasse_survives_to_the_outcome() {
+    let mut agent = AgentLoop::new(
+        Arc::new(NoopMemoryAdapter),
+        Arc::new(ImpasseReasoning),
+        Arc::new(NoopToolAdapter),
+        Arc::new(NoopSafetyAdapter),
+        Arc::new(NoopUiAdapter),
+        Arc::new(NoopFearAdapter),
+        ReflexArc {
+            safety_rules: vec![],
+        },
+    );
+    let outcome = agent
+        .run_cycle("I cannot proceed")
+        .await
+        .expect("an impasse is an outcome, not an error");
+    assert!(
+        outcome.impasse,
+        "the model declared an impasse and the outcome forgot it (done={}, success={})",
+        outcome.done, outcome.success
     );
 }
 

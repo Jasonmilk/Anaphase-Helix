@@ -502,12 +502,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             // model read from the upstream response (ADR-0036).
                             let model = built.agent.reason.last_meta().model.clone();
                             *shared.lock().unwrap() = Some(built.agent.capture());
-                            (StatusCode::OK, Json(serde_json::json!({
-                                "reply": built.agent.context.reasoning_output,
-                                "done": out.done,
-                                "job_id": anaphase::contract::derive_job_id(&msg),
-                                "model": model,
-                            })))
+                            // B22: the body carries the whole verdict, not just
+                            // `done`. With only `done`, an impasse and a normal
+                            // end were the same response to any client that did
+                            // not already know to look for the panel.
+                            let verdict =
+                                anaphase::run_cycle::PeriodVerdict::from_outcome(&out);
+                            (StatusCode::OK, Json(anaphase::run_cycle::verdict::period_body(
+                                &verdict,
+                                &built.agent.context.reasoning_output,
+                                &anaphase::contract::derive_job_id(&msg),
+                                model.as_deref(),
+                            )))
                         }
                         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": e }))),
                     }
@@ -948,12 +954,16 @@ async fn run_stdio_mode() -> Result<(), Box<dyn std::error::Error>> {
                         // Reaching here means the loop ended with the cap
                         // exhausted and `done` never true — an incomplete
                         // period. Reporting Success for it is the same defect
-                        // the loop had, one layer up.
+                        // the loop had, one layer up. The reason token is
+                        // carried so a caller can tell "out of budget" from
+                        // "the model was stuck", which are different problems.
                         if !completed {
+                            let verdict = anaphase::run_cycle::PeriodVerdict::cap_exhausted();
                             return ActionResponse::Failure {
                                 error: format!(
-                                    "cycle did not complete within {} cycles",
-                                    a.run_config.cycle_cap
+                                    "cycle did not complete within {} cycles (reason={})",
+                                    a.run_config.cycle_cap,
+                                    verdict.reason_str()
                                 ),
                                 recoverable: true,
                             };

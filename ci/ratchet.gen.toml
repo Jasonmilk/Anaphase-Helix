@@ -134,6 +134,9 @@ ncloc  = 1142
 target = "src/run_cycle/usage.rs"
 ncloc  = 18
 [[ratchet]]
+target = "src/run_cycle/verdict.rs"
+ncloc  = 102
+[[ratchet]]
 target = "src/security.rs"
 ncloc  = 62
 [[ratchet]]

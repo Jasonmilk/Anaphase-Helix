@@ -634,8 +634,21 @@ impl AgentLoop {
         // Set when the machine meets a (state, condition) pair with no rule. The
         // period then ends without having completed, and says so.
         let mut undefined_transition = false;
+        // An impasse is a fact observed *during* the period, not a property of
+        // its last step. It has to be recorded as it happens: by the time the
+        // machine returns to Perception the condition in hand is the `Success`
+        // from Reflection, and the impasse is already behind it.
+        //
+        // Recomputing `impasse` at period end from that last condition made it
+        // a synonym for `!done` — true only for an undefined transition — while
+        // its doc comment advertised "finished via an impasse condition". A
+        // model answering `{"impasse": true}` was reported as `done, success`.
+        let mut seen_impasse = false;
         for _ in 0..HelixState::ALL.len() {
             let condition = self.execute_current_state().await?;
+            if condition == TransitionCondition::Impass {
+                seen_impasse = true;
+            }
 
             if let Some(next_state) = self.transitions.get(&(self.current_state.clone(), condition.clone())) {
                 info!("State transition: {:?} --{:?}--> {:?}", self.current_state, condition, next_state);
@@ -696,8 +709,12 @@ impl AgentLoop {
                 // Undefined wins: a period that ended because the machine had no
                 // rule is an impasse regardless of the last condition, and the
                 // assignment above must not overwrite it.
-                outcome.impasse =
-                    undefined_transition || condition == TransitionCondition::Impass;
+                //
+                // `seen_impasse` carries the impasses the period actually passed
+                // through; `undefined_transition` is the one it fell into. Both
+                // are impasses, and neither may be dropped just because the last
+                // step happened to be a Success.
+                outcome.impasse = undefined_transition || seen_impasse;
                 // ...and an incomplete period is never a success. Without this,
                 // `done = false` sat next to `success = true`: the machine failed
                 // to proceed yet the outcome claimed it had succeeded, which is
@@ -705,13 +722,26 @@ impl AgentLoop {
                 if !outcome.done {
                     outcome.success = false;
                 }
-                self.emit_cycle(
-                    "end",
-                    &format!(
-                        "{{\"done\":{},\"success\":{},\"impasse\":{}}}",
-                        outcome.done, outcome.success, outcome.impasse
-                    ),
-                );
+                // B22: the verdict escapes here, at the source, not at the
+                // panel. `emit_cycle` below writes to the in-memory ring, which
+                // is read only while a panel is open, and the session-event
+                // stream exists only when `session_events_dir` is configured —
+                // so an impasse reported through those two alone is an impasse
+                // reported to nobody. This line goes to whatever log sink the
+                // process has, panel or no panel.
+                let verdict = PeriodVerdict::from_outcome(&outcome);
+                if verdict.is_reportable() {
+                    warn!(
+                        "[Cycle] period ended without completing: reason={}, done={}, success={}, impasse={}, state={:?}, condition={:?}",
+                        verdict.reason_str(),
+                        verdict.done(),
+                        verdict.success(),
+                        verdict.impasse(),
+                        self.current_state,
+                        condition,
+                    );
+                }
+                self.emit_cycle("end", &verdict.to_string());
                 // Session event: the period ended (back to Perception).
                 if let Some(ev) = self.session_events.as_mut() {
                     let ts = crate::ledger::unix_secs_to_rfc3339(self.clock.now());
@@ -1694,6 +1724,11 @@ impl AgentLoop {
 
 
 mod usage;
+pub mod verdict;
+#[cfg(test)]
+mod verdict_tests;
+
+pub use verdict::{EndReason, PeriodVerdict};
 
 #[cfg(test)]
 mod tests;

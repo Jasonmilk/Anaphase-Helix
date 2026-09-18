@@ -90,3 +90,37 @@ target    = "src/"
 allowance = 60
 reason    = "ADR-0042 pure-move split of run_cycle.rs: re-export surface and per-file headers. Measured basis: criteria/mod.rs 291 -> 295 when split into three. Estimate assumed 7 segments; the real count is 8 (usage.rs was added after emit_usage proved observable). The estimate is kept as-is so the closing record can compare it against the actual."
 due       = "2026-10-09"
+
+# ---------------------------------------------------------------- fix windows
+#
+# The third class. A waiver is a DEBT ("I will repay it") and carries owner+due;
+# a split window is a REFACTOR allowance ("the structure changed") and carries a
+# cap plus an ADR; a fix is neither, so its legitimacy comes from the pit record
+# it closes. A waiver proves it will vanish; a fix window proves it had to exist.
+#
+# No `due` here, and the checker rejects one: a fix carrying a deadline is a debt
+# wearing the wrong label. No missing `k_id` either — that is a waiver in
+# disguise, and it is likewise rejected.
+#
+# These are kept OFF the split allowance deliberately. The split window's
+# "estimated 60 against actual X" is the one number that answers "why split 2093
+# lines"; folding fix lines into it would destroy that comparison permanently.
+#
+# Measured on 2026-09-18, before the entries were written.
+[[fix_window]]
+target = "src/run_cycle/"
+cap    = 119
+k_id   = "K-035,B22"
+reason = "Period verdict module (verdict.rs, 102 NCLOC) plus the loop's own reporting, so an impasse the model declares survives to the outcome and is observable without the panel"
+
+[[fix_window]]
+target = "src/run_cycle/mod.rs"
+cap    = 13
+k_id   = "K-035,B22"
+reason = "sees the impasse as it happens and reports it at the source, because the ring buffer is only read while a panel is open"
+
+[[fix_window]]
+target = "src/main.rs"
+cap    = 4
+k_id   = "B22"
+reason = "the HTTP channel carries the whole verdict instead of only `done`, so an impasse is distinguishable from a normal end"

@@ -184,6 +184,98 @@ def load_split_windows(path, today):
     return out
 
 
+def load_fix_windows(path):
+    """Lines a FIX legitimately added, authorized by the pit record it closes.
+
+    This is the third class, and it exists because the first two are both wrong
+    for a fix:
+
+      - a **waiver** is a DEBT ("I will repay it later"), which is why it carries
+        an owner and a due date. Recording a fix as a waiver announces that the
+        fix is a liability. It will come due and be chased for repayment, while
+        what actually happened is that the code gained an asset;
+      - a **split window** is a REFACTOR allowance ("the structure changed"), so
+        it carries a cap and points at an ADR. A fix changes no structure to make
+        room for itself; folding fix lines into the split allowance also destroys
+        the one number that answers "why split 2093 lines" — estimated 60 against
+        an actual that must stay measurable.
+
+    So a fix's legitimacy comes from something else: a **K-ID**. "A change must
+    cite the pit it closes" is already the rule in this ledger; this applies it to
+    lines. A waiver proves it will vanish; a fix window proves it had to exist.
+
+    **A `due` on a fix window is an error, not an oversight.** A fix carrying a
+    deadline is a debt wearing the wrong label, and the entire reason for a third
+    class is that those two must not be conflated. Same for a missing `k_id`: it
+    is the only evidence this class accepts, so an entry without one is a waiver
+    with extra steps.
+
+    Returns {target: (cap, k_id)}. Targets may be files or directories; the
+    allowance binds to the exact target, unlike the split window, which spreads
+    across directories on purpose to avoid re-opening per subdirectory. A fix
+    knows which file and which directory it touched.
+    """
+    if not os.path.exists(path):
+        return {}
+    out = {}
+    target = k_id = due = reason = None
+    cap = 0
+    # Which section are we in. Without this the parser reads every `[[waiver]]`
+    # as a fix window — it resets on the `[` line, then the waiver's own `target`
+    # and `due` lines repopulate the fields and `flush()` reports "a fix window
+    # with a due date". That is the same defect this file already documents twice
+    # for waivers ("keys that match nothing"), arriving from the other side: a
+    # section that matches everything.
+    in_fix = False
+
+    def flush():
+        nonlocal in_fix
+        if not in_fix:
+            return
+        in_fix = False
+        if not target:
+            return
+        if due is not None:
+            raise WaiverError(
+                f"fix window for {target!r} carries a due date ({due!r}): a fix is not a debt. "
+                "Use [[waiver]] if it will be repaid, or [[split_window]] if it is a refactor."
+            )
+        if not k_id:
+            raise WaiverError(
+                f"fix window for {target!r} has no k_id: the pit record is the only thing "
+                "that makes a fix legitimate, so an entry without one is a waiver in disguise."
+            )
+        if not cap:
+            raise WaiverError(f"fix window for {target!r} has no cap")
+        out[target] = (cap, k_id)
+
+    for raw in open(path, encoding="utf-8"):
+        line = raw.strip()
+        if line.startswith("["):
+            flush()
+            if line == "[[fix_window]]":
+                in_fix = True
+            target = k_id = due = reason = None
+            cap = 0
+            continue
+        if "=" not in line or line.startswith("#"):
+            continue
+        if not in_fix:
+            continue
+        if line.startswith("target"):
+            target = line.partition("=")[2].strip().strip('"')
+        elif line.startswith("cap"):
+            cap = int(line.partition("=")[2].strip())
+        elif line.startswith("k_id"):
+            k_id = line.partition("=")[2].strip().strip('"')
+        elif line.startswith("due"):
+            due = line.partition("=")[2].strip().strip('"')
+        elif line.startswith("reason"):
+            reason = line.partition("=")[2].strip().strip('"')
+    flush()
+    return out
+
+
 def load_waivers(path, check, today):
     """Returns (active_targets, expired_targets).
 
@@ -317,6 +409,15 @@ def run(root, budget, branch_budget, max_line, check, line_mode='warn', ratchet=
         pass
     try:
         waived, expired = load_waivers(waivers_path, check, today)
+        # Both window loaders raise WaiverError too, and they must be inside this
+        # try for the same reason the waivers are: exit 3 means "the checker could
+        # not run", exit 1 means "it ran and found violations". A malformed
+        # window escaping as an uncaught traceback exits 1, which reports a
+        # typo in the baseline as a violation in the code — the two outcomes this
+        # whole file exists to keep apart. The split window had this gap from the
+        # start; it was found while adding the third class next to it.
+        split_windows = load_split_windows(waivers_path, date.today()) if ratchet else {}
+        fix_windows = load_fix_windows(waivers_path) if ratchet else {}
     except WaiverError as e:
         print(f"CHECKER ERROR: {waivers_path}: {e}", file=sys.stderr)
         return 3
@@ -331,7 +432,6 @@ def run(root, budget, branch_budget, max_line, check, line_mode='warn', ratchet=
         # concurrently in one process, and a global leaked one test's forced
         # baseline into another's run.
         ratchet_base[override[0]] = override[1]
-    split_windows = load_split_windows(waivers_path, date.today()) if ratchet else {}
     grown = []
     current = {}
     dir_totals = {}
@@ -362,8 +462,14 @@ def run(root, budget, branch_budget, max_line, check, line_mode='warn', ratchet=
         n = ncloc(text)
         current[rel.replace(os.sep, "/")] = n
         key = rel.replace(os.sep, "/")
-        if key in ratchet_base and n > ratchet_base[key]:
-            grown.append((rel, ratchet_base[key], n))
+        # A fix window is the one allowance that reaches FILES. The split window
+        # deliberately does not: it loosens a directory aggregate while every
+        # single file stays pinned, because a refactor moves lines and does not
+        # add them to one file. A fix does add them to one file, and it says
+        # which one.
+        fix_allow = fix_windows.get(key, (0, None))[0]
+        if key in ratchet_base and n > ratchet_base[key] + fix_allow:
+            grown.append((rel, ratchet_base[key], n, fix_allow))
         # Directory totals too: a file-level ratchet alone can be dodged by
         # splitting one file into two, because new files have no baseline. The
         # directory total cannot be dodged that way — moving lines around inside
@@ -401,9 +507,14 @@ def run(root, budget, branch_budget, max_line, check, line_mode='warn', ratchet=
         allow = split_windows.get(dk, 0)
         if dk in split_windows or split_window_open:
             allow = max(allow, max(split_windows.values(), default=0))
-        limit = ratchet_base[dk] + allow
+        # Exact target only. The split window spreads its cap across every
+        # directory because a split creates directories as it goes; a fix names
+        # the directory it grew, and spreading its cap would hand the same slack
+        # to directories the fix never touched.
+        fix_allow = fix_windows.get(dk, (0, None))[0]
+        limit = ratchet_base[dk] + allow + fix_allow
         if v > limit:
-            dir_grown.append((k, ratchet_base[dk], v, split_windows.get(dk, 0)))
+            dir_grown.append((k, ratchet_base[dk], v, split_windows.get(dk, 0), fix_allow))
     blocking = marker_failures or expired_note or grown or dir_grown
     if not split_window_open:
         blocking = blocking or bool(over_budget)
@@ -496,13 +607,16 @@ def run(root, budget, branch_budget, max_line, check, line_mode='warn', ratchet=
 
     if dir_grown:
         print(f"FAIL  {len(dir_grown)} directory total(s) grew past their ratchet:")
-        for k, was, now, allow in dir_grown:
+        for k, was, now, allow, fix_allow in dir_grown:
             extra = f" (with a +{allow} split allowance)" if allow else ""
+            if fix_allow:
+                extra += f" (with a +{fix_allow} fix allowance)"
             print(f"        {k}/  {was} -> {now}{extra}")
     if grown:
         print(f"FAIL  {len(grown)} file(s) grew past their ratchet:")
-        for rel, was, now in grown:
-            print(f"        {rel}  {was} -> {now}")
+        for rel, was, now, fix_allow in grown:
+            extra = f" (with a +{fix_allow} fix allowance)" if fix_allow else ""
+            print(f"        {rel}  {was} -> {now}{extra}")
     if over_budget:
         tag = "WARN" if split_window_open else "FAIL"
         note = (
