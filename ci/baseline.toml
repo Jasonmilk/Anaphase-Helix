@@ -88,5 +88,5 @@ due     = "2026-12-11"
 [[split_window]]
 target    = "src/"
 allowance = 60
-reason    = "ADR-0042 pure-move split of run_cycle.rs: re-export surface and per-file headers. Measured basis: criteria/mod.rs 291 -> 295 when split into three."
+reason    = "ADR-0042 pure-move split of run_cycle.rs: re-export surface and per-file headers. Measured basis: criteria/mod.rs 291 -> 295 when split into three. Estimate assumed 7 segments; the real count is 8 (usage.rs was added after emit_usage proved observable). The estimate is kept as-is so the closing record can compare it against the actual."
 due       = "2026-10-09"

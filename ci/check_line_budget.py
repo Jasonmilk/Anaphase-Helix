@@ -388,7 +388,15 @@ def run(root, budget, branch_budget, max_line, check, line_mode='warn', ratchet=
         dk = k + "/"
         if dk not in ratchet_base:
             continue
-        limit = ratchet_base[dk] + split_windows.get(dk, 0)
+        # The allowance is granted for the SPLIT, not for one directory path: a
+        # segment that creates a subdirectory produces a directory with no
+        # baseline at all, and without this the window would have to be re-opened
+        # per directory — seven more key edits, which is the route the window
+        # exists to close.
+        allow = split_windows.get(dk, 0)
+        if dk in split_windows or split_window_open:
+            allow = max(allow, max(split_windows.values(), default=0))
+        limit = ratchet_base[dk] + allow
         if v > limit:
             dir_grown.append((k, ratchet_base[dk], v, split_windows.get(dk, 0)))
     blocking = marker_failures or expired_note or grown or dir_grown
@@ -407,7 +415,7 @@ def run(root, budget, branch_budget, max_line, check, line_mode='warn', ratchet=
             merged[k] = min(merged[k], v) if k in merged else v
         for k, v in dir_totals.items():
             dk = k + "/"
-            if dk in split_windows:
+            if dk in split_windows or split_window_open:
                 # Inside an authorized window the number moves for reasons that
                 # are not shrink-or-grow signal; re-seeded when the window closes.
                 continue

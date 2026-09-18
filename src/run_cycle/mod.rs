@@ -585,35 +585,6 @@ impl AgentLoop {
         }
     }
 
-    /// Append one `assistant/usage` row for the round trip the adapter just
-    /// finished (ADR-0038). A period makes three such calls — the retry loop
-    /// (streamed or buffered, N times) and the tool-evidence finalize — so
-    /// this is invoked per call, never once per period: a retried or
-    /// finalized call was billed too, and dropping it would silently lose a
-    /// physical fact.
-    ///
-    /// Raw wire facts only. `total_tokens` is not read (it duplicates
-    /// `prompt + completion`), and the disjoint decomposition is a read-side
-    /// derivation, not a write-side one. Nothing is written when the upstream
-    /// reported no usage — an absent field stays absent rather than becoming
-    /// a fabricated zero (DNA principle 11).
-    fn emit_usage(&mut self) {
-        let meta = self.reason.last_meta();
-        let Some(usage) = meta.usage else { return };
-        let Some(ev) = self.session_events.as_mut() else { return };
-        let ts = crate::ledger::unix_secs_to_rfc3339(self.clock.now());
-        let _ = ev.emit(
-            &ts,
-            crate::session_events::EventType::Usage,
-            serde_json::json!({
-                "model": meta.model,
-                "prompt_tokens": usage.prompt_tokens,
-                "completion_tokens": usage.completion_tokens,
-                "cached_tokens": usage.cached_tokens,
-                "reasoning_tokens": usage.reasoning_tokens,
-            }),
-        );
-    }
 
     pub async fn run_cycle(&mut self, user_input: &str) -> Result<CycleOutcome, String> {
         self.context.user_input = user_input.to_string();
@@ -1057,7 +1028,7 @@ impl AgentLoop {
                             // and the think/attempt rows further down sit
                             // outside this loop, so they only ever describe
                             // the surviving attempt.
-                            self.emit_usage();
+                            usage::emit_usage(self);
                             if !empty || attempt >= retries {
                                 output = o;
                                 break;
@@ -1465,7 +1436,7 @@ impl AgentLoop {
                             // ADR-0038: the finalize call is a second upstream
                             // round trip inside the same period — meter it too,
                             // or its cost vanishes from the period total.
-                            self.emit_usage();
+                            usage::emit_usage(self);
                             let Ok(answer) = finalized else { break };
                             if answer.trim().is_empty() {
                                 break;
@@ -1668,6 +1639,8 @@ impl AgentLoop {
     }
 }
 
+
+mod usage;
 
 #[cfg(test)]
 mod tests;
