@@ -15,7 +15,7 @@ target = "build.rs"
 ncloc  = 13
 [[ratchet]]
 target = "src/"
-ncloc  = 3499
+ncloc  = 9110
 [[ratchet]]
 target = "src/adapters/"
 ncloc  = 1246
@@ -105,7 +105,7 @@ target = "src/lifecycle.rs"
 ncloc  = 148
 [[ratchet]]
 target = "src/main.rs"
-ncloc  = 913
+ncloc  = 936
 [[ratchet]]
 target = "src/pipeline/"
 ncloc  = 269
@@ -123,7 +123,7 @@ target = "src/run_cycle/"
 ncloc  = 1156
 [[ratchet]]
 target = "src/run_cycle/mod.rs"
-ncloc  = 1138
+ncloc  = 1141
 [[ratchet]]
 target = "src/run_cycle/usage.rs"
 ncloc  = 18

@@ -590,6 +590,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .clone()
         .unwrap_or_else(|| "events.jsonl".to_string());
     let mut flushed_seq = 0u64;
+    let mut completed = false;
     for _ in 0..agent.run_config.cycle_cap {
         // Fail-closed gate (Tuck): refuse to reason while the audit/LLM
         // gateway is down — Tuck down = Helix stops thinking (SPOF
@@ -622,10 +623,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         if out.done {
+            completed = true;
             break;
         }
     }
-    println!("\nCognitive cycle completed successfully.");
+    // "completed successfully" only when it completed. The loop also exits by
+    // exhausting `cycle_cap`, and until the fail-closed fix an undefined
+    // transition was reported as `done`, so this line was true by accident. With
+    // `done = false` for an incomplete period it must say so.
+    if completed {
+        println!("\nCognitive cycle completed successfully.");
+    } else {
+        println!(
+            "\nCognitive cycle did NOT complete: the state machine stopped without \
+             returning to Perception within {} cycles.",
+            agent.run_config.cycle_cap
+        );
+    }
 
     // Candidate G-T2: refresh the shared snapshot after the cycle, so the
     // endpoint serves the real mode / episode / ledger projection.
@@ -915,9 +929,13 @@ async fn run_stdio_mode() -> Result<(), Box<dyn std::error::Error>> {
                 match guard {
                     Ok(mut a) => {
                         let cap = a.run_config.cycle_cap;
+                        let mut completed = false;
                         for _ in 0..cap {
                             match a.run_cycle(&message).await {
-                                Ok(out) if out.done => break,
+                                Ok(out) if out.done => {
+                                    completed = true;
+                                    break;
+                                }
                                 Ok(_) => continue,
                                 Err(e) => {
                                     return ActionResponse::Failure {
@@ -926,6 +944,19 @@ async fn run_stdio_mode() -> Result<(), Box<dyn std::error::Error>> {
                                     };
                                 }
                             }
+                        }
+                        // Reaching here means the loop ended with the cap
+                        // exhausted and `done` never true — an incomplete
+                        // period. Reporting Success for it is the same defect
+                        // the loop had, one layer up.
+                        if !completed {
+                            return ActionResponse::Failure {
+                                error: format!(
+                                    "cycle did not complete within {} cycles",
+                                    a.run_config.cycle_cap
+                                ),
+                                recoverable: true,
+                            };
                         }
                         let text = a.context.reasoning_output.clone();
                         ActionResponse::Success { message: text }

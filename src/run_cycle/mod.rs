@@ -687,6 +687,13 @@ impl AgentLoop {
                 // assignment above must not overwrite it.
                 outcome.impasse =
                     undefined_transition || condition == TransitionCondition::Impass;
+                // ...and an incomplete period is never a success. Without this,
+                // `done = false` sat next to `success = true`: the machine failed
+                // to proceed yet the outcome claimed it had succeeded, which is
+                // the same contradiction the fallback fix removed, one field over.
+                if !outcome.done {
+                    outcome.success = false;
+                }
                 self.emit_cycle(
                     "end",
                     &format!(

@@ -820,3 +820,36 @@ async fn a_removed_edge_removes_that_state_from_the_trail() {
         "the trail ends at the last defined transition; got: {joined}"
     );
 }
+
+/// An incomplete period is bounded, and says so.
+///
+/// The review asked what the caller does after `done = false`: continue, exit
+/// quietly, or report. Two things are asserted here rather than reasoned about.
+///
+/// Bounded: `run_cycle` steps at most once per state, so a period cannot spin
+/// however the table is wired — there is no retry storm available to it.
+///
+/// Reported: an incomplete period is distinguishable from a completed one by
+/// `done`, and from a refusal by the absence of an `Err`. Both callers were
+/// changed to use that distinction; before, one printed "completed successfully"
+/// unconditionally and the other returned Success.
+#[tokio::test]
+async fn an_incomplete_period_is_bounded_and_distinguishable() {
+    let mut agent = base();
+    agent.transitions.remove(&(
+        crate::states::HelixState::MemoryRetrieval,
+        TransitionCondition::Success,
+    ));
+
+    let outcome = agent
+        .run_cycle("hello")
+        .await
+        .expect("an incomplete period is an outcome, not an error");
+    assert!(!outcome.done, "not done");
+    assert!(outcome.impasse, "the machine could not proceed");
+    assert!(!outcome.success, "and it certainly did not succeed");
+
+    // It terminated, which is the whole of the bound claim: a state that spin
+    // would not return at all.
+    assert_eq!(agent.current_state, crate::states::HelixState::Perception);
+}
