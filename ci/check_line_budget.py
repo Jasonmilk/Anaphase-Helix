@@ -272,8 +272,20 @@ def iter_sources(root):
 
 
 def is_test_path(rel):
+    """Test code is out of scope for the line budget (spec §3).
+
+    Two shapes count, and the second was missing until a refactor surfaced it:
+    the crate's `tests/` directory, and a test module that lives beside the code
+    it tests. `src/run_cycle/tests.rs` is named by `mod tests;` from
+    `src/run_cycle/mod.rs`, so it is test code in every sense except its path —
+    and without this it was budgeted as production.
+    """
     parts = rel.split(os.sep)
-    return "tests" in parts or rel.endswith("_test.rs")
+    if "tests" in parts[:-1] or rel.endswith("_test.rs"):
+        return True
+    base = os.path.basename(rel)
+    # A file whose stem is `tests` inside a module directory.
+    return base == "tests.rs" or base.endswith("_tests.rs")
 
 
 def run(root, budget, branch_budget, max_line, check, line_mode='warn', ratchet=True, emit=False):

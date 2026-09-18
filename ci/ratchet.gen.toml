@@ -14,9 +14,6 @@ ncloc  = 13
 target = "build.rs"
 ncloc  = 13
 [[ratchet]]
-target = "src/"
-ncloc  = 5004
-[[ratchet]]
 target = "src/adapters/"
 ncloc  = 1246
 [[ratchet]]
@@ -119,14 +116,17 @@ ncloc  = 370
 target = "src/reflex.rs"
 ncloc  = 12
 [[ratchet]]
-target = "src/run_cycle.rs"
-ncloc  = 1505
+target = "src/run_cycle/"
+ncloc  = 1140
+[[ratchet]]
+target = "src/run_cycle/mod.rs"
+ncloc  = 1140
 [[ratchet]]
 target = "src/security.rs"
 ncloc  = 62
 [[ratchet]]
 target = "src/session_events/"
-ncloc  = 1125
+ncloc  = 690
 [[ratchet]]
 target = "src/session_events/crystallize.rs"
 ncloc  = 107
@@ -143,14 +143,8 @@ ncloc  = 47
 target = "src/session_events/query.rs"
 ncloc  = 181
 [[ratchet]]
-target = "src/session_events/query_tests.rs"
-ncloc  = 187
-[[ratchet]]
 target = "src/session_events/test_support.rs"
 ncloc  = 14
-[[ratchet]]
-target = "src/session_events/tests.rs"
-ncloc  = 248
 [[ratchet]]
 target = "src/session_events/types_and_stream.rs"
 ncloc  = 154
