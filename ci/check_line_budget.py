@@ -288,7 +288,7 @@ def is_test_path(rel):
     return base == "tests.rs" or base.endswith("_tests.rs")
 
 
-def run(root, budget, branch_budget, max_line, check, line_mode='warn', ratchet=True, emit=False):
+def run(root, budget, branch_budget, max_line, check, line_mode='warn', ratchet=True, emit=False, override=None):
     today = date.today()
     iso = os.environ.get("CI_TODAY")
     if iso:
@@ -326,6 +326,11 @@ def run(root, budget, branch_budget, max_line, check, line_mode='warn', ratchet=
     # must not live somewhere a human signs.
     ratchet_path = os.path.join(root, RATCHET_FILE)
     ratchet_base = load_ratchet(ratchet_path) if ratchet else {}
+    if override:
+        # Passed per call rather than held in module state: the tests run
+        # concurrently in one process, and a global leaked one test's forced
+        # baseline into another's run.
+        ratchet_base[override[0]] = override[1]
     split_windows = load_split_windows(waivers_path, date.today()) if ratchet else {}
     grown = []
     current = {}
@@ -409,15 +414,29 @@ def run(root, budget, branch_budget, max_line, check, line_mode='warn', ratchet=
     # a hand-written value would rot and would also let a file grow back after
     # shrinking. min() is the only form that keeps the property one-directional,
     # and it is derived, so nobody types a number (P8).
-    if ratchet and not emit:
+    # A forced baseline is a test affordance; writing it back would persist the
+    # fabricated value into the real baseline and break every later run.
+    if ratchet and not emit and not override:
         merged = dict(ratchet_base)
         for k, v in current.items():
             merged[k] = min(merged[k], v) if k in merged else v
         for k, v in dir_totals.items():
             dk = k + "/"
-            if dk in split_windows or split_window_open:
-                # Inside an authorized window the number moves for reasons that
-                # are not shrink-or-grow signal; re-seeded when the window closes.
+            if split_window_open:
+                # Inside the window the directory baseline is FROZEN at its
+                # opening value. It must not be lowered either: the checker runs
+                # many times during a split, and a monotone min() would walk the
+                # baseline down the current total on every run, spending the
+                # allowance a little at a time until the gate stopped existing.
+                # That is exactly what happened — a baseline of 3499 against a
+                # total of 3499 means "the next 60 lines are free", and repeated
+                # runs kept it there.
+                #
+                # A frozen value plus the allowance is a real bound: growth past
+                # baseline+allowance fails. On close, the window re-seeds once
+                # from the actual total.
+                if dk not in merged:
+                    merged[dk] = v
                 continue
             merged[dk] = min(merged[dk], v) if dk in merged else v
         for k in list(merged):
@@ -521,11 +540,21 @@ def main():
     ap.add_argument("--check", default="CI-6")
     ap.add_argument("--line-mode", choices=("warn", "fail"), default="warn")
     ap.add_argument("--no-ratchet", action="store_true")
+    # Test-only: force a baseline value, so a test can prove that a WRONG
+    # baseline is caught rather than silently trusted. A checker that can
+    # only fail when reality is wrong is blind to its own inputs being
+    # wrong, and this one had exactly that failure: a directory baseline of
+    # 3499 against a total of 3499 went unnoticed for two commits.
+    ap.add_argument("--ratchet-override", default=None)
     ap.add_argument("--emit-ratchet", action="store_true")
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args()
+    override = None
+    if args.ratchet_override:
+        target, _, value = args.ratchet_override.partition("=")
+        override = (target, int(value))
     code = run(args.root, args.budget, args.branch_budget, args.max_line, args.check,
-               args.line_mode, not args.no_ratchet, args.emit_ratchet)
+               args.line_mode, not args.no_ratchet, args.emit_ratchet, override)
     if args.json:
         print(json.dumps({"exit": code}))
     return code

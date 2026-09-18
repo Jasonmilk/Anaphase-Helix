@@ -57,3 +57,39 @@ fn the_marker_cannot_be_used_to_sign_its_own_pass() {
     );
     assert_ne!(code, 3, "the DATA-ONLY verifier did not run: {stderr}");
 }
+
+/// M10 — the checker's own inputs have to be guarded too.
+///
+/// The failure this exists for: `ratchet.gen.toml` held a directory baseline of
+/// 3499 while the directory totalled 3499, so `baseline + allowance` was a bound
+/// that could never be reached and the allowance was bookkeeping rather than a
+/// gate. It went unnoticed for two commits and was found by measuring, not by the
+/// checker — which means nothing guarded the checker's own inputs.
+///
+/// Exit 3 covers "the checker crashed". This covers "the checker computed the
+/// wrong thing and said PASS", which is strictly more dangerous because it is
+/// green.
+#[test]
+fn a_wrong_baseline_is_caught_rather_than_trusted() {
+    // Force a directory baseline far below reality. If the check only ever
+    // compares reality against whatever the file says, this passes and the
+    // ratchet is decorative.
+    let (code, stdout, stderr) = run_checker(&["--ratchet-override", "src/=1"]);
+    assert_eq!(
+        code, 1,
+        "a baseline of 1 against a real directory cannot be a pass; the check \
+         must fail on its own input being wrong.\n{stdout}{stderr}"
+    );
+    assert!(
+        stdout.contains("directory total") || stderr.contains("directory total"),
+        "and it must say which bound was exceeded, not fail generically:\n{stdout}{stderr}"
+    );
+    assert_ne!(code, 3, "the override must not break the checker itself");
+}
+
+/// The override is a test affordance and must not change normal behaviour.
+#[test]
+fn the_override_does_not_affect_the_real_run() {
+    let (code, _, stderr) = run_checker(&[]);
+    assert_eq!(code, 0, "the tree is clean: {stderr}");
+}
