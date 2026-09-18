@@ -179,6 +179,14 @@ fn scratch(name: &str, files: &[(&str, usize)], base: &[(&str, usize)], allowanc
     }
     std::fs::write(root.join("ci/ratchet.gen.toml"), ratchet).expect("scratch ratchet");
     std::fs::write(root.join("ci/baseline.toml"), allowance).expect("scratch baseline");
+    // A permissive ledger, so a test about the CAP is not also a test about the
+    // citation. Tests that are about the citation call `scratch_with_pits` and
+    // supply their own.
+    std::fs::write(
+        root.join("ci/pits.toml"),
+        "[[pit]]\nid = \"K-999\"\nrecorded = \"2026-01-01\"\nsummary = \"scratch\"\n",
+    )
+    .expect("scratch pits");
     root
 }
 
@@ -191,8 +199,8 @@ fn scratch(name: &str, files: &[(&str, usize)], base: &[(&str, usize)], allowanc
 /// cannot pass by the checker ignoring its inputs.
 #[test]
 fn a_fix_window_clears_a_file_red_that_a_split_window_cannot() {
-    let files = [("src/a.rs", 20)];
-    let base = [("src/a.rs", 10)];
+    let files = [("src/a.rs", 110)];
+    let base = [("src/a.rs", 100)];
 
     // Control: +10 over the baseline is red, and red as a FILE.
     let root = scratch("fixwin-red", &files, &base, "");
@@ -219,7 +227,7 @@ fn a_fix_window_clears_a_file_red_that_a_split_window_cannot() {
 #[test]
 fn a_fix_window_does_not_excuse_growth_past_its_cap() {
     let fix = "[[fix_window]]\ntarget=\"src/a.rs\"\ncap=9\nk_id=\"K-999\"\nreason=\"x\"\n";
-    let root = scratch("fixwin-over", &[("src/a.rs", 20)], &[("src/a.rs", 10)], fix);
+    let root = scratch("fixwin-over", &[("src/a.rs", 110)], &[("src/a.rs", 100)], fix);
     let (code, out, err) = run_checker_at(&root, &[]);
     assert_eq!(code, 1, "cap 9 against a growth of 10 must still fail:\n{out}{err}");
     assert!(out.contains("+9 fix allowance"), "and must show the cap it applied:\n{out}");
@@ -232,8 +240,8 @@ fn a_fix_window_does_not_spread_to_a_neighbouring_file() {
     let fix = "[[fix_window]]\ntarget=\"src/a.rs\"\ncap=10\nk_id=\"K-999\"\nreason=\"x\"\n";
     let root = scratch(
         "fixwin-spread",
-        &[("src/a.rs", 20), ("src/b.rs", 20)],
-        &[("src/a.rs", 10), ("src/b.rs", 10)],
+        &[("src/a.rs", 110), ("src/b.rs", 110)],
+        &[("src/a.rs", 100), ("src/b.rs", 100)],
         fix,
     );
     let (code, out, err) = run_checker_at(&root, &[]);
@@ -264,6 +272,79 @@ fn a_fix_window_without_a_pit_id_is_refused_as_a_disguised_waiver() {
     assert!(err.contains("k_id"), "and must name what is missing:\n{err}");
 }
 
+/// The `src/` tree needs a pit ledger to read. Scratch trees build their own.
+fn scratch_with_pits(name: &str, files: &[(&str, usize)], base: &[(&str, usize)], allowance: &str, pits: &str) -> std::path::PathBuf {
+    let root = scratch(name, files, base, allowance);
+    std::fs::write(root.join("ci/pits.toml"), pits).expect("scratch pits");
+    root
+}
+
+/// A fix window is the class that reaches FILES, so it is the more abusable one:
+/// any change can be called a fix. The cap is bounded by the target's own
+/// baseline — at most 10% of it — so the bound is not the author's own number.
+///
+/// The fixtures stay under the 300-line per-file budget on purpose: at 1000 the
+/// `over_budget` path fires first and the ratio rule is never reached, so the
+/// test would pass for the wrong reason.
+#[test]
+fn a_fix_window_cap_may_not_exceed_a_tenth_of_the_baseline() {
+    let pits = "[[pit]]\nid = \"K-999\"\n";
+    // 100 into 1000 is exactly a tenth: allowed.
+    let ok = "[[fix_window]]\ntarget=\"src/a.rs\"\ncap=10\nk_id=\"K-999\"\nreason=\"x\"\n";
+    let root = scratch_with_pits("fixcap-ok", &[("src/a.rs", 110)], &[("src/a.rs", 100)], ok, pits);
+    let (code, _, err) = run_checker_at(&root, &[]);
+    assert_eq!(code, 0, "a tenth is the bound, so it must pass:\n{err}");
+
+    // 101 is over it: refused as unrunnable, not reported as a violation.
+    let over = "[[fix_window]]\ntarget=\"src/a.rs\"\ncap=11\nk_id=\"K-999\"\nreason=\"x\"\n";
+    let root = scratch_with_pits("fixcap-over", &[("src/a.rs", 110)], &[("src/a.rs", 100)], over, pits);
+    let (code, _, err) = run_checker_at(&root, &[]);
+    assert_eq!(code, 3, "over the ratio must be refused:\n{err}");
+    assert!(err.contains("must not exceed 10"), "and must name the bound:\n{err}");
+}
+
+/// The floor exists so a small file is not barred from citing any fix at all:
+/// 10% of a 30-line file is 3, which is not a usable allowance.
+#[test]
+fn a_fix_window_cap_has_a_floor_for_small_files() {
+    let pits = "[[pit]]\nid = \"K-999\"\n";
+    let maxed = "[[fix_window]]\ntarget=\"src/a.rs\"\ncap=5\nk_id=\"K-999\"\nreason=\"x\"\n";
+    let root = scratch_with_pits("fixcap-floor", &[("src/a.rs", 35)], &[("src/a.rs", 30)], maxed, pits);
+    let (code, _, err) = run_checker_at(&root, &[]);
+    assert_eq!(code, 0, "the floor is 5 for a 30-line file:\n{err}");
+}
+
+/// An id nobody can resolve is a waiver wearing a fix's label.
+#[test]
+fn a_fix_window_citing_an_unrecorded_pit_is_refused() {
+    let pits = "[[pit]]\nid = \"K-111\"\n";
+    let bad = "[[fix_window]]\ntarget=\"src/a.rs\"\ncap=10\nk_id=\"K-999\"\nreason=\"x\"\n";
+    let root = scratch_with_pits("fixpit-unknown", &[("src/a.rs", 110)], &[("src/a.rs", 100)], bad, pits);
+    let (code, _, err) = run_checker_at(&root, &[]);
+    assert_eq!(code, 3, "an unresolvable citation must be refused:\n{err}");
+    assert!(err.contains("K-999"), "and must name the id:\n{err}");
+    assert!(err.contains("does not list"), "and say where it looked:\n{err}");
+}
+
+/// A target with no baseline has no ratio to compute, so the ratio rule cannot
+/// bar it — but the id rule still applies. Asserted so the `base is None` path is
+/// not silently a way past the citation requirement.
+#[test]
+fn an_unknown_target_still_has_to_cite_a_recorded_pit() {
+    let pits = "[[pit]]\nid = \"K-111\"\n";
+    let bad = "[[fix_window]]\ntarget=\"src/new.rs\"\ncap=9999\nk_id=\"K-999\"\nreason=\"x\"\n";
+    let root = scratch_with_pits(
+        "fixpit-newtarget",
+        &[("src/a.rs", 10)],
+        &[("src/a.rs", 10)],
+        bad,
+        pits,
+    );
+    let (code, _, err) = run_checker_at(&root, &[]);
+    assert_eq!(code, 3, "no baseline does not waive the citation:\n{err}");
+    assert!(err.contains("does not list"), "{err}");
+}
+
 /// The parser must not read the sections before it. Writing a `[[waiver]]` above
 /// a `[[fix_window]]` first read the waiver as a fix window — it reset on the
 /// `[` line, then the waiver's own `target` and `due` lines refilled the fields,
@@ -276,8 +357,8 @@ fn a_waiver_above_a_fix_window_is_not_read_as_one() {
                 [[fix_window]]\ntarget=\"src/b.rs\"\ncap=10\nk_id=\"K-999\"\nreason=\"y\"\n";
     let root = scratch(
         "fixwin-order",
-        &[("src/a.rs", 10), ("src/b.rs", 20)],
-        &[("src/a.rs", 10), ("src/b.rs", 10)],
+        &[("src/a.rs", 100), ("src/b.rs", 110)],
+        &[("src/a.rs", 100), ("src/b.rs", 100)],
         both,
     );
     let (code, out, err) = run_checker_at(&root, &[]);

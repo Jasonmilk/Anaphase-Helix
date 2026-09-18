@@ -1,0 +1,44 @@
+# The pits this repository's allowances may cite.
+#
+# A `[[fix_window]]` in `ci/baseline.toml` takes its legitimacy from a K-ID
+# rather than from a due date, because a fix is not a debt. That makes the K-ID
+# load-bearing, so it is checked: a cap may only cite an id that appears here.
+# An id that resolves to nothing is a waiver wearing a fix's label.
+#
+# **Ordering matters, and this file can only prove existence.** The rule is
+# "record the pit, then fix" — the cap must cite a pit that already existed, not
+# one invented alongside the change. A flat list cannot tell those apart, because
+# the same commit can add both. What enforces the order is git: K-033 was written
+# into `commonintents/.github/CI-144_合拢坑记录.md` in `07aca07` (2026-09-18), and
+# the fix window citing it arrived in a later commit in the other repository. That
+# history is the evidence; this file is the local pointer that makes the citation
+# checkable without a second checkout.
+#
+# So: **the id must resolve here, and the order must be read off git.** The second
+# half is not mechanised, and saying so is the point — an entry that only checked
+# existence while implying it checked order would be worse than one that checks
+# neither.
+#
+# `recorded` is the date the pit was written down, not the date the defect was
+# introduced: the second is usually unknown, and the first is the one that has to
+# precede the fix.
+
+[[pit]]
+id       = "K-033"
+recorded = "2026-09-18"
+summary  = "The safety direction is decided by whether a pipeline is configured: the legacy audit-Err path reports success, the structured path fails"
+
+[[pit]]
+id       = "K-035"
+recorded = "2026-09-18"
+summary  = "A model-declared impasse was overwritten by the Reflection Success before the period outcome was computed, so it was reported done and successful"
+
+[[pit]]
+id       = "B22"
+recorded = "2026-09-18"
+summary  = "An impasse must be observable without the panel; the ring buffer is read only while a panel is open"
+
+[[pit]]
+id       = "K-031"
+recorded = "2026-09-18"
+summary  = "allocate_period_id silently produced a wrong id for a non-hex argument"

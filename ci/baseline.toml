@@ -106,12 +106,22 @@ due       = "2026-10-09"
 # "estimated 60 against actual X" is the one number that answers "why split 2093
 # lines"; folding fix lines into it would destroy that comparison permanently.
 #
+# A cap is bounded by the target's own baseline: at most FIX_CAP_RATIO (10%) of
+# it, floored at 5 lines so a small file is not barred from citing any fix. This
+# class reaches FILES, which the split window deliberately does not, so it is the
+# more abusable one — any change can be called a fix. The ratio is the symmetric
+# constraint; without it the only bound is the author's own number.
+#
+# The first version of the entry below asked for 119 and was refused by that rule
+# on its first run: 119 > 10% of 1156. The cap is now 115 and the directory
+# totals 1319, so the bound is real and has 12 lines of slack, not 60.
+#
 # Measured on 2026-09-18, before the entries were written.
 [[fix_window]]
 target = "src/run_cycle/"
-cap    = 119
-k_id   = "K-035,B22"
-reason = "Period verdict module (verdict.rs, 102 NCLOC) plus the loop's own reporting, so an impasse the model declares survives to the outcome and is observable without the panel"
+cap    = 115
+k_id   = "K-035,B22,K-033"
+reason = "Period verdict module (verdict.rs, 102 NCLOC) plus the loop's own reporting, so an impasse the model declares survives to the outcome and is observable without the panel. K-033 is cited because the safety gate move put its disagreeing branches in this directory; that move's own ~44 lines ride the split allowance, not this one."
 
 [[fix_window]]
 target = "src/run_cycle/mod.rs"
