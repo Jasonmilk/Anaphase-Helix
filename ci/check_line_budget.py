@@ -452,11 +452,27 @@ DEFAULT_EXCLUDES = ("target", "node_modules", ".git")
 
 
 def iter_sources(root):
+    """Everything this budget governs.
+
+    Rust under `src/`, plus the checkers in `ci/`. The checkers were the only files
+    in the repository that nothing counted: CI-7 decides whether every guard in the
+    repo is real, and no budget, ratchet or waiver applied to it — nor to CI-6,
+    which had the same exemption for the same accidental reason (the walker looked
+    for `.rs`). The auditors were the sole unaudited files.
+
+    Meta-level caps here: **there is no CI-8.** If a third checker is ever needed,
+    it means CI-7 was built wrong, not that the ladder needs another rung. A
+    checker's checker is still a checker, and the recursion has to stop somewhere
+    or it is only building upward.
+    """
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if d not in DEFAULT_EXCLUDES]
         for name in sorted(filenames):
+            rel = os.path.relpath(os.path.join(dirpath, name), root)
             if name.endswith(".rs"):
-                yield os.path.relpath(os.path.join(dirpath, name), root)
+                yield rel
+            elif name.endswith(".py") and rel.replace(os.sep, "/").startswith("ci/"):
+                yield rel
 
 
 def is_test_path(rel):
@@ -739,6 +755,19 @@ def run(root, budget, branch_budget, max_line, check, line_mode='warn', ratchet=
             print(f'[[ratchet]]\ntarget = "{rel}"\nncloc  = {current[rel]}\n')
         return 0
 
+    if over_budget:
+        tag = "WARN" if split_window_open else "FAIL"
+        note = (
+            "  (advisory during a split window: these are the segments being carved out)"
+            if split_window_open
+            else ""
+        )
+        print(f"{tag}  {len(over_budget)} file(s) over {budget} NOCL with no waiver:{note}")
+        for rel, n in over_budget:
+            print(f"        {rel}  {n}")
+    # Printed BEFORE the early PASS return. It used to sit after it, so the
+    # advisory appeared only when something else had already failed -- a file 757
+    # lines over a 300-line budget was reported to nobody on a clean run.
     ok = not blocking
     if ok:
         extra = ""
@@ -760,16 +789,6 @@ def run(root, budget, branch_budget, max_line, check, line_mode='warn', ratchet=
         for rel, was, now, fix_allow in grown:
             extra = f" (with a +{fix_allow} fix allowance)" if fix_allow else ""
             print(f"        {rel}  {was} -> {now}{extra}")
-    if over_budget:
-        tag = "WARN" if split_window_open else "FAIL"
-        note = (
-            "  (advisory during a split window: these are the segments being carved out)"
-            if split_window_open
-            else ""
-        )
-        print(f"{tag}  {len(over_budget)} file(s) over {budget} NOCL with no waiver:{note}")
-        for rel, n in over_budget:
-            print(f"        {rel}  {n}")
     if marker_failures:
         print(
             f"FAIL  {len(marker_failures)} file(s) marked DATA-ONLY exceed {branch_budget} branches "

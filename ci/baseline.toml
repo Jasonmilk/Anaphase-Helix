@@ -15,6 +15,20 @@
 
 [[waiver]]
 check   = "CI-6"
+target  = "ci/check_guards.py"
+reason  = "CI-7 itself, past 300 once it stopped trusting a bare non-zero exit. Splitting it is a real decision and is NOT the same as adding a CI-8 (which the file header forbids); recorded so the number is visible rather than exempt"
+owner   = "TBD"
+due     = "2026-10-16"
+
+[[waiver]]
+check   = "CI-6"
+target  = "ci/check_line_budget.py"
+reason  = "the checker itself: three allowance classes, the ratchet, the seed gate and the counter in one file. Splitting it is a real decision, not a reflex; recorded here so the number is visible rather than exempt"
+owner   = "TBD"
+due     = "2026-10-16"
+
+[[waiver]]
+check   = "CI-6"
 target  = "src/bind.rs"
 reason  = "拆分待评估：若职责单一则阈值问题，若可拆则拆"
 owner   = "TBD"
@@ -127,6 +141,26 @@ ncloc  = 60
 k_id   = "B17"
 reason = "B17 governance visibility, seeded mid-development at 56 and grown by its own accessors"
 
+# The auditors. Until now CI-6's walker only yielded `.rs`, so `ci/` was the one
+# directory nothing counted: CI-7 decides whether every guard in the repository is
+# real, and no budget, ratchet or waiver applied to it — while CI-6 shared the
+# exemption for the same accidental reason. The auditors were the sole unaudited
+# files, and they are the ones that had to be brought in first.
+#
+# Meta-level caps here: **there is no CI-8.** If a third checker is ever needed,
+# CI-7 is built wrong, not the ladder short a rung.
+[[seed]]
+target = "ci/check_guards.py"
+ncloc  = 300
+k_id   = "K-042"
+reason = "CI-7 itself, seeded exactly at the 300-line budget. Its next line therefore needs a waiver or a split, which is the honest consequence of finally counting it rather than a problem to route around"
+
+[[seed]]
+target = "ci/check_line_budget.py"
+ncloc  = 757
+k_id   = "K-038"
+reason = "CI-6 itself, long past 300 and waived below. The number was invisible only because the walker looked for .rs"
+
 # ---------------------------------------------------------------- fix windows
 #
 # The third class. A waiver is a DEBT ("I will repay it") and carries owner+due;
@@ -213,3 +247,23 @@ target = "src/governance.rs"
 cap    = 4
 k_id   = "B17"
 reason = "the two precondition accessors the contract assertions read, added after the file was seeded"
+
+# The checker's own growth, caught by the checker within one edit of being counted.
+# Ceiling here is 10% of 757 = 75, so 3 is comfortable; that is not the point. The
+# point is that CI-6 was the only file in the repo with no budget, and the first
+# thing it did on gaining one was report itself.
+[[fix_window]]
+target = "ci/check_line_budget.py"
+cap    = 3
+k_id   = "K-038"
+reason = "hoisting the over-300 advisory above the early PASS return, because it could only print when something else had already failed"
+
+# CI-7's own growth, from 300 to 318. The seed reason for that file said its next
+# line would need a waiver or a split; this is that line, and the waiver above is
+# that waiver. The cap is the measured growth, and the ceiling is 10% of 300 = 30,
+# so 18 is inside the ratio rather than argued around it.
+[[fix_window]]
+target = "ci/check_guards.py"
+cap    = 18
+k_id   = "K-042"
+reason = "refusing a key=value outside any section instead of dropping it silently, and demoting the cost budget from FAIL to WARN so it stops suppressing guard growth"

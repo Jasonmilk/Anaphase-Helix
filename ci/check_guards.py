@@ -126,6 +126,18 @@ def load_guards(path):
                 cur[k] = v
             elif k == "budget_seconds":
                 settings["budget_seconds"] = int(v)
+            else:
+                # A `key = value` outside any section used to be dropped in silence,
+                # which is the one thing this file's docstring says it never does:
+                # "malformed is an error, not a skip". A whole entry missing its
+                # `[[guard]]` header would therefore vanish and its guard would look
+                # un-tagged rather than mis-written. Found by the self-check test
+                # whose fixture was itself missing that header.
+                raise GuardError(
+                    f"{path}: `{k} = …` appears outside any section. An entry missing "
+                    "its `[[guard]]` header is dropped silently otherwise, and a "
+                    "dropped entry is indistinguishable from a passing one."
+                )
     flush()
     return guards, settings
 
@@ -322,15 +334,21 @@ def main():
               "        test asserts something else.")
         return 1
 
-    # --- 5. The cost ratchet. ---
+    # --- 5. The cost ratchet: advisory, deliberately NOT a failure. ---
+    #
+    # A hard failure here makes adding a guard expensive, so the next person adds
+    # fewer — the same shape as a coverage threshold that breeds meaningless tests.
+    # Guard density is worth more than wall-clock, so exceeding the budget asks for
+    # tiering and still passes. The hard failures above are kept for things that are
+    # actually wrong: a decoration guard, an already-red test, a mutation that does
+    # not compile.
     budget = settings["budget_seconds"]
     if elapsed > budget:
-        print(f"FAIL  CI-7 took {elapsed:.0f}s against a declared budget of {budget}s with "
-              f"{len(selected)} guard(s).")
-        print("        A gate that keeps getting slower gets switched off, which is worse than\n"
-              "        having none. Tier the expensive guards (`tier = \"slow\"`) and give the\n"
-              "        slow tier a runner, or make the mutation target a smaller test.")
-        return 1
+        print(f"WARN  CI-7 took {elapsed:.0f}s against a declared budget of {budget}s "
+              f"with {len(selected)} guard(s).")
+        print("        Not a failure: a check that is expensive to extend is one that stops")
+        print("        being extended, which costs more than the seconds. Tier the slowest")
+        print("        guards (`tier = \"slow\"`) when the wall-clock actually starts to hurt.")
 
     note = f" ({len(skipped)} slow guard(s) skipped by --skip-slow)" if skipped else ""
     print(f"OK    {len(selected)} guard(s) verified: each declared mutation reddens its NAMED test, "

@@ -14,11 +14,20 @@ ncloc  = 13
 target = "build.rs"
 ncloc  = 13
 [[ratchet]]
+target = "ci/"
+ncloc  = 1057
+[[ratchet]]
 target = "ci/canary/"
 ncloc  = 52
 [[ratchet]]
 target = "ci/canary/ncloc_known.rs"
 ncloc  = 52
+[[ratchet]]
+target = "ci/check_guards.py"
+ncloc  = 300
+[[ratchet]]
+target = "ci/check_line_budget.py"
+ncloc  = 757
 [[ratchet]]
 target = "src/"
 ncloc  = 9110

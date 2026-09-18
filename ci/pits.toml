@@ -47,3 +47,13 @@ summary  = "Governance must be self-reporting: with any of the three preconditio
 id       = "K-031"
 recorded = "2026-09-18"
 summary  = "allocate_period_id silently produced a wrong id for a non-hex argument"
+
+[[pit]]
+id       = "K-038"
+recorded = "2026-09-18"
+summary  = "A runtime counter reporting 0 needs a positive control, because unlike a grep's zero it goes silent the moment the path moves. Third instance of the family. Found while making CI-7 the auditor of every guard, which is also why the auditors themselves are now counted: CI-6 and CI-7 were the only files in the repository with no budget, ratchet or waiver"
+
+[[pit]]
+id       = "K-042"
+recorded = "2026-09-18"
+summary  = "CI-7 treated any non-zero exit as a red test, so a mutation that merely broke the build verified the guard. Sixth instance of the reachability-versus-capability family, and the discipline it violated had been written down the previous round"
