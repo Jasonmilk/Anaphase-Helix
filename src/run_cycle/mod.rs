@@ -1295,56 +1295,48 @@ impl AgentLoop {
                 let command = self.tool_command.as_deref()
                     .unwrap_or(self.run_config.execution_placeholder.as_str());
                 // HITL 执行闸（P10b T3，DNA 原则 4）：低风险 → 放行；高风险 → 人类确认
-                match self.hitl.check_approval(command, &[action_str.clone()]) {
-                    Ok(true) => {
-                        // 放行 → 工具审计（safety，原则 5 扩展点）
-                        match self.safety.audit("execute", &action_str).await {
-                            Ok(true) => {
-                                // Execute tool
-                                match self.tool.execute(command, &[action_str.clone()]).await {
-                                    Ok(result) => {
-                                        info!("[Execution] Execution result: {}", result);
-                                        self.emit_cycle(
-                                            "tool",
-                                            &format!(
-                                                "{{\"tool\":{},\"ok\":true,\"result\":{}}}",
-                                                serde_json::to_string(command).unwrap_or_default(),
-                                                serde_json::to_string(&result).unwrap_or_default()
-                                            ),
-                                        );
-                                        Ok(TransitionCondition::Success)
-                                    }
-                                    Err(e) => {
-                                        warn!("[Execution] Execution failed: {}", e);
-                                        self.emit_cycle(
-                                            "tool",
-                                            &format!(
-                                                "{{\"tool\":{},\"ok\":false,\"error\":{}}}",
-                                                serde_json::to_string(command).unwrap_or_default(),
-                                                serde_json::to_string(&e).unwrap_or_default()
-                                            ),
-                                        );
-                                        Ok(TransitionCondition::Failure)
-                                    }
-                                }
-                            }
-                            Ok(false) => {
-                                warn!("[Execution] Safety audit rejected");
-                                Ok(TransitionCondition::Failure)
-                            }
-                            Err(e) => {
-                                warn!("[Execution] Safety audit failed, fallback allow: {}", e);
+                // 工具审计（safety，原则 5 扩展点）。两者都在 safety_gate 里，
+                // 因为 structured 路径对同一情况的答案相反（K-033）。
+                let actions = [action_str.clone()];
+                let verdict = safety_gate::admit(
+                    &self.hitl,
+                    self.safety.as_ref(),
+                    command,
+                    &actions,
+                    // K-033: this path reports success when the audit cannot run.
+                    safety_gate::OnAuditError::ReportSuccess,
+                )
+                .await;
+                match verdict {
+                    safety_gate::GateVerdict::Refused(condition) => Ok(condition),
+                    safety_gate::GateVerdict::Cleared => {
+                        // Execute tool
+                        match self.tool.execute(command, &[action_str.clone()]).await {
+                            Ok(result) => {
+                                info!("[Execution] Execution result: {}", result);
+                                self.emit_cycle(
+                                    "tool",
+                                    &format!(
+                                        "{{\"tool\":{},\"ok\":true,\"result\":{}}}",
+                                        serde_json::to_string(command).unwrap_or_default(),
+                                        serde_json::to_string(&result).unwrap_or_default()
+                                    ),
+                                );
                                 Ok(TransitionCondition::Success)
                             }
+                            Err(e) => {
+                                warn!("[Execution] Execution failed: {}", e);
+                                self.emit_cycle(
+                                    "tool",
+                                    &format!(
+                                        "{{\"tool\":{},\"ok\":false,\"error\":{}}}",
+                                        serde_json::to_string(command).unwrap_or_default(),
+                                        serde_json::to_string(&e).unwrap_or_default()
+                                    ),
+                                );
+                                Ok(TransitionCondition::Failure)
+                            }
                         }
-                    }
-                    Ok(false) => {
-                        warn!("[Execution] HITL rejected: high-risk action blocked");
-                        Ok(TransitionCondition::Failure)
-                    }
-                    Err(e) => {
-                        warn!("[Execution] HITL unavailable, high-risk blocked (fail-closed): {}", e);
-                        Ok(TransitionCondition::Failure)
                     }
                 }
             }
@@ -1647,19 +1639,19 @@ impl AgentLoop {
     /// planned call — low-risk tools pass through with zero extra delay.
     async fn execute_structured(&mut self) -> Result<TransitionCondition, String> {
         for c in &self.context.calls {
-            match self.hitl.check_approval(&c.tool, &[]) {
-                Ok(true) => {}
-                _ => {
-                    warn!("[Execution] HITL blocked tool: {}", c.tool);
-                    return Ok(TransitionCondition::Failure);
-                }
-            }
-            match self.safety.audit("execute", &c.tool).await {
-                Ok(true) => {}
-                _ => {
-                    warn!("[Execution] Safety audit blocked tool: {}", c.tool);
-                    return Ok(TransitionCondition::Failure);
-                }
+            match safety_gate::admit(
+                &self.hitl,
+                self.safety.as_ref(),
+                &c.tool,
+                &[],
+                // K-033: this path blocks when the audit cannot run. The legacy
+                // path above reports success for the same situation.
+                safety_gate::OnAuditError::Block,
+            )
+            .await
+            {
+                safety_gate::GateVerdict::Cleared => {}
+                safety_gate::GateVerdict::Refused(condition) => return Ok(condition),
             }
         }
         let job = match &self.context.job {
@@ -1727,6 +1719,9 @@ mod usage;
 pub mod verdict;
 #[cfg(test)]
 mod verdict_tests;
+mod safety_gate;
+#[cfg(test)]
+mod safety_gate_tests;
 
 pub use verdict::{EndReason, PeriodVerdict};
 
