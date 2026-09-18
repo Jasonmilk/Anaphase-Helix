@@ -13,6 +13,9 @@ pub mod events;
 pub mod trace;
 pub mod session_events;
 pub mod health;
+pub mod governance;
+#[cfg(test)]
+mod governance_tests;
 pub mod bind;
 pub mod contract;
 pub mod evidence;

@@ -558,6 +558,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     println!("Anaphase-Helix v0.1.0 started successfully");
+    // B17: an engine that is not governed must say so at startup, not only when
+    // someone happens to poll /v1/health. `gate_ok` treats an unconfigured Tuck
+    // as "nothing to gate" by design, so before this line the only way to learn
+    // that the audit path was absent was to go looking for it.
+    if let Some(warning) = anaphase::governance::warning(&config.anaphase) {
+        eprintln!("⚠️  {warning}");
+    }
     println!("CAP HTTP endpoint: http://0.0.0.0:{}", config.anaphase.cap_http_port);
 
     // P10c T1：纪元开始 → 强制苏醒（跨纪元认知重载，读取上一纪元认知脱水简报）

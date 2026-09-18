@@ -39,6 +39,11 @@ recorded = "2026-09-18"
 summary  = "An impasse must be observable without the panel; the ring buffer is read only while a panel is open"
 
 [[pit]]
+id       = "B17"
+recorded = "2026-09-18"
+summary  = "Governance must be self-reporting: with any of the three preconditions unmet the engine must be explicitly and queryably ungoverned, not silently continuing. `check_endpoint` answered `ok: true, detail: \"not configured\"`, so an absent precondition and a satisfied one gave the same verdict"
+
+[[pit]]
 id       = "K-031"
 recorded = "2026-09-18"
 summary  = "allocate_period_id silently produced a wrong id for a non-hex argument"

@@ -131,6 +131,35 @@ reason = "sees the impasse as it happens and reports it at the source, because t
 
 [[fix_window]]
 target = "src/main.rs"
-cap    = 4
-k_id   = "B22"
-reason = "the HTTP channel carries the whole verdict instead of only `done`, so an impasse is distinguishable from a normal end"
+cap    = 7
+k_id   = "B22,B17"
+reason = "the HTTP channel carries the whole verdict instead of only `done`, so an impasse is distinguishable from a normal end; and the startup line that reports an ungoverned engine"
+
+# B17 is a FEATURE, not a fix, and the ratio rule said so before I did: appending
+# governance to a 198-line health.rs is a 60% increase, far past the tenth that a
+# fix is allowed. So it lives in its own file, which seeds at birth, and this
+# entry covers only what the rest of the tree had to grow to surface it.
+[[fix_window]]
+target = "src/health.rs"
+cap    = 1
+k_id   = "B17"
+reason = "the health payload gains one governance key, kept separate from `ok`"
+
+# A directory entry, so B17's new file does not eat the split allowance. The two
+# numbers stay separable: 40 for this, 60 for ADR-0042, and the estimate-versus-
+# actual comparison the split allowance exists to produce is still available.
+[[fix_window]]
+target = "src/"
+cap    = 40
+k_id   = "B17"
+reason = "src/governance.rs (56 NCLOC) plus the payload key and startup line, measured at +40 for the directory. New files seed at birth individually but still count in the directory total, so without this they would be paid for out of the split window"
+
+# Two module declarations. The test module is declared here rather than inside
+# `governance.rs` because that file is a file, not a directory: a `mod` inside it
+# resolves to `src/governance/governance_tests.rs`, which does not exist. Same
+# reason `verdict_tests` is declared from its own module root.
+[[fix_window]]
+target = "src/lib.rs"
+cap    = 3
+k_id   = "B17"
+reason = "declares the new governance module and its test module"

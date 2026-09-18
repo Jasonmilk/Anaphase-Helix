@@ -89,6 +89,9 @@ ncloc  = 93
 target = "src/gloves.rs"
 ncloc  = 246
 [[ratchet]]
+target = "src/governance.rs"
+ncloc  = 56
+[[ratchet]]
 target = "src/health.rs"
 ncloc  = 198
 [[ratchet]]

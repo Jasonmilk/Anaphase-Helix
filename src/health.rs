@@ -32,7 +32,7 @@ fn endpoint_addr(endpoint: &str) -> Result<SocketAddr, String> {
 /// thread, with a hard 2s timeout on the caller side. `connect_timeout` is
 /// flaky on macOS against loopback listeners (poll can stall ~1.7s then
 /// still succeed), so we never rely on it — 确定性优先.
-fn tcp_reachable(endpoint: &str) -> Result<(), String> {
+pub(crate) fn tcp_reachable(endpoint: &str) -> Result<(), String> {
     let addr = endpoint_addr(endpoint)?;
     let (tx, rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
@@ -126,13 +126,27 @@ pub fn checks(cfg: &AnaphaseConfig) -> Value {
         let ok = c["ok"].as_bool().unwrap_or(false);
         !configured || ok
     });
-    json!({ "ok": ok, "checks": checks })
+    // B17: governance is reported alongside health, not folded into `ok`. The
+    // two answer different questions — "is what is configured working" and "is
+    // enough configured to call this governed" — and an unconfigured engine is
+    // healthy in the first sense. Folding them would make every optional organ
+    // look like a failure; leaving governance out entirely is what let an
+    // ungoverned engine look fine. Consumer audit before `ok` learns about it.
+    let gov = crate::governance::status(cfg, true);
+    json!({ "ok": ok, "governance": gov, "checks": checks })
 }
 
 /// Fail-closed gate: when Tuck is configured (audit/LLM gateway), the
 /// engine refuses to reason while Tuck is unreachable — Tuck down = Helix
 /// stops thinking (SPOF explicitly accepted, 网关可用性换审计完整性).
 /// Unconfigured → pass (按需驱动: nothing to gate).
+///
+/// **This is a deliberate policy, not an oversight.** Round 29 read the
+/// `None => Ok(())` below as the same defect as `unwrap_or("local")`; it is not
+/// — the pass-through is reasoned and pinned by tests. What was missing is that
+/// nothing told an operator they were running *ungoverned*. `governance` below
+/// supplies that, and this function is left alone because whether an ungoverned
+/// engine should refuse to start is a policy question, not a reporting one.
 pub fn gate_ok(cfg: &AnaphaseConfig) -> Result<(), String> {
     match cfg.tuck_endpoint.as_ref().filter(|s| !s.is_empty()) {
         Some(ep) => tcp_reachable(ep).map_err(|e| format!("tuck unreachable ({ep}): {e}")),

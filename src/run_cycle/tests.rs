@@ -1019,3 +1019,52 @@ fn every_returned_condition_has_a_rule() {
         "expected at least the twelve known reachable pairs, checked {checked}"
     );
 }
+
+/// The gate's direction is now a parameter, and a parameterisation is a new
+/// abstraction: pass the wrong variant at a call site and the two paths silently
+/// agree (or silently swap), with nothing to notice it.
+///
+/// There is no `Default` impl here to get wrong — the risk is the argument — so
+/// this pins what each call site passes. That is the answer to "is the parameter
+/// the behaviour before the move": `ReportSuccess` is the legacy path and `Block`
+/// is `execute_structured`, exactly as the two blocks read before they moved.
+///
+/// The day someone unifies them, this goes red, and updating it means updating
+/// K-033 in the same commit — which is the point. A move that quietly became a
+/// fix would otherwise leave the pit record describing code that no longer exists.
+#[test]
+fn the_gate_callers_pass_the_policy_they_passed_before_the_move() {
+    let src = include_str!("mod.rs");
+    let sites: Vec<(usize, &str)> = src
+        .match_indices("OnAuditError::")
+        .map(|(i, _)| {
+            let rest = &src[i..];
+            let end = rest.find(|c: char| !(c.is_alphanumeric() || c == ':' || c == '_')).unwrap_or(rest.len());
+            (i, &rest[..end])
+        })
+        .collect();
+    assert_eq!(
+        sites.len(),
+        2,
+        "expected exactly two gate call sites, found {}: {:?}",
+        sites.len(),
+        sites.iter().map(|(_, s)| *s).collect::<Vec<_>>()
+    );
+    // Order as well as value: the legacy site is the first one in `Execution`.
+    assert_eq!(sites[0].1, "OnAuditError::ReportSuccess", "legacy path (K-033: reports success)");
+    assert_eq!(sites[1].1, "OnAuditError::Block", "structured path (K-033: blocks)");
+    assert!(
+        sites[0].0 < sites[1].0,
+        "the legacy site must precede the structured one; a swap means the two \
+         directions changed places, which is a behaviour change, not a move"
+    );
+
+    // And the parameter really is a parameter: the type must not have grown a
+    // default that would let a third caller inherit one of these silently.
+    let gate = include_str!("safety_gate.rs");
+    assert!(
+        !gate.contains("impl Default for OnAuditError"),
+        "`OnAuditError` gained a default. A defaulted direction is a direction \
+         nobody chose, and it would apply to every future caller."
+    );
+}

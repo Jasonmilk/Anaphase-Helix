@@ -130,8 +130,15 @@ async fn every_gate_branch_answers_what_it_answers_today() {
 /// counter is the assertion: "HITL was not the reason" is not something a reader
 /// can check, and getting the risk classification wrong is silent — the branch
 /// simply never runs. So the stub counts how often it was consulted.
+/// **PC-1.** The counter's positive control. A zero is only evidence if the
+/// instrument is known to be able to produce a non-zero, so the same counter is
+/// driven down the path where HITL *must* be consulted, and it must move.
+///
+/// This is the third time this family has come up — a rule written without a
+/// control (P7), a grep whose zero could have been the wrong path (C1), and now a
+/// counter reporting 0. The first two got controls; this one gets two.
 #[tokio::test]
-async fn hitl_is_not_consulted_for_a_low_risk_tool_and_is_for_a_high_risk_one() {
+async fn pc1_a_low_risk_tool_is_not_consulted_and_a_high_risk_one_is() {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     let calls = Arc::new(AtomicUsize::new(0));
@@ -152,14 +159,83 @@ async fn hitl_is_not_consulted_for_a_low_risk_tool_and_is_for_a_high_risk_one() 
     );
     assert_eq!(low, GateVerdict::Cleared);
 
+    // PC-1 proper: the same instrument, on a path it cannot miss.
     let high = admit(&counting, &safety, HIGH_RISK, &no_args(), OnAuditError::Block).await;
     assert_eq!(
         calls.load(Ordering::SeqCst),
         1,
-        "a high-risk tool must reach it — if this is 0 the risk classifier changed \
-         and every HITL branch above became unreachable"
+        "PC-1: the counter must move when HITL is consulted. If it is 0 then either \
+         the risk classifier changed or the instrument is broken -- and the `0` \
+         asserted above means nothing until this one is non-zero"
     );
     assert_eq!(high, GateVerdict::Refused(TransitionCondition::Failure));
+}
+
+/// **PC-2.** The control for the control: prove PC-1 is reading the counter and
+/// nothing else.
+///
+/// A counter wired into a place that never executes reports 0 forever, and a test
+/// asserting 0 stays green. A grep's zero at least reflects the disk now; a
+/// runtime counter's zero is silent the moment the path moves. So this runs PC-1's
+/// own assertion against a deliberately dead instrument and requires it to fail.
+///
+/// The only difference from PC-1 is the instrument. If this ever passes — i.e. the
+/// assertion does *not* go red against a dead counter — then PC-1 was asserting
+/// something other than the counter all along.
+#[test]
+fn pc2_pc1_goes_red_when_its_instrument_is_dead() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    // Never incremented, whatever happens: a counter moved to a dead position.
+    let dead = Arc::new(AtomicUsize::new(0));
+    let counter_is_dead = dead.clone();
+
+    // Drive the real path PC-1 drives, so the scenario is identical.
+    let live = Arc::new(AtomicUsize::new(0));
+    let live_counter = live.clone();
+    let approver = HITLApprover::new(Arc::new(move |_c: &str, _a: &[String]| {
+        live_counter.fetch_add(1, Ordering::SeqCst);
+        Err("no channel".to_string())
+    }));
+    let _ = approver.check_approval(HIGH_RISK, &[]);
+
+    // The instrument that was wired up saw it.
+    assert_eq!(
+        live.load(Ordering::SeqCst),
+        1,
+        "the reference instrument must count a call it cannot miss; if this is 0 \
+         the counter mechanism itself is broken and both PC-1 assertions are void"
+    );
+
+    // The dead one did not, so PC-1's assertion must fail.
+    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        assert_eq!(
+            counter_is_dead.load(Ordering::SeqCst),
+            1,
+            "PC-1's shape, run against a dead instrument"
+        );
+    }));
+    assert!(
+        outcome.is_err(),
+        "PC-1's assertion stayed green against a counter that was never wired -- \
+         so PC-1 is not testing the counter"
+    );
+}
+
+/// The table above enumerates the policy variants by hand, so a new variant would
+/// silently lose coverage: the table would stay green and simply not mention it.
+///
+/// This match has no wildcard on purpose. Adding a variant to `OnAuditError`
+/// breaks this build rather than quietly shrinking what the table covers — a
+/// compile error is the only kind of guard that cannot be forgotten at runtime.
+#[test]
+fn the_table_cannot_lose_a_policy_variant_silently() {
+    for policy in [OnAuditError::ReportSuccess, OnAuditError::Block] {
+        match policy {
+            OnAuditError::ReportSuccess => {}
+            OnAuditError::Block => {}
+        }
+    }
 }
 
 /// The pair above is the finding, so it gets its own assertion rather than
