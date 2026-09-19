@@ -1120,3 +1120,55 @@ fn the_gate_callers_pass_the_policy_they_passed_before_the_move() {
          nobody chose, and it would apply to every future caller."
     );
 }
+
+// guards: reflex-fail-closed
+/// H5 (ruled 2026-09-18): an unavailable fear model is not permission.
+///
+/// The `Err` branch used to report `ReflexPassed` with a "default allow" warning, which
+/// made an unavailable safety check indistinguishable from a passed one. It is now
+/// `ReflexBlocked`.
+///
+/// This test exists because the ruling is a BEHAVIOUR change and nothing else asserted
+/// it: the full suite passed both before and after, so the change would have been
+/// unverified — the shape this ledger keeps recording.
+///
+/// The assertion is on the transition, not on the log line. Asserting the message would
+/// pin the wording rather than the direction, and the direction is what was ruled.
+struct DeadFear;
+
+#[async_trait]
+impl crate::adapters::FearAdapter for DeadFear {
+    async fn predict_death(&self, _context: &str) -> Result<f64, String> {
+        Err("fear model unavailable".to_string())
+    }
+}
+
+#[tokio::test]
+async fn an_unavailable_fear_model_blocks_rather_than_passing() {
+    let mut agent = AgentLoop::new(
+        Arc::new(NoopMemoryAdapter),
+        Arc::new(NoopReasoningAdapter),
+        Arc::new(NoopToolAdapter),
+        Arc::new(NoopSafetyAdapter),
+        Arc::new(NoopUiAdapter),
+        Arc::new(DeadFear),
+        ReflexArc {
+            safety_rules: vec![],
+        },
+    );
+    // Drive only as far as the reflex gate: the condition it returns is the whole
+    // assertion. `ReflexBlocked` routes to Reflection; `ReflexPassed` would route to
+    // Execution, which is the fail-open the ruling removed.
+    agent.current_state = crate::states::HelixState::ReflexCheck;
+    agent.context.suggested_actions = vec!["touch /tmp/x".to_string()];
+    let condition = agent
+        .execute_current_state()
+        .await
+        .expect("an unavailable fear model is a condition, not an error");
+    assert_eq!(
+        condition,
+        TransitionCondition::ReflexBlocked,
+        "an unavailable fear model must fail CLOSED (H5). ReflexPassed here means the \
+         safety check silently became permission again."
+    );
+}

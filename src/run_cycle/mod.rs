@@ -836,8 +836,20 @@ impl AgentLoop {
                         }
                     }
                     Err(e) => {
-                        warn!("[ReflexCheck] Fear prediction failed, default allow: {}", e);
-                        Ok(TransitionCondition::ReflexPassed)
+                        // H5 (ruled 2026-09-18): **fail-closed.** The fear model being
+                        // unavailable is not permission. This used to report
+                        // `ReflexPassed` with a "default allow" warning, which made an
+                        // unavailable safety check indistinguishable from a passed one.
+                        //
+                        // The message names its direction on purpose (P13): a fail-open
+                        // and a fail-closed branch that both log at `warn!` have the same
+                        // loudness and opposite meanings, so loudness alone cannot tell a
+                        // reader which one fired.
+                        warn!(
+                            "[ReflexCheck] Fear prediction unavailable, fail-closed (blocking): {}",
+                            e
+                        );
+                        Ok(TransitionCondition::ReflexBlocked)
                     }
                 }
             }

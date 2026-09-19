@@ -103,3 +103,17 @@ file   = "src/governance_tests.rs"
 from   = "        \"bind_state_path\", \"events_log_path\", \"gene_lock_path\", \"reasoning_trace_path\","
 to     = "        \"events_log_path\", \"gene_lock_path\", \"reasoning_trace_path\","
 k_id   = "B17"
+
+# H5's ruling, in the form CI-7 can verify: revert the branch and the guard must go red.
+[[guard]]
+id     = "reflex-fail-closed"
+test   = "an_unavailable_fear_model_blocks_rather_than_passing"
+kind   = "lib"
+file   = "src/run_cycle/mod.rs"
+# The anchor must be unique: `ReflexBlocked` is returned from three places (the hard
+# rule, the soft threshold, and this one). The first version used only the return line
+# and matched two of them, so CI-7 refused it as ambiguous rather than mutating
+# whichever came first.
+from   = "                            \"[ReflexCheck] Fear prediction unavailable, fail-closed (blocking): {}\",\n                            e\n                        );\n                        Ok(TransitionCondition::ReflexBlocked)"
+to     = "                            \"[ReflexCheck] Fear prediction unavailable, fail-closed (blocking): {}\",\n                            e\n                        );\n                        Ok(TransitionCondition::ReflexPassed)"
+k_id   = "H5"
