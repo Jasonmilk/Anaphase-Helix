@@ -348,7 +348,7 @@ reason  = "reading ci/baseline.toml: eight loaders, no decisions. Every one rais
 # one module boundary plus the import surface in the file it left.
 [[split_window]]
 target    = "ci/"
-allowance = 386
+allowance = 433
 reason    = "ci/allowances.py split out of ci/check_line_budget.py (eight loaders, no decisions), plus ci/scan_mutants.py, a genuinely new file. Estimate when opened was 320; the actual has since been 355 and then 386, so the estimate was 11% low and then 17% low. Kept as a running comparison rather than a single corrected number, because D5 wanted the window to carry an estimate so that predicted and actual could be COMPARED — and a comparison with one side edited to match is not a comparison"
 due       = "2026-10-16"
 
@@ -360,4 +360,14 @@ due       = "2026-10-16"
 target    = "ci/check_guards.py"
 allowance = 44
 reason    = "crash-safe recovery (backup + restore-on-start), the same fix scan_mutants.py needed. It does not fit the fix ratio, and a seed re-take is not a permitted substitute — so it is carried as a dated window and the file is queued for a split"
+due       = "2026-10-16"
+
+# The scanner's positive control. It is 47 lines and it is in the exception class the
+# freeze order names: a control that makes an existing mechanism trustworthy rather
+# than one that makes the machinery bigger. Bounded like everything else here — a
+# control that outlives its subject should expire and say so.
+[[split_window]]
+target    = "ci/scan_mutants.py"
+allowance = 47
+reason    = "the positive control, plus the refusal to report missed=0 without one. `missed=0` from an instrument that cannot catch anything reads as 'our tests are good', which is the opposite of what it would mean"
 due       = "2026-10-16"

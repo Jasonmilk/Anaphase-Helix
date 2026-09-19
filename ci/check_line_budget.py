@@ -535,8 +535,14 @@ def run(root, budget, branch_budget, max_line, check, line_mode='warn', ratchet=
         # which one.
         fix_allow = fix_windows.get(key, (0, None))[0]
         eff_base = cap_base.get(key, ratchet_base.get(key, 0))
-        if key in ratchet_base and n > eff_base + fix_allow:
-            grown.append((rel, eff_base, n, fix_allow))
+        # A split window may name a FILE as well as a directory. The first version only
+        # consulted `dir_totals`, so a file-level entry was accepted, written down, and
+        # silently ignored — the third time this file has been caught by a key that
+        # matches nothing. Found because the entry was added to honour round 40's ruling
+        # and changed nothing.
+        split_allow = split_windows.get(key, 0)
+        if key in ratchet_base and n > eff_base + fix_allow + split_allow:
+            grown.append((rel, eff_base, n, fix_allow + split_allow))
         # Directory totals too: a file-level ratchet alone can be dodged by
         # splitting one file into two, because new files have no baseline. The
         # directory total cannot be dodged that way — moving lines around inside
