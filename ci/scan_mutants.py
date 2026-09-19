@@ -125,6 +125,8 @@ def main():
     ap.add_argument("--limit", type=int, default=12,
                     help="how many sites to sample; the number is reported with the result")
     ap.add_argument("--operators", default="", help="comma-separated operator names; empty = all")
+    ap.add_argument("--selftest", action="store_true",
+                    help="run one mutation that a test MUST catch, and require it to be caught")
     ap.add_argument("--files", default="", help="explicit comma-separated files (incremental)")
     ap.add_argument("--changed-since", default="", help="only files changed since this rev, "
                     "e.g. HEAD~1 — the mode that makes this cheap enough for CI")
@@ -162,6 +164,59 @@ def main():
               f"HEAD, so it would not contain your uncommitted edits — and a scan of code "
               f"that is not the code you are working on is a measurement of something else. "
               f"Commit or stash first.", file=sys.stderr)
+        return 3
+
+    # THE POSITIVE CONTROL. A zero in the numerator is only evidence if the instrument
+    # can produce a non-zero — the rule this ledger has had to apply three times now
+    # (a rule without a control, a grep whose zero could have been the wrong path, a
+    # counter reporting 0). A `missed = 0` from a scanner that cannot catch anything
+    # reads as "our tests are good", which is the opposite of what it would mean.
+    #
+    # `is_high_risk("rm -rf /data")` is asserted true by `high_risk_detection`, so
+    # emptying the write-token list MUST be caught. If it is not, the instrument is
+    # broken and every other verdict from this run is void.
+    if args.selftest:
+        rel = "src/hitl.rs"
+        full = os.path.join(root, rel)
+        marker = 'const WRITE: &[&str] = &['
+        if marker not in open(full, encoding="utf-8").read():
+            print(f"CHECKER ERROR: selftest anchor not found in {rel}; the control has "
+                  f"outlived its subject", file=sys.stderr)
+            return 3
+        sandbox = os.path.join(root, "target", "mutants-selftest")
+        if os.path.exists(sandbox):
+            run(["git", "worktree", "remove", "--force", sandbox], root)
+        r = run(["git", "worktree", "add", "--detach", sandbox, "HEAD"], root)
+        if r.returncode != 0:
+            print(f"CHECKER ERROR: cannot create the selftest sandbox: {r.stderr.strip()}",
+                  file=sys.stderr)
+            return 3
+        try:
+            sf = os.path.join(sandbox, rel)
+            text = open(sf, encoding="utf-8").read()
+            control_from = "            if WRITE.contains(&t.as_str())"
+            control_to = "            if false && WRITE.contains(&t.as_str())"
+            if control_from not in text:
+                print(f"CHECKER ERROR: selftest anchor moved in {rel}; the control has "
+                      f"outlived its subject", file=sys.stderr)
+                return 3
+            open(sf, "w", encoding="utf-8").write(text.replace(control_from, control_to, 1))
+            r = run(["cargo", "test", "--lib", "--quiet"], sandbox)
+        finally:
+            run(["git", "worktree", "remove", "--force", sandbox], root)
+        out = (r.stdout or "") + (r.stderr or "")
+        if BUILD_ERROR_RE.search(out):
+            print("CHECKER ERROR: the control mutation did not compile, so it is not "
+                  "evidence either way", file=sys.stderr)
+            return 3
+        if r.returncode != 0:
+            print("OK    positive control: a known-catchable mutation was CAUGHT, so the "
+                  "instrument can produce a non-zero")
+            return 0
+        print("CHECKER ERROR: the positive control was NOT caught. `is_high_risk(\"rm "
+              "\")` is asserted true by high_risk_detection, so emptying the write-token "
+              "list must fail. A scanner that cannot catch this cannot be trusted to "
+              "report a zero.", file=sys.stderr)
         return 3
 
     files = []
@@ -256,6 +311,10 @@ def main():
     elapsed = time.time() - started
     print(f"\n=== result: caught={len(caught)} missed={len(missed)} unviable={len(unviable)} "
           f"of {len(sites)} sampled, {elapsed:.0f}s ===")
+    if missed == 0 and not caught:
+        print("CHECKER ERROR: nothing was caught, so `missed=0` cannot be distinguished "
+              "from an instrument that finds nothing. Run --selftest first.", file=sys.stderr)
+        return 3
     if missed:
         print("MISSED means: this line can be broken and the whole suite stays green.")
         print("That is the question K-036 asks by hand, answered without a human.")

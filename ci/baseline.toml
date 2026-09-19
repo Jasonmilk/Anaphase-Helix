@@ -143,10 +143,10 @@ reason = "B17 governance visibility. RE-TAKEN three times in one work unit (56 -
 # CI-7 is built wrong, not the ladder short a rung.
 [[seed]]
 target = "ci/check_guards.py"
-ncloc  = 360
+ncloc  = 316
 counter = 2
 k_id   = "K-042"
-reason = "CI-7 itself. CORRECTED: recorded as 343 and re-taken there, then round 35 found the counter only knew `//` so every Python `#` line counted as code. True value 316. The over-300 conclusion survives; the numbers do not."
+reason = "CI-7 itself, at its rule-signed value. A later change grew it to 360 and the growth was absorbed by re-taking this seed — which is the back door the ratio rule exists to close: a seed is an INITIAL value and a fix window is an INCREMENT, so folding the increment into the initial value makes it not an initial value. Reverted; the growth is bounded by a split window below instead, which expires."
 
 [[seed]]
 target = "ci/check_line_budget.py"
@@ -350,4 +350,14 @@ reason  = "reading ci/baseline.toml: eight loaders, no decisions. Every one rais
 target    = "ci/"
 allowance = 386
 reason    = "ci/allowances.py split out of ci/check_line_budget.py (eight loaders, no decisions), plus ci/scan_mutants.py, a genuinely new file. Estimate when opened was 320; the actual has since been 355 and then 386, so the estimate was 11% low and then 17% low. Kept as a running comparison rather than a single corrected number, because D5 wanted the window to carry an estimate so that predicted and actual could be COMPARED — and a comparison with one side edited to match is not a comparison"
+due       = "2026-10-16"
+
+# The reverted re-take, bounded and dated instead. A split window expires; a raised
+# seed does not. `check_guards.py` grew 316 -> 360 when crash-safety landed, which is
+# 44 against a 10% ratio ceiling of 31 — so it does not fit, and the answer is a
+# bounded allowance now and a split before the window closes.
+[[split_window]]
+target    = "ci/check_guards.py"
+allowance = 44
+reason    = "crash-safe recovery (backup + restore-on-start), the same fix scan_mutants.py needed. It does not fit the fix ratio, and a seed re-take is not a permitted substitute — so it is carried as a dated window and the file is queued for a split"
 due       = "2026-10-16"
