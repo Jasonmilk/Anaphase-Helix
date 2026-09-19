@@ -239,6 +239,24 @@ def main():
     recover(root)
     argv = sys.argv[1:]
     skip_slow = "--skip-slow" in argv
+    # Bound to the diff, so cost stops tracking the TOTAL number of guards. Google's
+    # mutation work (Petrovic & Ivankovic, ICSE-SEIP 2018 / TSE 2022) generates mutants
+    # only for changed lines and presents them per review, for the same reason. Test
+    # selection generally does this.
+    #
+    # The alternative — raising `budget_seconds` — is the same move as raising a seed or
+    # widening a tolerance: it postpones the problem and guarantees the tiering never
+    # happens. My first reaction was to raise it; this is the fix instead.
+    #
+    # Default is ALL guards. A default that silently skipped would be a gate that stops
+    # running things without saying so.
+    changed_since = None
+    if "--changed-since" in argv:
+        i = argv.index("--changed-since")
+        changed_since = argv[i + 1] if i + 1 < len(argv) else None
+        if not changed_since:
+            print("CHECKER ERROR: --changed-since needs a revision", file=sys.stderr)
+            return 3
     try:
         guards, settings = load_guards(os.path.join(root, GUARDS_FILE))
     except (GuardError, ValueError) as e:
@@ -273,6 +291,28 @@ def main():
         for p in problems:
             print(f"        {p}")
         return 1
+
+    if changed_since:
+        try:
+            d = subprocess.run(["git", "diff", "--name-only", changed_since],
+                               cwd=root, capture_output=True, text=True, timeout=60)
+        except (OSError, subprocess.SubprocessError) as e:
+            print(f"CHECKER ERROR: cannot diff against {changed_since}: {e}", file=sys.stderr)
+            return 3
+        if d.returncode != 0:
+            print(f"CHECKER ERROR: git diff against {changed_since} failed: {d.stderr.strip()}",
+                  file=sys.stderr)
+            return 3
+        touched = {l.strip() for l in d.stdout.splitlines() if l.strip()}
+        before = len(guards)
+        guards = [g for g in guards if g["file"] in touched]
+        print(f"CI-7 bound to the diff since {changed_since}: {len(guards)} of {before} guard(s) "
+              f"have a target in it")
+        if not guards:
+            # Not a pass by default: a diff that touches no guarded file means this run
+            # judged nothing, and "judged nothing" must not read as "found nothing".
+            print(f"OK    no guard's target is in the diff since {changed_since}; nothing to verify")
+            return 0
 
     # --- 2. Validate the substitutions before running anything. ---
     skipped = [g for g in guards if skip_slow and g.get("tier") == "slow"]

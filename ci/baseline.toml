@@ -348,7 +348,7 @@ reason  = "reading ci/baseline.toml: eight loaders, no decisions. Every one rais
 # one module boundary plus the import surface in the file it left.
 [[split_window]]
 target    = "ci/"
-allowance = 433
+allowance = 459
 reason    = "ci/allowances.py split out of ci/check_line_budget.py (eight loaders, no decisions), plus ci/scan_mutants.py, a genuinely new file. Estimate when opened was 320; the actual has since been 355 and then 386, so the estimate was 11% low and then 17% low. Kept as a running comparison rather than a single corrected number, because D5 wanted the window to carry an estimate so that predicted and actual could be COMPARED — and a comparison with one side edited to match is not a comparison"
 due       = "2026-10-16"
 
@@ -358,8 +358,8 @@ due       = "2026-10-16"
 # bounded allowance now and a split before the window closes.
 [[split_window]]
 target    = "ci/check_guards.py"
-allowance = 44
-reason    = "crash-safe recovery (backup + restore-on-start), the same fix scan_mutants.py needed. It does not fit the fix ratio, and a seed re-take is not a permitted substitute — so it is carried as a dated window and the file is queued for a split"
+allowance = 70
+reason    = "crash-safe recovery, then the diff binding that makes CI-7's cost track the change rather than the total guard count. Neither fits the fix ratio (ceiling is max(36, 10% of 316) = 36 against a 70-line growth) and a seed re-take is not a permitted substitute, so both are carried as a dated window and the file is queued for a split"
 due       = "2026-10-16"
 
 # The scanner's positive control. It is 47 lines and it is in the exception class the

@@ -991,20 +991,55 @@ fn every_returned_condition_has_a_rule() {
         }
     };
 
-    // Arms whose bodies were extracted to their own module. The scan covers those files
-    // too, so the guard's claim — every condition a state can return has a rule — stays
-    // true across the move instead of quietly shrinking to the arms still in `mod.rs`.
-    // Without this the guard would pass by scanning less, which is the "test that looks
-    // tested" shape this repository has recorded more than once.
-    const EXTRACTED: &[(&str, &str)] = &[("Reasoning", include_str!("reasoning.rs"))];
+    // **Derived, not enumerated.** Scanning `mod.rs` alone made this guard expire once
+    // per split: every extracted arm takes its `Ok(TransitionCondition::…)` returns with
+    // it. Enlarging the list once per segment would mean four more judgement calls, and
+    // each is a chance to "pass by scanning less" — the exact temptation this guard
+    // exists to prevent. So the scope is the whole `run_cycle` directory, read at
+    // runtime, and a new module is picked up the moment it exists.
+    //
+    // Test modules are excluded: they assert about conditions, they do not return them.
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/run_cycle");
+    let mut module_sources: Vec<(String, String)> = Vec::new();
+    for entry in std::fs::read_dir(&dir).expect("run_cycle must be a directory") {
+        let path = entry.expect("readable dir entry").path();
+        let name = path.file_name().unwrap().to_string_lossy().to_string();
+        if !name.ends_with(".rs") || name == "tests.rs" || name.ends_with("_tests.rs") {
+            continue;
+        }
+        module_sources.push((
+            name.clone(),
+            std::fs::read_to_string(&path).expect("module must be readable"),
+        ));
+    }
+    assert!(
+        module_sources.len() >= 4,
+        "the directory scan found {} module file(s); if this is 0 the guard is passing \
+         by finding nothing, which is the failure mode it is meant to catch",
+        module_sources.len()
+    );
 
     let mut checked = 0;
     for (idx, (name, start)) in arms.iter().enumerate() {
         let end = arms.get(idx + 1).map(|a| a.1).unwrap_or(fn_end);
         let mut seen: Vec<String> = Vec::new();
-        let extracted = EXTRACTED.iter().find(|(n, _)| n == name).map(|(_, src)| *src);
-        let body: Vec<&str> = match extracted {
-            Some(src) => src.lines().collect(),
+        // The arm's own module if one exists, found by CONVENTION (CamelCase arm ->
+        // snake_case file) rather than by a list. A list would be an enumeration again,
+        // and enumerations expire — which is the whole reason this guard changed.
+        let snake: String = name
+            .chars()
+            .enumerate()
+            .flat_map(|(i, c)| {
+                if c.is_uppercase() && i > 0 {
+                    vec!['_', c.to_ascii_lowercase()]
+                } else {
+                    vec![c.to_ascii_lowercase()]
+                }
+            })
+            .collect();
+        let file = format!("{snake}.rs");
+        let body: Vec<&str> = match module_sources.iter().find(|(f, _)| *f == file) {
+            Some((_, src)) => src.lines().collect(),
             None => lines[*start..end].to_vec(),
         };
         for l in &body {
