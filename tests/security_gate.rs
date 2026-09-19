@@ -2,7 +2,14 @@
 //!
 //! Verifies the pipeline wiring point with a mock gate: Pass / HardOverride
 //! proceed; Reject / HitlRequired block the call, short-circuit with an Err,
-//! and write a `blocked` ledger record. `None` gate = legacy behavior.
+//! and write a `blocked` ledger record.
+//!
+//! **B7 changed what `None` means.** It used to be "legacy behaviour" — i.e. no check at
+//! all, which is how the production path ran ungated (K-044: `None` read as benign while
+//! meaning "no door"). Now **absence is not approval**: with no gate configured, a
+//! *high-risk* call is blocked and low-risk calls keep the legacy path. `PermissiveGate`
+//! is the explicit, visible opt-out.
+//!
 //! The mock Tentacle is used only to observe whether a call reached the
 //! wire (blocked calls must never reach Tentacle).
 
@@ -37,6 +44,21 @@ fn input() -> PipelineInput {
     }
 }
 
+/// A call the local classifier marks high-risk. B7 uses that classifier deliberately:
+/// it is the *weakest* available judgement (B4 records how weak), so it under-blocks
+/// rather than over-blocks. If it ever stops calling `rm` high-risk, the B7 tests below
+/// fail — which is the point of routing them through the real classifier.
+///
+/// `expect` stays inside the grammar's enum (`ok`); only `tool` is free-form, and `tool`
+/// is what the classifier reads. (`expect` rejecting an unknown variant is what told me
+/// this — the field that is an enum is not the field that carries the risk.)
+fn high_risk_input() -> PipelineInput {
+    PipelineInput {
+        llm_content: r#"{"calls":[{"tool":"rm","args":{},"expect":"ok"}]}"#.into(),
+        ..input()
+    }
+}
+
 async fn wired(mock: MockTentacle) -> Pipeline {
     let (endpoint, _captured, shutdown_tx, handle) = spawn_mock_tentacle(mock).await;
     let config = PipelineConfig::from_codex("knowledge_base/fixture-codex.json").unwrap();
@@ -59,6 +81,69 @@ async fn no_gate_is_legacy_compatible() {
     assert_eq!(outcome.job_id, "tt_job-gate");
     // Legacy path: a verdict, never a blocked record.
     assert!(pipeline.ledger.records().iter().all(|r| matches!(r, LedgerRecord::Verdict { .. })));
+}
+
+/// B7. **Absence of a gate is not approval.** With no door-keeper configured, a
+/// high-risk call must be blocked — that is the whole difference between "we have an
+/// adapter" and "the pipeline is gated".
+///
+/// Non-vacuity: the mock **does** serve `rm`, so a regression that lets high-risk calls
+/// through fails here by succeeding, instead of erroring for some duller reason.
+// guards: no-gate-blocks-high-risk
+#[tokio::test]
+async fn no_gate_blocks_a_high_risk_call() {
+    let mock = MockTentacle::new().with_tool("rm", r#"{"ok":true}"#);
+    let pipeline = wired(mock).await;
+    let mut pipeline = pipeline.with_security_gate(None);
+    let err = pipeline
+        .run(high_risk_input())
+        .await
+        .expect_err("a high-risk call must not proceed when no gate is configured");
+    assert!(err.contains("blocked by security gate"), "{err}");
+    assert!(
+        pipeline
+            .ledger
+            .records()
+            .iter()
+            .any(|r| matches!(r, LedgerRecord::Blocked { .. })),
+        "the block must be recorded in the ledger, not merely returned as an Err"
+    );
+}
+
+/// The other half of B7: the legacy promise is **narrowed, not revoked**. A low-risk
+/// call still runs with no gate configured, so this is not a blanket fail-closed that
+/// would break every existing deployment.
+#[tokio::test]
+async fn no_gate_still_allows_a_low_risk_call() {
+    let mock = MockTentacle::new().with_tool("numbers", r#"{"series":[1.0,2.0]}"#);
+    let pipeline = wired(mock).await;
+    let mut pipeline = pipeline.with_security_gate(None);
+    pipeline
+        .run(input())
+        .await
+        .expect("low-risk calls keep the legacy path");
+    assert!(
+        pipeline
+            .ledger
+            .records()
+            .iter()
+            .all(|r| !matches!(r, LedgerRecord::Blocked { .. })),
+        "a low-risk call must not be recorded as blocked"
+    );
+}
+
+/// B7's escape hatch, and why it is a hatch rather than a default: installing
+/// `PermissiveGate` is an **explicit, visible** decision to run without policy.
+#[tokio::test]
+async fn permissive_gate_is_the_explicit_opt_out() {
+    let mock = MockTentacle::new().with_tool("rm", r#"{"ok":true}"#);
+    let pipeline = wired(mock).await;
+    let mut pipeline = pipeline
+        .with_security_gate(Some(Arc::new(anaphase::security::PermissiveGate)));
+    pipeline
+        .run(high_risk_input())
+        .await
+        .expect("an explicitly installed PermissiveGate must permit");
 }
 
 #[tokio::test]

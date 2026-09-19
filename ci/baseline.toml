@@ -440,3 +440,13 @@ target = "src/adapters/mod.rs"
 cap    = 1
 k_id   = "K-044"
 reason = "one `pub mod` line registering the new HTTP security gate"
+
+# B7: absence of a gate stops being permission. A safety fix, not debt — the growth is
+# the second match arm plus the explicit opt-out message, and the alternative (leaving
+# the hole) is the thing this window exists to pay for. Ratio ceiling for a 269-line
+# file is max(36, 26) = 36, so a cap of 14 is well inside it.
+[[fix_window]]
+target = "src/pipeline/mod.rs"
+cap    = 14
+k_id   = "B7"
+reason = "the `None` arm that blocks high-risk calls when no door-keeper is configured, and the message that names the explicit opt-out. Measured 269 -> 282 (+13); the cap is set one line above the measurement so a later edit that adds a line has to come back and say so rather than slipping through"

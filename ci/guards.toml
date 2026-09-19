@@ -141,3 +141,18 @@ file   = "src/reflex.rs"
 from   = "        let action = normalize(action);"
 to     = "        // mutant: no normalisation"
 k_id   = "H2b"
+
+# B7. The whole point of the ruling is the DIRECTION of the default, so the mutation
+# replaces the judgement with a constant — a mutation that merely renamed something
+# would leave the direction intact and prove nothing. Measured by hand before writing
+# this: with the constant `false` the named test goes red, which is what makes it a guard
+# rather than a decoration.
+[[guard]]
+id     = "no-gate-blocks-high-risk"
+test   = "no_gate_blocks_a_high_risk_call"
+kind   = "integration"
+target = "security_gate"
+file   = "src/pipeline/mod.rs"
+from   = "                None => crate::hitl::HITLApprover::is_high_risk(&call.tool).then(|| {"
+to     = "                None => false.then(|| {"
+k_id   = "B7"

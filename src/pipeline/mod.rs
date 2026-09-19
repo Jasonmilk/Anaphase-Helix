@@ -162,30 +162,53 @@ impl Pipeline {
             // Security gate before execution (ADR-0008 D'-2). Reject/HITL
             // block the call and write a `blocked` ledger record — the
             // action never reaches Tentacle.
-            if let Some(gate) = &self.security_gate {
-                let verdict = gate
-                    .check(&GateCheck {
-                        job_id: job.job_id.clone(),
-                        index: i as u32,
-                        tool: call.tool.clone(),
-                        args_json: params.clone(),
-                        identity_labels: identity_labels.clone(),
-                    })
-                    .await;
-                if !verdict.permits() {
-                    let reason = match &verdict {
-                        GateVerdict::Reject(r) | GateVerdict::HitlRequired(r) => r.clone(),
-                        _ => "blocked by security gate".to_string(),
-                    };
-                    self.ledger.append(LedgerRecord::blocked(
-                        &job.job_id,
-                        &call.tool,
-                        i as u32,
-                        &reason,
-                        identity_labels.get("identity").map(|s| s.as_str()),
-                    ));
-                    return Err(format!("blocked by security gate: {reason}"));
+            let block_reason = match &self.security_gate {
+                Some(gate) => {
+                    let verdict = gate
+                        .check(&GateCheck {
+                            job_id: job.job_id.clone(),
+                            index: i as u32,
+                            tool: call.tool.clone(),
+                            args_json: params.clone(),
+                            identity_labels: identity_labels.clone(),
+                        })
+                        .await;
+                    if verdict.permits() {
+                        None
+                    } else {
+                        Some(match &verdict {
+                            GateVerdict::Reject(r) | GateVerdict::HitlRequired(r) => r.clone(),
+                            _ => "blocked by security gate".to_string(),
+                        })
+                    }
                 }
+                // B7: **no gate is not permission.** A call that would have been gated
+                // must not proceed merely because nobody configured a door-keeper — that
+                // is exactly how the production path ran ungated (K-044: `None` read as
+                // "legacy behaviour" while meaning "no door"). The escape hatch is
+                // explicit: install `PermissiveGate`.
+                //
+                // High-risk is decided by the local classifier, and that choice is
+                // deliberate: it is the *weakest* judgement available to us (B4 records
+                // how weak), so it under-blocks rather than over-blocks. Low-risk calls
+                // keep the legacy behaviour this ADR promised.
+                None => crate::hitl::HITLApprover::is_high_risk(&call.tool).then(|| {
+                    format!(
+                        "no security gate configured, and {:?} is high-risk: absence is not \
+                         approval (B7). Configure PermissiveGate to opt out explicitly.",
+                        call.tool
+                    )
+                }),
+            };
+            if let Some(reason) = block_reason {
+                self.ledger.append(LedgerRecord::blocked(
+                    &job.job_id,
+                    &call.tool,
+                    i as u32,
+                    &reason,
+                    identity_labels.get("identity").map(|s| s.as_str()),
+                ));
+                return Err(format!("blocked by security gate: {reason}"));
             }
 
             let started = std::time::Instant::now();

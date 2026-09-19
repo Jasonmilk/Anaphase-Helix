@@ -72,3 +72,8 @@ summary  = "safety_rules is static, not runtime-loadable. The field comment clai
 id       = "K-044"
 recorded = "2026-09-20"
 summary  = "The security gate had no door on the production path. Measured: with_security_gate is called only from tests/, PipelineConfig defaults the field to None, src/main.rs never installs one, and tuck-core is a dev-only dependency — so every tool call executed ungated while security.rs described None as harmless 'legacy behavior'. The emergency-pass variant's comment claimed (audited) with no check behind it, and the peer surface the design assumes did not exist: Tuck serves the gate as a library API and its gateway exposes no route for a decision. Fifth instance of 'the real gap is the one not on the list'"
+
+[[pit]]
+id       = "B7"
+recorded = "2026-09-18"
+summary  = "Absence of a security gate was permission. The pipeline consulted `security_gate` only when it was `Some`, so with `None` every call executed — including high-risk ones. `None` was documented as benign 'legacy behaviour' while meaning 'no door', which is how the production path ran ungated (K-044). B7 makes absence fail-closed for high-risk calls, with `PermissiveGate` as the explicit, visible opt-out. First written down in commonintents/.github at e1fad63 (2026-09-18); the fix landed 2026-09-20, so the pit demonstrably precedes it"
