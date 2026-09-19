@@ -738,9 +738,7 @@ async fn build_agent(config: &config::Config) -> BuiltAgent {
         let ui: Arc<dyn UiAdapter> = Arc::new(NoopUiAdapter);
         let fear: Arc<dyn FearAdapter> = Arc::new(NoopFearAdapter);
 
-        let reflex = ReflexArc {
-            safety_rules: vec!["rm -rf /".to_string(), "shutdown".to_string()],
-        };
+        let reflex = ReflexArc::with_default_rules();
 
         let mut agent = AgentLoop::new(memory, reason, tool, safety, ui, fear, reflex);
         // O-1 (ADR-0016 D3): one physical probe at task start — "look at the

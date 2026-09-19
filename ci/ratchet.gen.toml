@@ -121,7 +121,7 @@ target = "src/lifecycle.rs"
 ncloc  = 148
 [[ratchet]]
 target = "src/main.rs"
-ncloc  = 943
+ncloc  = 941
 [[ratchet]]
 target = "src/pipeline/"
 ncloc  = 269

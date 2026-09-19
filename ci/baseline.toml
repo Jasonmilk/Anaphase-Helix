@@ -402,3 +402,12 @@ ncloc   = 81
 counter = 2
 k_id    = "K-005"
 reason  = "the MemoryRetrieval state arm, a pure move. Its single break is inside the arm's own for loop, checked before moving"
+
+# H2b: the deny-list becomes a named constant with its own constructor, and the comment
+# that contradicted the implementation is gone. Six lines of real code, all of it in
+# reflex.rs, which is why main.rs loses two rather than gaining three.
+[[fix_window]]
+target = "src/reflex.rs"
+cap    = 6
+k_id   = "H2b"
+reason = "the static deny-list gets a name and a constructor, so main.rs stops carrying it inline and stops growing"
