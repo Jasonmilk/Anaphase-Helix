@@ -67,3 +67,8 @@ summary  = "One green run does not falsify an intermittent failure. Ten consecut
 id       = "H2b"
 recorded = "2026-09-18"
 summary  = "safety_rules is static, not runtime-loadable. The field comment claimed it was read from memory (L2) and there was no loader anywhere — no config field, no reader, no writer; the only assignment was a literal in main.rs. If it were updatable, poisoned memory could disarm the deny-list, which is the one single point that bypasses every other measure (K-033)"
+
+[[pit]]
+id       = "K-044"
+recorded = "2026-09-20"
+summary  = "The security gate had no door on the production path. Measured: with_security_gate is called only from tests/, PipelineConfig defaults the field to None, src/main.rs never installs one, and tuck-core is a dev-only dependency — so every tool call executed ungated while security.rs described None as harmless 'legacy behavior'. The emergency-pass variant's comment claimed (audited) with no check behind it, and the peer surface the design assumes did not exist: Tuck serves the gate as a library API and its gateway exposes no route for a decision. Fifth instance of 'the real gap is the one not on the list'"

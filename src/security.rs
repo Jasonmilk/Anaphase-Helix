@@ -42,7 +42,7 @@ use std::fmt;
 /// Carries only facts; the gate implementation decides policy. `job_id` +
 /// `index` reproduce the deterministic trace id `{job_id}#{index}`
 /// (ADR-0003) so gate decisions are replayable per call.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct GateCheck {
     pub job_id: String,
     pub index: u32,

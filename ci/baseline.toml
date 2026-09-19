@@ -411,3 +411,32 @@ target = "src/reflex.rs"
 cap    = 10
 k_id   = "H2b"
 reason = "the static deny-list gets a name and a constructor (main.rs 943 -> 941), plus the whitespace/case normalisation that closes three free evasions of it. Measured 12 -> 22; the ratio ceiling here is max(36, 1) so 10 is well inside it"
+
+# K-044: the door the production path was missing. 103 NCLOC of production code; the
+# tests live in `security_gate_tests.rs`, which the budget excludes as a test path — an
+# inline `#[cfg(test)] mod` would have doubled this seed with no shipped code in it.
+[[seed]]
+target  = "src/adapters/security_gate.rs"
+ncloc   = 103
+counter = 2
+k_id    = "K-044"
+
+# K-044: a new file seeds at birth individually, but it still counts in the directory
+# total, so without this the door would be paid for out of the `src/` split window
+# instead of standing on its own pit. The two numbers stay separable on purpose — the
+# same reason B17's governance.rs got its own directory entry rather than eating the
+# ADR-0042 allowance. Ratio ceiling here is max(36, 10% of 1246) = 124.
+[[fix_window]]
+target = "src/adapters/"
+cap    = 104
+k_id   = "K-044"
+reason = "security_gate.rs (103 NCLOC of production code) plus its one-line module declaration. The 156 lines of tests are in security_gate_tests.rs, which the budget excludes as a test path, so they do not enter this number at all — an inline #[cfg(test)] mod would have more than doubled it for no shipped code"
+
+# The module declaration itself. One line, and it cannot be merged into another item
+# without writing two items on one line, which would trade a real NCLOC for a style
+# violation. Ratio ceiling for an 183-line file is max(36, 18) = 36.
+[[fix_window]]
+target = "src/adapters/mod.rs"
+cap    = 1
+k_id   = "K-044"
+reason = "one `pub mod` line registering the new HTTP security gate"

@@ -3,6 +3,8 @@ pub mod flowmodus;
 pub mod tentacle;
 // New: Declare HTTP reasoning adapter module
 pub mod http_reasoning;
+// The door the production path was missing: an HTTP SecurityGate (see the module docs).
+pub mod security_gate;
 pub mod usage;
 
 use async_trait::async_trait;

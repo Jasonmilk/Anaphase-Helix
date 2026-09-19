@@ -45,6 +45,9 @@ ncloc  = 363
 target = "src/adapters/mod.rs"
 ncloc  = 183
 [[ratchet]]
+target = "src/adapters/security_gate.rs"
+ncloc  = 103
+[[ratchet]]
 target = "src/adapters/tentacle.rs"
 ncloc  = 80
 [[ratchet]]
