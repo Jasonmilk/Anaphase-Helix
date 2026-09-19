@@ -1,0 +1,16 @@
+# Commits that `git blame` should look THROUGH, because their content is mechanical.
+#
+# Why this file exists: a repo-wide `cargo fmt` rewrites every file, which destroys
+# blame (every line is suddenly authored by the formatter) and pollutes the churn
+# measurement that ADR-0042 D10 now ranks splits by. Black's migration guide has a
+# section for exactly this, "Avoiding ruining git blame", and Blender, GitLab and gpdb
+# all use the mechanism. GitHub's blame view reads this file by default; for local use,
+# `git config blame.ignoreRevsFile .git-blame-ignore-revs` (git >= 2.23).
+#
+# So the formatting change is a single commit whose SHA goes below, and blame and churn
+# both see through it. That removes the only reason `cargo fmt` was being deferred.
+#
+# FORMAT: one full 40-character SHA per line, comments with `#`. Short SHAs are not
+# accepted by git and fail silently, which would be the usual defect in this repository.
+#
+# --- populate when the repo-wide format commit lands ---
