@@ -322,7 +322,7 @@ due    = "2026-10-16"
 # where CI can run them.
 [[seed]]
 target  = "ci/scan_mutants.py"
-ncloc   = 189
+ncloc   = 219
 counter = 2
 k_id    = "K-036"
 reason  = "the offline mutation scanner that answers K-036 mechanically: a line that can be broken while the suite stays green is a place where the code can be wrong and nothing notices"
@@ -348,6 +348,6 @@ reason  = "reading ci/baseline.toml: eight loaders, no decisions. Every one rais
 # one module boundary plus the import surface in the file it left.
 [[split_window]]
 target    = "ci/"
-allowance = 355
-reason    = "ci/allowances.py split out of ci/check_line_budget.py (eight loaders, no decisions), plus ci/scan_mutants.py, a genuinely new file. Estimate when opened was 320; the ACTUAL is 355, so the estimate was 11% low. Recorded for the same reason D5 wanted the split window to carry an estimate at all: on close, the predicted and actual numbers are compared, which is the only thing that makes the next estimate better"
+allowance = 386
+reason    = "ci/allowances.py split out of ci/check_line_budget.py (eight loaders, no decisions), plus ci/scan_mutants.py, a genuinely new file. Estimate when opened was 320; the actual has since been 355 and then 386, so the estimate was 11% low and then 17% low. Kept as a running comparison rather than a single corrected number, because D5 wanted the window to carry an estimate so that predicted and actual could be COMPARED — and a comparison with one side edited to match is not a comparison"
 due       = "2026-10-16"
