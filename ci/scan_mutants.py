@@ -135,7 +135,12 @@ def main():
     if os.path.isdir(backup_dir):
         restored = 0
         for name in sorted(os.listdir(backup_dir)):
-            src = os.path.join(backup_dir, name.replace("__", "/"))
+            # Against ROOT, not the backup dir. The first version joined the backup
+            # prefix onto the relative path, so restore-on-start looked for
+            # target/mutants-backup/src/run_cycle/mod.rs and silently restored
+            # nothing — a recovery path that cannot recover, which is the exact shape
+            # this ledger keeps recording.
+            src = os.path.join(root, name.replace("__", "/"))
             if os.path.exists(src):
                 open(src, "w", encoding="utf-8").write(
                     open(os.path.join(backup_dir, name), encoding="utf-8").read())

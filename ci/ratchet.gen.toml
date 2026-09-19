@@ -12,14 +12,20 @@ counter = 2
 target = "ci/"
 ncloc  = 1266
 [[ratchet]]
+target = "ci/allowances.py"
+ncloc  = 377
+[[ratchet]]
 target = "ci/check_guards.py"
 ncloc  = 316
 [[ratchet]]
 target = "ci/check_line_budget.py"
-ncloc  = 901
+ncloc  = 645
 [[ratchet]]
 target = "ci/n_runs.sh"
 ncloc  = 49
+[[ratchet]]
+target = "ci/scan_mutants.py"
+ncloc  = 189
 [[ratchet]]
 target = "src/"
 ncloc  = 3621

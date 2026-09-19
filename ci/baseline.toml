@@ -298,3 +298,56 @@ ncloc   = 49
 counter = 2
 k_id    = "K-043"
 reason  = "the N-run experiment script, counted once the whitelist stopped skipping unknown extensions"
+
+# ------------------------------------------------- hot DATA-ONLY files
+#
+# DATA-ONLY is granted by branch count, with no due date, because it is a
+# classification. That criterion has a blind spot: it says nothing about how often the
+# file changes. `src/config.rs` has 7 branches and is the most-changed file in this
+# repository after main.rs and the old run_cycle. A file touched that often is not
+# "declarations only" in any sense a reader cares about — so above churn 15 the
+# exemption must be re-stated rather than silently renewed.
+#
+# This is not a repeal of DATA-ONLY. Deleting the marker would be the wrong fix: 7
+# branches is 7 branches. What the criterion demands is that someone looked at the
+# churn and wrote down why.
+[[data_only_churn]]
+target = "src/config.rs"
+cause  = "declarations only is still true (7 branches), but the configuration SURFACE keeps growing — new endpoints, new defaults. That growth is the upstream cause, and it matters because K-033 says the safety level is decided by whether a config item was filled in"
+due    = "2026-10-16"
+
+# The offline mutation scanner. `cargo-mutants` is structurally unavailable here (no
+# network: crates.io answers 403, no vendor, nothing cached), and a number obtained on
+# another machine is stale the next day — so the operators live in this repository,
+# where CI can run them.
+[[seed]]
+target  = "ci/scan_mutants.py"
+ncloc   = 189
+counter = 2
+k_id    = "K-036"
+reason  = "the offline mutation scanner that answers K-036 mechanically: a line that can be broken while the suite stays green is a place where the code can be wrong and nothing notices"
+
+# The ledger loaders, split out of check_line_budget.py when it passed its own tooling
+# tier for the fifth time in one work unit. Its seed reason had already said that a
+# split was the answer and another re-take was the papering-over — so the split is
+# what happened, and the checker is back under its tier.
+[[seed]]
+target  = "ci/allowances.py"
+ncloc   = 377
+counter = 2
+k_id    = "K-052"
+reason  = "reading ci/baseline.toml: eight loaders, no decisions. Every one raises rather than skipping, because a malformed entry that is ignored reads like one that passed"
+
+# The `ci/` directory grew this round for two reasons that belong to two different
+# classes, and neither is a fix: `ci/scan_mutants.py` is a NEW capability (189 NCLOC,
+# seeded at birth), and `allowances.py` is a pure-move split out of
+# `check_line_budget.py` (989 -> 645). A new file plus a split is exactly what the
+# split window is for; the fix window would have been the wrong class.
+#
+# The refactor half is the point of the window and is estimated the same way D5 was:
+# one module boundary plus the import surface in the file it left.
+[[split_window]]
+target    = "ci/"
+allowance = 320
+reason    = "ci/allowances.py split out of ci/check_line_budget.py (eight loaders, no decisions), plus ci/scan_mutants.py, a genuinely new file. Measured +310; the estimate is 320 and the actual is recorded so the two can be compared on close, as D5 asks"
+due       = "2026-10-16"
