@@ -313,3 +313,83 @@ Robert C. Martin 的稳定依赖原则：**不稳定性 I = fan-out / (fan-in + 
 **已知漏计**：`use crate::x as y` + 裸名 `y::`、`pub use` 再导出、宏展开的路径。
 ⇒ **故上表的 fan-in 是下界，不是精确值** —— 与 canary 那条同族：
 **它证明了它测的那条路，而计数走的可能是另一条。**
+
+### D13：D12 的两条结论**被更正**：收益是有的，只是我量错了；拆分顺序也错了（2026-09-18）
+
+**更正一 —— "唯一已完成的拆分测不出耦合收益"是错的。**
+
+换对指标后收益很大。**认知负荷**（完成一次改动要读多少 NCLOC）是第 43 轮给出的判据，
+且有 fMRI 证据（Peitek et al., ICSE 2021：只有 4 个指标与脑活动相关，**LOC 是其中之一**；
+后续研究显示 simple SLOC 支配其余复杂度指标）。
+
+| 改动 | 拆前要读 | 拆后要读 | 变化 |
+|---|---|---|---|
+| 改身份分配 | `session_events.rs` **1086** NCLOC | `identity.rs` **168** | **−85%** |
+| 该目录最大单文件 | 1086 | **181** | **−83%** |
+
+**⇒ 我原来的两个口径都不是实证支持的**：
+- **边总数**：拆分**必然上升**（每份各自 `use`），实证预测它涨 —— 我拿它当了失败信号；
+- **单文件最大 fan-out**：**CBO 是双向计数**，而且我当时那个最大值 15/16 由 `run_cycle.rs`/`mod.rs` 决定，
+  **与 `session_events` 无关** —— 我用 A 的最大值去评估 B 的收益。
+
+**更正二 —— 耦合指标应为 CBO（双向去重），不是 fan-out。**
+
+**实测（`src/**/*.rs`，n=48，下界）**：**中位 3，均值 4.0，最大 18**。
+
+| 模块 | CBO |
+|---|---|
+| **`run_cycle/mod.rs`** | **18** ← 超过 Sahraoui 等建议的上限 14 |
+| `config.rs` | 12 |
+| `adapters/http_reasoning.rs` / `adapters/mind.rs` | 9 |
+| `pipeline/mod.rs` / `adapters/flowmodus.rs` | 8 |
+
+**⇒ 按正确的耦合指标，最该拆的是 `run_cycle/mod.rs`（CBO 18），不是 `config.rs`（12）。**
+这与第 43 轮的顺序一致，也**修正我在 D12 里"config.rs 是唯一有实测违规证据的"那句** ——
+**它排在第二，`run_cycle/mod.rs` 才是第一**。
+
+**更正三 —— 拆分顺序：按臂的体量，不按枚举顺序。**
+
+**`run_cycle/mod.rs` 的构成实测（1146 NCLOC）**：
+
+| 条目 | NCLOC |
+|---|---|
+| **arm `Reasoning`** | **222** |
+| **arm `Reflection`** | **211** |
+| `fn run_cycle` | 104 |
+| `fn default` | 83 |
+| `fn execute_structured` | 78 |
+| arm `MemoryRetrieval` | 76 |
+| `fn new` | 57 |
+| arm `Execution` | 55 |
+| arm `ReflexCheck` | 29 |
+| **arm `Perception`** | **~11** |
+| 其余（`check_wakeup` / `memory_choice_detail` / `end_episode`） | 86 |
+
+**⇒ 7 个状态臂合计 609 NCLOC（过半数）⇒ 按臂拆是有效的。**
+**但 `Perception` 只有 ~11 行 ⇒ 单独拆它没有意义**，而我在上一轮的顺序里把它排在第一个
+（因为它在枚举里排第一）。**⇒ 顺序改为按体量：`Reasoning`(222) → `Reflection`(211) → `MemoryRetrieval`(76) → `Execution`(55)。**
+
+**⇒ 记账口径（每段执行，但只记账不门禁 —— 未校准的不设断言）**：
+1. **该模块的 CBO（双向）**；
+2. **完成该类改动要读的 NCLOC**（拆前 vs 拆后）。
+**⇒ 不设断言**：D12 的"断言边数下降"就是被自己的数据推翻的，重犯同一个错没有意义。
+
+### D14：接口变更的正确模式是 Parallel Change（`config.rs` step B）
+
+**问题**：`config.rs` 的"特性自持配置"要让 fan-in 从 11 降下来。
+**⇒ 而"降 fan-in"在逻辑上就等价于"改接口"** —— fan-in 就是"多少模块引用它"，
+要它下降就必须让那些模块不再引用它 ⇒ 必须改调用点。**所以它不是纯移动，快照证明不了行为保持。**
+
+**⇒ 采用 Parallel Change（Fowler, 2014：expand → migrate → contract）+ Delegation**：
+
+| 阶段 | 动作 | 可验证吗 |
+|---|---|---|
+| **expand** | 各模块声明自己的配置；`config.rs` 保留字段但**委托**到新位置 | ✅ 行为保持，快照可验 |
+| **migrate** | 11 个调用点**逐个**迁移 | ✅ 每步小、可验 |
+| **contract** | 删 `config.rs` 里的旧字段 | ✅ **此时 fan-in 才真正下降** |
+
+**⇒ 关键**：**fan-in 下降是 `contract` 阶段的验收判据，不是每一步的门禁。**
+我把它当成每步的门禁，它当然在第一段就失败 —— 这解释了我为什么觉得"没法验证"。
+
+**⇒ 且 Rust 在这里有别人没有的优势**：改字段/签名 ⇒ **编译错误 ⇒ 编译器免费给出穷尽的调用点清单**。
+rustc 的穷尽性检查与类型系统是**机械的**，不靠 grep。**⇒ 接口变更在 Rust 里的风险低于直觉估计。**
