@@ -381,3 +381,14 @@ ncloc   = 229
 counter = 2
 k_id    = "K-005"
 reason  = "the Reasoning state arm, a pure move: same signature, same private fields via the child module, no behaviour change. mod.rs 926 NCLOC after the move"
+
+# The Reflection arm. Second segment of the same pure move, and the first one whose
+# accounting was declared in BOTH units from the start — round 49 caught that the +46
+# from the Reasoning split never said whether it was physical lines or NCLOC, and the two
+# give opposite readings. Measured: mod.rs 1146 -> 719, reflection.rs 215, NCLOC net -212.
+[[seed]]
+target  = "src/run_cycle/reflection.rs"
+ncloc   = 215
+counter = 2
+k_id    = "K-005"
+reason  = "the Reflection state arm, a pure move: same signature, private fields via the child module, no behaviour change. Its 4 breaks and 1 continue are inside the arm's own for/loop, verified before moving rather than assumed"
