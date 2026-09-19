@@ -110,10 +110,22 @@ id     = "reflex-fail-closed"
 test   = "an_unavailable_fear_model_blocks_rather_than_passing"
 kind   = "lib"
 file   = "src/run_cycle/mod.rs"
-# The anchor must be unique: `ReflexBlocked` is returned from three places (the hard
-# rule, the soft threshold, and this one). The first version used only the return line
-# and matched two of them, so CI-7 refused it as ambiguous rather than mutating
-# whichever came first.
-from   = "                            \"[ReflexCheck] Fear prediction unavailable, fail-closed (blocking): {}\",\n                            e\n                        );\n                        Ok(TransitionCondition::ReflexBlocked)"
-to     = "                            \"[ReflexCheck] Fear prediction unavailable, fail-closed (blocking): {}\",\n                            e\n                        );\n                        Ok(TransitionCondition::ReflexPassed)"
+# The anchor must be unique AND it must be the thing that carries the direction.
+# It has moved twice: first as the return line (matched three places, refused as
+# ambiguous), then as the message text (unique), and now as the ring_reflex_block call —
+# because the bell replaced the bare warn!. A guard whose anchor no longer exists is
+# reported as ambiguous rather than passing silently, which is how this was caught.
+from   = "                        self.ring_reflex_block(&format!(\"fear model unavailable: {e}\"));\n                        Ok(TransitionCondition::ReflexBlocked)"
+to     = "                        self.ring_reflex_block(&format!(\"fear model unavailable: {e}\"));\n                        Ok(TransitionCondition::ReflexPassed)"
 k_id   = "H5"
+
+# B22's bell. The mutation removes the record, so the assertion that a block is
+# observable without the panel must fail.
+[[guard]]
+id     = "reflex-bell"
+test   = "an_unavailable_fear_model_blocks_rather_than_passing"
+kind   = "lib"
+file   = "src/run_cycle/mod.rs"
+from   = "        self.context.last_reflex_block = Some(reason.to_string());"
+to     = "        // mutant: bell removed"
+k_id   = "B22"

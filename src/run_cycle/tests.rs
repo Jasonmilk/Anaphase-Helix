@@ -1121,7 +1121,7 @@ fn the_gate_callers_pass_the_policy_they_passed_before_the_move() {
     );
 }
 
-// guards: reflex-fail-closed
+// guards: reflex-fail-closed,reflex-bell
 /// H5 (ruled 2026-09-18): an unavailable fear model is not permission.
 ///
 /// The `Err` branch used to report `ReflexPassed` with a "default allow" warning, which
@@ -1170,5 +1170,48 @@ async fn an_unavailable_fear_model_blocks_rather_than_passing() {
         TransitionCondition::ReflexBlocked,
         "an unavailable fear model must fail CLOSED (H5). ReflexPassed here means the \
          safety check silently became permission again."
+    );
+
+    // B22's bell: the block must be observable WITHOUT the panel. This reads a field,
+    // not a tracing subscriber and not a port, so the assertion cannot pass merely
+    // because a ring buffer the panel would read happens to be populated.
+    let reason = agent
+        .context
+        .last_reflex_block
+        .as_deref()
+        .expect("a blocked reflex must leave a reason (B22); a silent block is the same \
+                 defect as a silent pass, pointing the other way");
+    assert!(
+        reason.contains("unavailable"),
+        "and the reason must name the cause, not merely that something happened: {reason:?}"
+    );
+}
+
+/// The bell is on all three block paths, not just the new one.
+///
+/// H5 added a third way for the reflex to block, and the bell was the whole point of the
+/// pairing. Wiring only the new branch would leave the two older ones silent — which is
+/// the shape this ledger keeps recording: a mechanism applied to the case that prompted it.
+#[tokio::test]
+async fn every_block_path_rings_the_bell() {
+    // hard rule
+    let mut agent = AgentLoop::new(
+        Arc::new(NoopMemoryAdapter),
+        Arc::new(NoopReasoningAdapter),
+        Arc::new(NoopToolAdapter),
+        Arc::new(NoopSafetyAdapter),
+        Arc::new(NoopUiAdapter),
+        Arc::new(NoopFearAdapter),
+        ReflexArc {
+            safety_rules: vec!["rm -rf /".to_string()],
+        },
+    );
+    agent.current_state = crate::states::HelixState::ReflexCheck;
+    agent.context.suggested_actions = vec!["rm -rf /".to_string()];
+    let c = agent.execute_current_state().await.expect("a condition");
+    assert_eq!(c, TransitionCondition::ReflexBlocked, "the hard rule must block");
+    assert!(
+        agent.context.last_reflex_block.is_some(),
+        "the hard-rule block must also ring the bell, or only the newest path is audible"
     );
 }

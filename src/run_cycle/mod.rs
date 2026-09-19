@@ -241,6 +241,28 @@ fn fold_memory_nodes(nodes: &[MemoryNode], budget: usize) -> String {
 /// this cycle reasoned over, not the previous note. This also gives real fan-in
 /// rather than a thin chain, and its size is already bounded by Mind's own
 /// `max_nodes_per_query` — hence no new configuration knob.
+impl AgentLoop {
+    /// B22's bell: make a reflex block observable without the panel.
+    ///
+    /// Three things, deliberately separate from the ring buffer, which only the panel
+    /// reads, and from the session-event stream, which may not be configured at all:
+    ///
+    ///   1. a `warn!` that NAMES the direction, so a log reader can tell a block from a
+    ///      pass without knowing the code (P13);
+    ///   2. an `eprintln!` — stderr goes to whatever is collecting output, panel or not;
+    ///   3. `context.last_reflex_block`, so a caller and a test can read it without a
+    ///      tracing subscriber or a port.
+    ///
+    /// H5 made this load-bearing. Until the reflex failed closed, a block was rare; now
+    /// an unavailable fear model produces one, and a block nobody reports would have
+    /// replaced "pretends to succeed" with "silently stuck".
+    fn ring_reflex_block(&mut self, reason: &str) {
+        warn!("[ReflexCheck] BLOCKED ({reason}) — fail-closed, not a pass");
+        eprintln!("⚠️  reflex gate blocked the action: {reason}");
+        self.context.last_reflex_block = Some(reason.to_string());
+    }
+}
+
 fn remember_parents(context: &AgentContext) -> Vec<String> {
     context.memory_nodes.iter().map(|n| n.id.clone()).collect()
 }
@@ -249,6 +271,18 @@ fn remember_parents(context: &AgentContext) -> Vec<String> {
 #[derive(Debug, Clone, Default)]
 pub struct AgentContext {
     pub user_input: String,
+    /// Why the reflex gate last blocked, if it did (B22). `None` means it did not.
+    ///
+    /// This exists so a block is observable WITHOUT the panel. Before it, a blocked
+    /// reflex reached the ring buffer — which only the panel reads — and a session-event
+    /// stream that may not be configured, i.e. a block could be reported to nobody. H5's
+    /// ruling made that matter: `soft_reflex` failing now blocks, so a silent block would
+    /// have swapped "pretends to succeed" for "silently stuck", which is the same defect
+    /// pointing the other way.
+    ///
+    /// `Option`, not `String`: an absent block and an empty reason are different facts,
+    /// and collapsing them is this ledger's most-recorded mistake.
+    pub last_reflex_block: Option<String>,
     /// Physical-clock time anchor (2026-09-09): when the user message
     /// arrived (epoch secs from the single injected clock, ADR-0021).
     /// Injected into the prompt at zero tokens so Helix never loses the
@@ -813,7 +847,7 @@ impl AgentLoop {
                 
                 // 1. Hard reflex: O(1) forbidden action check
                 if !self.reflex.hard_reflex(&action_str) {
-                    warn!("[ReflexCheck] Hard reflex blocked! Action forbidden: {}", action_str);
+                    self.ring_reflex_block("hard rule: action matches the static deny-list");
                     return Ok(TransitionCondition::ReflexBlocked);
                 }
                 
@@ -828,7 +862,7 @@ impl AgentLoop {
                         self.context.p_death = p_death;
                         // Block threshold from config source (DNA principle 11).
                         if p_death > self.run_config.soft_reflex_threshold {
-                            warn!("[ReflexCheck] Soft reflex blocked! p_death = {:.2}", p_death);
+                            self.ring_reflex_block(&format!("soft threshold: p_death {p_death:.2}"));
                             Ok(TransitionCondition::ReflexBlocked)
                         } else {
                             info!("[ReflexCheck] Passed, p_death = {:.2}", p_death);
@@ -845,10 +879,7 @@ impl AgentLoop {
                         // and a fail-closed branch that both log at `warn!` have the same
                         // loudness and opposite meanings, so loudness alone cannot tell a
                         // reader which one fired.
-                        warn!(
-                            "[ReflexCheck] Fear prediction unavailable, fail-closed (blocking): {}",
-                            e
-                        );
+                        self.ring_reflex_block(&format!("fear model unavailable: {e}"));
                         Ok(TransitionCondition::ReflexBlocked)
                     }
                 }
