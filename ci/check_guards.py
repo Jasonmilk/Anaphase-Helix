@@ -198,8 +198,45 @@ def failed_specifically(statuses, name):
     return False, None
 
 
+def recover(root):
+    """Restore anything a killed run left mutated.
+
+    A `finally` does not run on SIGTERM, so a CI-7 run that is killed mid-mutation
+    leaves the tree broken — and the next run then reports its own baseline as
+    "already red", which reads as a broken test rather than as leftover state. That
+    happened here: a run cut off at the tool's timeout left the cap-ratio check
+    disabled in ci/allowances.py, and the following run blamed a governance test.
+
+    Crash-safe rather than exception-safe, for the same reason `scan_mutants.py` is:
+    a backup on disk and a restore before anything else covers SIGKILL too, which no
+    signal handler can.
+    """
+    backup_dir = os.path.join(root, "target", "guards-backup")
+    if not os.path.isdir(backup_dir):
+        return
+    restored = 0
+    for name in sorted(os.listdir(backup_dir)):
+        path = name.replace("__", "/")
+        try:
+            with open(os.path.join(backup_dir, name), encoding="utf-8") as fh:
+                original = fh.read()
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(original)
+            os.remove(os.path.join(backup_dir, name))
+            restored += 1
+        except OSError:
+            pass
+    if restored:
+        print(f"recovered {restored} file(s) left mutated by a killed run")
+    try:
+        os.rmdir(backup_dir)
+    except OSError:
+        pass
+
+
 def main():
     root = os.getcwd()
+    recover(root)
     argv = sys.argv[1:]
     skip_slow = "--skip-slow" in argv
     try:
@@ -295,6 +332,11 @@ def main():
     for g in selected:
         target = os.path.join(root, g["file"])
         original = open(target, encoding="utf-8").read()
+        backup_dir = os.path.join(root, "target", "guards-backup")
+        os.makedirs(backup_dir, exist_ok=True)
+        bname = os.path.join(backup_dir, g["file"].replace("/", "__"))
+        with open(bname, "w", encoding="utf-8") as fh:
+            fh.write(original)
         try:
             open(target, "w", encoding="utf-8").write(original.replace(g["from"], g["to"], 1))
             parses, why = syntax_ok(target)
@@ -313,6 +355,10 @@ def main():
             elapsed += took
         finally:
             open(target, "w", encoding="utf-8").write(original)
+            try:
+                os.remove(bname)
+            except OSError:
+                pass
         went_red, full = failed_specifically(statuses, g["test"])
         if full is None:
             broken.append(f"{g['id']}: with the mutation applied, test {g['test']!r} did not run at all")
