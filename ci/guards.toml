@@ -129,3 +129,15 @@ file   = "src/run_cycle/mod.rs"
 from   = "        self.context.last_reflex_block = Some(reason.to_string());"
 to     = "        // mutant: bell removed"
 k_id   = "B22"
+
+# §1c, both directions. The first mutation removes normalisation and the bypasses return;
+# the second widens the match and the over-strict case changes. Two guards because the
+# change has two ways to be wrong, and only one of them looks like a regression.
+[[guard]]
+id     = "reflex-normalised"
+test   = "spacing_and_case_no_longer_evade_the_deny_list"
+kind   = "lib"
+file   = "src/reflex.rs"
+from   = "        let action = normalize(action);"
+to     = "        // mutant: no normalisation"
+k_id   = "H2b"
