@@ -1,4 +1,5 @@
 # 🧬 Anaphase-Helix DNA.md
+> © 2026 Jason Milk · Apache 2.0
 > **版本**：v1.0
 > **日期**：2026-08-28
 > **继承自**：phyt-DNA v1.0（方法论机制复用，方法论锚点项目 https://github.com/Jasonmilk/phyt-DNA）、Anaphase-Helix VISION.md v1.0（哲学内容源）
