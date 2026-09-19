@@ -408,6 +408,6 @@ reason  = "the MemoryRetrieval state arm, a pure move. Its single break is insid
 # reflex.rs, which is why main.rs loses two rather than gaining three.
 [[fix_window]]
 target = "src/reflex.rs"
-cap    = 6
+cap    = 10
 k_id   = "H2b"
-reason = "the static deny-list gets a name and a constructor, so main.rs stops carrying it inline and stops growing"
+reason = "the static deny-list gets a name and a constructor (main.rs 943 -> 941), plus the whitespace/case normalisation that closes three free evasions of it. Measured 12 -> 22; the ratio ceiling here is max(36, 1) so 10 is well inside it"

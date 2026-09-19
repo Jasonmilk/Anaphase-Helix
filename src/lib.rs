@@ -4,6 +4,8 @@ pub mod run_cycle;
 pub mod ci144;
 pub mod states;
 pub mod reflex;
+#[cfg(test)]
+mod reflex_tests;
 pub mod config;
 pub mod hitl;
 pub mod lifecycle;
