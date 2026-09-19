@@ -305,29 +305,54 @@ fn scratch_with_pits(name: &str, files: &[(&str, usize)], base: &[(&str, usize)]
 #[test]
 fn a_fix_window_cap_may_not_exceed_a_tenth_of_the_baseline() {
     let pits = "[[pit]]\nid = \"K-999\"\n";
-    // 100 into 1000 is exactly a tenth: allowed.
-    let ok = "[[fix_window]]\ntarget=\"src/a.rs\"\ncap=10\nk_id=\"K-999\"\nreason=\"x\"\n";
-    let root = scratch_with_pits("fixcap-ok", &[("src/a.rs", 110)], &[("src/a.rs", 100)], ok, pits);
+    // A baseline large enough that the RATIO binds rather than the floor. This test
+    // used 100, where the ceiling is `max(FLOOR, 10)` — and when the floor was
+    // recalibrated from a guessed 5 to a measured 36, the ceiling became 36 and a cap
+    // of 11 was correctly allowed. The test was asserting the floor's old value through
+    // the ratio's name. 1000 makes the ratio the binding constraint, which is what this
+    // test is about.
+    // The fixture is over the 300-line module budget, so it needs a waiver or the
+    // over-budget check blocks first and this test measures that instead. Same trap as
+    // round 33, re-introduced by me a few rounds later.
+    let large = "[[waiver]]\ncheck=\"CI-6\"\ntarget=\"src/a.rs\"\nreason=\"fixture over the module budget\"\nowner=\"t\"\ndue=\"2099-01-01\"\n\n";
+    let ok = &format!("{large}[[fix_window]]\ntarget=\"src/a.rs\"\ncap=100\nk_id=\"K-999\"\nreason=\"x\"\n");
+    let root = scratch_with_pits("fixcap-ok", &[("src/a.rs", 1100)], &[("src/a.rs", 1000)], ok, pits);
     let (code, _, err) = run_checker_at(&root, &[]);
     assert_eq!(code, 0, "a tenth is the bound, so it must pass:\n{err}");
 
     // 101 is over it: refused as unrunnable, not reported as a violation.
-    let over = "[[fix_window]]\ntarget=\"src/a.rs\"\ncap=11\nk_id=\"K-999\"\nreason=\"x\"\n";
-    let root = scratch_with_pits("fixcap-over", &[("src/a.rs", 110)], &[("src/a.rs", 100)], over, pits);
+    let over = &format!("{large}[[fix_window]]\ntarget=\"src/a.rs\"\ncap=101\nk_id=\"K-999\"\nreason=\"x\"\n");
+    let root = scratch_with_pits("fixcap-over", &[("src/a.rs", 1100)], &[("src/a.rs", 1000)], over, pits);
     let (code, _, err) = run_checker_at(&root, &[]);
     assert_eq!(code, 3, "over the ratio must be refused:\n{err}");
-    assert!(err.contains("must not exceed 10"), "and must name the bound:\n{err}");
+    assert!(err.contains("must not exceed 100"), "and must name the bound:\n{err}");
 }
 
-/// The floor exists so a small file is not barred from citing any fix at all:
-/// 10% of a 30-line file is 3, which is not a usable allowance.
+/// The floor exists so a small file is not barred from citing any fix at all — and its
+/// VALUE is measured, not chosen. It was a guessed 5, which is below even the smallest
+/// real fix in this repository's history and 14x below the median; it produced three
+/// separate bypasses in one session, each of which was a way around the number rather
+/// than a way to fix it.
+///
+/// Now it is the lower quartile of real `fix` commits that touched `src/`:
+/// n=27, min=3, Q1=36, median=71, Q3=136, max=430.
 #[test]
-fn a_fix_window_cap_has_a_floor_for_small_files() {
+fn the_fix_cap_floor_is_the_measured_quartile_not_a_guess() {
     let pits = "[[pit]]\nid = \"K-999\"\n";
-    let maxed = "[[fix_window]]\ntarget=\"src/a.rs\"\ncap=5\nk_id=\"K-999\"\nreason=\"x\"\n";
-    let root = scratch_with_pits("fixcap-floor", &[("src/a.rs", 35)], &[("src/a.rs", 30)], maxed, pits);
+    // Exactly at the floor for a small file.
+    let at = "[[fix_window]]\ntarget=\"src/a.rs\"\ncap=36\nk_id=\"K-999\"\nreason=\"x\"\n";
+    let root = scratch_with_pits("fixcap-floor", &[("src/a.rs", 96)], &[("src/a.rs", 60)], at, pits);
     let (code, _, err) = run_checker_at(&root, &[]);
-    assert_eq!(code, 0, "the floor is 5 for a 30-line file:\n{err}");
+    assert_eq!(code, 0, "the measured floor is 36 for a small file:\n{err}");
+
+    // One over it, and still under 10% of a small baseline, so the FLOOR is what binds.
+    let over = "[[fix_window]]\ntarget=\"src/a.rs\"\ncap=37\nk_id=\"K-999\"\nreason=\"x\"\n";
+    let root = scratch_with_pits("fixcap-floor-over", &[("src/a.rs", 97)], &[("src/a.rs", 60)], over, pits);
+    let (code, _, err) = run_checker_at(&root, &[]);
+    assert_eq!(code, 3, "37 is over the measured floor:\n{err}");
+    assert!(err.contains("must not exceed 36"),
+        "and the message must state the measured bound, so the next person does not have \
+         to go looking for where 36 came from:\n{err}");
 }
 
 /// An id nobody can resolve is a waiver wearing a fix's label.

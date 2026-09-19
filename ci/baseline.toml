@@ -150,10 +150,10 @@ reason = "CI-7 itself, at its rule-signed value. A later change grew it to 360 a
 
 [[seed]]
 target = "ci/check_line_budget.py"
-ncloc  = 913
+ncloc  = 645
 counter = 2
 k_id   = "K-038"
-reason = "CI-6 itself. CORRECTED twice: recorded 811, true 761 under counter v1, then 913 after the counter versioning, the language whitelist, the tooling tier and the misuse check landed in it. It now exceeds its own 900-line tooling tier, which is the signal that it is due a split rather than another re-take"
+reason = "CI-6 itself, at its baseline. It was re-taken to 913 while the file was 913, then the ledger loaders were split out and it fell to 645. The re-take path is now retired, so the seed is set back to the baseline: a re-take that outlives the growth it absorbed is a permanent raise nobody decided on"
 
 # ------------------------------------------------------------------- tooling tier
 #
@@ -322,7 +322,7 @@ due    = "2026-10-16"
 # where CI can run them.
 [[seed]]
 target  = "ci/scan_mutants.py"
-ncloc   = 219
+ncloc   = 189
 counter = 2
 k_id    = "K-036"
 reason  = "the offline mutation scanner that answers K-036 mechanically: a line that can be broken while the suite stays green is a place where the code can be wrong and nothing notices"
@@ -368,6 +368,6 @@ due       = "2026-10-16"
 # control that outlives its subject should expire and say so.
 [[split_window]]
 target    = "ci/scan_mutants.py"
-allowance = 47
-reason    = "the positive control, plus the refusal to report missed=0 without one. `missed=0` from an instrument that cannot catch anything reads as 'our tests are good', which is the opposite of what it would mean"
+allowance = 77
+reason    = "the positive control, the refusal to report missed=0 without one, the worktree sandbox and incremental mode. `missed=0` from an instrument that cannot catch anything reads as 'our tests are good', which is the opposite of what it would mean"
 due       = "2026-10-16"

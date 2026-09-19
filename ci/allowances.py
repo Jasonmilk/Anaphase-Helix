@@ -22,10 +22,32 @@ class WaiverError(Exception):
 
 
 PITS_FILE = "ci/pits.toml"
-# A fix may add at most this fraction of a target's own baseline. The absolute floor
-# keeps small files from being unable to cite any fix at all.
+# A fix may add at most this fraction of a target's own baseline.
 FIX_CAP_RATIO = 0.10
-FIX_CAP_FLOOR = 5
+
+# The floor exists because a percentage of a small file is not a usable allowance: 10%
+# of a 56-line module is 5 lines, and a correctness fix does not fit in 5 lines.
+#
+# **The previous value, 5, was a guess and it was wrong by an order of magnitude.** It
+# produced three bypasses in one session — a raised seed, a bounded window opened by
+# hand, and a class switch — each of which was a way around this number rather than a
+# way to fix it. The reviewer's diagnosis: I kept opening escape hatches instead of
+# correcting the rule, and a rule that has to be escaped three times is telling you it
+# is wrong.
+#
+# Measured from this repository's own history rather than chosen: every `fix` commit
+# that touched `src/`, net lines, all time.
+#
+#     n = 27   min = 3   Q1 = 36   median = 71   Q3 = 136   max = 430
+#
+# The floor is the LOWER QUARTILE, not the minimum and not the median. The minimum (3)
+# would leave the floor where it was and keep the problem; the median (71) would be
+# generous enough that the ratio stopped meaning anything for small files. Q1 covers
+# three quarters of real fixes while still bounding the top.
+#
+# Reproduce with:
+#   git log --format=%h --grep='^fix' | while read h; do git show --numstat --format= $h -- 'src/*.rs'; done
+FIX_CAP_FLOOR = 36
 
 
 def load_data_only_causes(path):
