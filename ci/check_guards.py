@@ -268,7 +268,16 @@ def main():
 
     # --- 1. Tags must name entries that exist, and entries must be tagged. ---
     by_id = {g["id"]: g for g in guards}
-    tagged = set()
+    # name -> the file its `guards:` tag lives in. The diff binding below needs BOTH the
+    # mutation target and the test's own file: an edit that only weakens a test never
+    # touches the mutation target, so keying on the target alone answered "nothing to
+    # verify" and exited 0. Measured 2026-09-20: 10 of the 11 guards keep their test in a
+    # different file from the mutation target, and appending one comment to
+    # `src/reflex_tests.rs` made this checker report `0 of 11 ... nothing to verify` —
+    # i.e. deleting a guard's test switched that guard off silently.
+    # A dict, not a set: `in`, `sorted()` and iteration are unchanged, so the tag checks
+    # below keep working while this same walk also answers "where is this test?".
+    tagged = {}
     for sub in ("src", "tests"):
         base = os.path.join(root, sub)
         for dirpath, dirnames, filenames in os.walk(base):
@@ -280,7 +289,7 @@ def main():
                 for m in TAG_RE.finditer(text):
                     for name in m.group(1).split(","):
                         if name.strip():
-                            tagged.add(name.strip())
+                            tagged[name.strip()] = os.path.relpath(os.path.join(dirpath, fn), root)
 
     problems = [f"tag `guards: {n}` names no entry in {GUARDS_FILE}: a claim nobody can act on"
                 for n in sorted(tagged) if n not in by_id]
@@ -305,13 +314,13 @@ def main():
             return 3
         touched = {l.strip() for l in d.stdout.splitlines() if l.strip()}
         before = len(guards)
-        guards = [g for g in guards if g["file"] in touched]
+        guards = [g for g in guards if g["file"] in touched or tagged.get(g["id"]) in touched]
         print(f"CI-7 bound to the diff since {changed_since}: {len(guards)} of {before} guard(s) "
-              f"have a target in it")
+              f"have a target or a test in it")
         if not guards:
             # Not a pass by default: a diff that touches no guarded file means this run
             # judged nothing, and "judged nothing" must not read as "found nothing".
-            print(f"OK    no guard's target is in the diff since {changed_since}; nothing to verify")
+            print(f"OK    no guard's target or test is in the diff since {changed_since}; nothing to verify")
             return 0
 
     # --- 2. Validate the substitutions before running anything. ---

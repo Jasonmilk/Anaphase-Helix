@@ -13,6 +13,26 @@
 //! `None` gate = legacy behavior; the pipeline runs exactly as before
 //! (110-test baseline untouched). Pass / HardOverride proceed;
 //! Reject / HitlRequired block the call and write a `blocked` ledger record.
+//!
+//! # ⚠️ MEASURED 2026-09-20: no gate is installed anywhere on the production path
+//!
+//! `with_security_gate` is called **only from `tests/`**; `PipelineConfig` defaults the
+//! field to `None`; `src/main.rs` never calls the setter; and `tuck-core` is a
+//! **dev-only** dependency. So in production **every tool call executes ungated**.
+//!
+//! "`None` = legacy behavior" is accurate but reads as benign. It means **there is no
+//! door**, not "the old door still works" — a distinction this project keeps having to
+//! relearn (a declaration standing in for a check).
+//!
+//! **Do not paper over this with `PermissiveGate`.** It permits everything, so the
+//! pipeline would *look* gated while nothing is checked — worse than `None`, because the
+//! absence would stop being visible.
+//!
+//! Installing a real gate needs a door-keeper surface. Measured: Tuck serves the gate as
+//! a **library API** (`TuckSecurityGate::process` → `SecurityGateResponse`), and its
+//! gateway exposes **no route** for a gate decision (`tuck-gateway` routes
+//! `/v1/chat/completions` only). So an adapter needs either a Tuck-side endpoint or a
+//! deployment-layer binary that links both — cross-organ work, tracked in the ledger.
 
 use async_trait::async_trait;
 use std::fmt;
@@ -42,7 +62,14 @@ pub enum GateVerdict {
     Reject(String),
     /// Block execution; escalate to the HITL gate. Carries the reason.
     HitlRequired(String),
-    /// Emergency pass (audited). Proceeds on the same execution path as Pass.
+    /// Emergency pass. Proceeds on the same execution path as Pass.
+    ///
+    /// **This line used to say "(audited)". That was a self-certification with no check
+    /// behind it** (corrected 2026-09-20). Anaphase produces no `HardOverride` at all —
+    /// this variant is the mirror of the door-keeper's `GateDecision::HardOverride`, and
+    /// the audit evidence lives on the far side of that contract
+    /// (`SecurityGateResponse.audit_entry_id`). A label is an index; the criterion is the
+    /// gate. With no gate installed, nothing here is audited by anything.
     HardOverride,
 }
 
