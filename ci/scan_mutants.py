@@ -24,7 +24,11 @@ TWO THINGS IT MUST NOT GET WRONG, both learned the hard way in this ledger:
      build as a red test and certified a guard that did not exist. Here such sites are
      `unviable` and excluded from every count — the same three-way split the mature
      tools use (caught / missed / unviable), arrived at again the slow way.
-  2. **Anything that mutates the tree and rebuilds races with anything else reading
+  2. **Each iteration costs a rebuild.** Measured here: `cargo test --lib` is ~17s and
+     the full suite ~35s, so the scanner uses `--lib` and SAMPLES rather than sweeping.
+     A census of this repository would run for hours; the sample size is printed with
+     every result, because an unexplained N is the defect this ledger keeps finding.
+ 3. **Anything that mutates the tree and rebuilds races with anything else reading
      it.** K-041: CI-7 inside `cargo test` made a full run fail intermittently because
      cargo could rebuild a test binary from mutated source. This scanner must run
      alone, and it refuses to start if the working tree is dirty.
@@ -83,7 +87,17 @@ def candidate_sites(files, operators, limit):
             lines = open(path, encoding="utf-8").read().splitlines()
         except OSError:
             continue
+        # Everything from the first `#[cfg(test)]` onward is test code. Mutating a test
+        # proves nothing about whether a test notices anything — and the first run of
+        # this scanner mutated `assert_eq!(deny..., false)` into `true` inside
+        # `src/hitl.rs`'s inline test module, which is both meaningless and confusing.
+        # The file-level filter below only knows `*_tests.rs`; inline modules need this.
+        cut = len(lines)
         for i, line in enumerate(lines):
+            if line.strip().startswith("#[cfg(test)]"):
+                cut = i
+                break
+        for i, line in enumerate(lines[:cut]):
             stripped = line.strip()
             # Comments and doc-comments cannot change behaviour, so mutating them
             # proves nothing about a test. CI-7 has this rule for the same reason.
@@ -113,6 +127,24 @@ def main():
 
     # Refuse to run on a dirty tree: this mutates sources, and K-041 is the record of
     # what happens when something does that while other things read the tree.
+    # Crash-safe, not just exception-safe. The first version restored in a `finally`,
+    # which SIGTERM does not run: the scan was killed mid-iteration and left
+    # `Ok(false)` mutated to `Ok(true)` inside src/hitl.rs. A backup on disk plus a
+    # restore-on-start covers SIGKILL too, and a signal handler cannot.
+    backup_dir = os.path.join(root, "target", "mutants-backup")
+    if os.path.isdir(backup_dir):
+        restored = 0
+        for name in sorted(os.listdir(backup_dir)):
+            src = os.path.join(backup_dir, name.replace("__", "/"))
+            if os.path.exists(src):
+                open(src, "w", encoding="utf-8").write(
+                    open(os.path.join(backup_dir, name), encoding="utf-8").read())
+                restored += 1
+        if restored:
+            print(f"recovered {restored} file(s) left mutated by a previous run "
+                  f"(a killed scan does not run its cleanup)")
+        os.rmdir(backup_dir) if not os.listdir(backup_dir) else None
+
     d = dirty(root)
     if d:
         print(f"REFUSING: working tree has {len(d)} change(s); this scanner mutates sources "
@@ -156,12 +188,19 @@ def main():
     for path, name, lineno, original, mutated in sites:
         full = os.path.join(root, path)
         text = open(full, encoding="utf-8").read()
+        os.makedirs(backup_dir, exist_ok=True)
+        open(os.path.join(backup_dir, os.path.relpath(full, root).replace("/", "__")),
+             "w", encoding="utf-8").write(text)
         try:
-            open(full, "w", encoding="utf-8").write(
-                text.replace(original, mutated, 1))
-            r = run(["cargo", "test", "--quiet"], root)
+            open(full, "w", encoding="utf-8").write(text.replace(original, mutated, 1))
+            r = run(["cargo", "test", "--lib", "--quiet"], root)
         finally:
             open(full, "w", encoding="utf-8").write(text)
+            try:
+                os.remove(os.path.join(backup_dir,
+                                       os.path.relpath(full, root).replace("/", "__")))
+            except OSError:
+                pass
         out = (r.stdout or "") + (r.stderr or "")
         label = f"{os.path.relpath(full, root)}:{lineno} [{name}]"
         if BUILD_ERROR_RE.search(out):
