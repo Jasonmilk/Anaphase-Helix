@@ -392,3 +392,13 @@ ncloc   = 215
 counter = 2
 k_id    = "K-005"
 reason  = "the Reflection state arm, a pure move: same signature, private fields via the child module, no behaviour change. Its 4 breaks and 1 continue are inside the arm's own for/loop, verified before moving rather than assumed"
+
+# The MemoryRetrieval arm. Third segment. over_total 1158 -> 1084; the over-limit file
+# COUNT is still 5, which is the third time the count has been the wrong signal and
+# over_total the right one.
+[[seed]]
+target  = "src/run_cycle/memory_retrieval.rs"
+ncloc   = 81
+counter = 2
+k_id    = "K-005"
+reason  = "the MemoryRetrieval state arm, a pure move. Its single break is inside the arm's own for loop, checked before moving"
