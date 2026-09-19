@@ -371,3 +371,13 @@ target    = "ci/scan_mutants.py"
 allowance = 77
 reason    = "the positive control, the refusal to report missed=0 without one, the worktree sandbox and incremental mode. `missed=0` from an instrument that cannot catch anything reads as 'our tests are good', which is the opposite of what it would mean"
 due       = "2026-10-16"
+
+# The Reasoning arm, extracted. A new file seeds at birth, and the seed records the
+# measurement that produced it: the arm was 222 NCLOC inside a 1146-line mod.rs and is
+# now a file of its own, so a change to the reasoning prompt reads this instead.
+[[seed]]
+target  = "src/run_cycle/reasoning.rs"
+ncloc   = 229
+counter = 2
+k_id    = "K-005"
+reason  = "the Reasoning state arm, a pure move: same signature, same private fields via the child module, no behaviour change. mod.rs 926 NCLOC after the move"

@@ -139,7 +139,10 @@ target = "src/run_cycle/"
 ncloc  = 1319
 [[ratchet]]
 target = "src/run_cycle/mod.rs"
-ncloc  = 1146
+ncloc  = 926
+[[ratchet]]
+target = "src/run_cycle/reasoning.rs"
+ncloc  = 229
 [[ratchet]]
 target = "src/run_cycle/safety_gate.rs"
 ncloc  = 53

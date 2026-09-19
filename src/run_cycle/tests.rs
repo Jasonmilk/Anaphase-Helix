@@ -932,10 +932,14 @@ fn every_returned_condition_has_a_rule() {
         .iter()
         .position(|l| l.contains("async fn execute_current_state"))
         .expect("execute_current_state must exist");
+    // An arm is `HelixState::X =>`. It used to require a `{` body, which stopped being
+    // true when the Reasoning arm was extracted to `reasoning.rs` and became a single
+    // expression — the guard failing on that is the guard working, and widening it here
+    // is a deliberate act rather than a loosened assertion.
     let mut arms: Vec<(String, usize)> = Vec::new();
     for (i, l) in lines.iter().enumerate().skip(fn_start) {
         if let Some(rest) = l.trim().strip_prefix("HelixState::") {
-            if let Some((name, _)) = rest.split_once(" => {") {
+            if let Some((name, _)) = rest.split_once(" =>") {
                 arms.push((name.to_string(), i));
             }
         }
@@ -987,11 +991,23 @@ fn every_returned_condition_has_a_rule() {
         }
     };
 
+    // Arms whose bodies were extracted to their own module. The scan covers those files
+    // too, so the guard's claim — every condition a state can return has a rule — stays
+    // true across the move instead of quietly shrinking to the arms still in `mod.rs`.
+    // Without this the guard would pass by scanning less, which is the "test that looks
+    // tested" shape this repository has recorded more than once.
+    const EXTRACTED: &[(&str, &str)] = &[("Reasoning", include_str!("reasoning.rs"))];
+
     let mut checked = 0;
     for (idx, (name, start)) in arms.iter().enumerate() {
         let end = arms.get(idx + 1).map(|a| a.1).unwrap_or(fn_end);
         let mut seen: Vec<String> = Vec::new();
-        for l in &lines[*start..end] {
+        let extracted = EXTRACTED.iter().find(|(n, _)| n == name).map(|(_, src)| *src);
+        let body: Vec<&str> = match extracted {
+            Some(src) => src.lines().collect(),
+            None => lines[*start..end].to_vec(),
+        };
+        for l in &body {
             let mut rest = *l;
             while let Some(p) = rest.find("TransitionCondition::") {
                 rest = &rest[p + "TransitionCondition::".len()..];

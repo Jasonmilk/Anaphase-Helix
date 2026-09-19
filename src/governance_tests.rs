@@ -8,26 +8,17 @@ use crate::governance::{
     unlocated_preconditions, warning, PRECONDITIONS,
 };
 use crate::config::AnaphaseConfig;
-use std::net::TcpListener;
 
 fn configured(tuck: Option<&str>) -> AnaphaseConfig {
     AnaphaseConfig { tuck_endpoint: tuck.map(|s| s.to_string()), ..Default::default() }
 }
 
-/// A live local listener, so "configured and reachable" is a real probe and not
-/// a stubbed answer.
-fn live_endpoint() -> (TcpListener, String) {
-    let l = TcpListener::bind("127.0.0.1:0").expect("bind");
-    let addr = l.local_addr().unwrap().to_string();
-    (l, addr)
-}
+// The `live_endpoint` helper that used to sit here is gone with its last caller. It
+// existed so "configured and reachable" was a real probe rather than a stub, which was
+// the right instinct — but a real TCP connect is not a deterministic test input, and it
+// made one test's verdict depend on machine load. The state-derivation tests now use
+// `probes = false`, which is what they were actually about.
 
-/// B17's criterion: not configured must be **reported**, and not as health.
-/// The old shape could not express this — `check_endpoint` answered
-/// `ok: true, detail: "not configured"`, so an absent precondition and a
-/// satisfied one produced the same verdict, which is the family this ledger
-/// keeps recording.
-// guards: governance-states
 #[test]
 fn a_missing_precondition_is_reported_as_ungoverned_not_as_ok() {
     let v = status(&configured(None), true);
@@ -53,10 +44,16 @@ fn a_missing_precondition_is_reported_as_ungoverned_not_as_ok() {
 /// met is the defect; reporting unknown as unmet would cry wolf about a missing
 /// source rather than a missing guarantee. Hence the third state, and hence
 /// `governed` being unreachable while two preconditions have no source.
+// guards: governance-states
 #[test]
 fn preconditions_that_are_not_readable_here_do_not_let_the_engine_claim_governed() {
-    let (_l, addr) = live_endpoint();
-    let v = status(&configured(Some(&addr)), true);
+    // `probes = false`: this test is about which CATEGORY a precondition falls into, not
+    // about reaching it. It used a bound-but-not-accepting listener and a real TCP
+    // connect, and a 10-second connect timeout is not a deterministic input — it passed
+    // in the full suite and failed when run alone, i.e. the result depended on machine
+    // load rather than on the code. A test whose verdict depends on timing is the same
+    // defect as K-041's intermittent suite failure.
+    let v = status(&configured(Some("tuck.invalid:1")), false);
     assert_eq!(
         v["state"], "indeterminate",
         "every known precondition is met, but the engine still cannot claim to be \
@@ -96,8 +93,7 @@ fn the_startup_warning_fires_for_every_non_governed_state() {
     assert!(ungoverned.contains("ungoverned"), "{ungoverned}");
     assert!(ungoverned.contains("known: 1/2"), "and give the count: {ungoverned}");
 
-    let (_l, addr) = live_endpoint();
-    let indeterminate = warning(&configured(Some(&addr))).expect("must warn");
+    let indeterminate = warning(&configured(Some("tuck.invalid:1"))).expect("must warn");
     assert!(indeterminate.contains("indeterminate"), "{indeterminate}");
 }
 
@@ -165,8 +161,7 @@ fn governed_is_dead_code_until_a_precondition_gains_a_source() {
 
     // And the behaviour, not just the list: with every KNOWN precondition
     // satisfied, the verdict still must not be `governed`.
-    let (_l, addr) = live_endpoint();
-    let v = status(&configured(Some(&addr)), true);
+    let v = status(&configured(Some("tuck.invalid:1")), false);
     assert_ne!(
         v["state"], "governed",
         "the third state is unreachable; if this fires, the list assertion above \
