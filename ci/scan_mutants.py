@@ -28,10 +28,13 @@ TWO THINGS IT MUST NOT GET WRONG, both learned the hard way in this ledger:
      the full suite ~35s, so the scanner uses `--lib` and SAMPLES rather than sweeping.
      A census of this repository would run for hours; the sample size is printed with
      every result, because an unexplained N is the defect this ledger keeps finding.
- 3. **Anything that mutates the tree and rebuilds races with anything else reading
-     it.** K-041: CI-7 inside `cargo test` made a full run fail intermittently because
-     cargo could rebuild a test binary from mutated source. This scanner must run
-     alone, and it refuses to start if the working tree is dirty.
+ 3. **It does not mutate your working tree at all.** Every mutation is applied inside
+     a `git worktree` copy. The first version mutated in place, and paid for it twice:
+     a killed run left a mutation behind, and a background run silently broke five
+     `run_cycle` tests — K-041 reproduced live. A tool that can quietly corrupt the
+     tree it is measuring gets worse the longer it runs, so "run it for hours,
+     exclusively" was a bet against being killed. **The tool may be slow; it may not
+     be holding the source.**
 
 Usage:
     ci/scan_mutants.py --limit 12            # sample, and say so
@@ -122,6 +125,9 @@ def main():
     ap.add_argument("--limit", type=int, default=12,
                     help="how many sites to sample; the number is reported with the result")
     ap.add_argument("--operators", default="", help="comma-separated operator names; empty = all")
+    ap.add_argument("--files", default="", help="explicit comma-separated files (incremental)")
+    ap.add_argument("--changed-since", default="", help="only files changed since this rev, "
+                    "e.g. HEAD~1 — the mode that makes this cheap enough for CI")
     args = ap.parse_args()
     root = os.path.abspath(args.root)
 
@@ -152,12 +158,23 @@ def main():
 
     d = dirty(root)
     if d:
-        print(f"REFUSING: working tree has {len(d)} change(s); this scanner mutates sources "
-              f"and rebuilds, so it must run alone on a clean tree.", file=sys.stderr)
+        print(f"REFUSING: working tree has {len(d)} change(s). The sandbox is a worktree at "
+              f"HEAD, so it would not contain your uncommitted edits — and a scan of code "
+              f"that is not the code you are working on is a measurement of something else. "
+              f"Commit or stash first.", file=sys.stderr)
         return 3
 
     files = []
-    for part in args.scope.split(","):
+    if args.files:
+        files = [os.path.join(root, f.strip()) for f in args.files.split(",") if f.strip()]
+    elif args.changed_since:
+        r = run(["git", "diff", "--name-only", args.changed_since, "--", "*.rs"], root)
+        files = [os.path.join(root, f.strip()) for f in r.stdout.splitlines()
+                 if f.strip().endswith(".rs")]
+        if not files:
+            print(f"no .rs files changed since {args.changed_since}; nothing to scan")
+            return 0
+    for part in ([] if (args.files or args.changed_since) else args.scope.split(",")):
         part = part.strip()
         p = os.path.join(root, part)
         if os.path.isdir(p):
@@ -190,31 +207,51 @@ def main():
 
     caught, missed, unviable = [], [], []
     started = time.time()
-    for path, name, lineno, original, mutated in sites:
-        full = os.path.join(root, path)
-        text = open(full, encoding="utf-8").read()
-        os.makedirs(backup_dir, exist_ok=True)
-        open(os.path.join(backup_dir, os.path.relpath(full, root).replace("/", "__")),
-             "w", encoding="utf-8").write(text)
-        try:
-            open(full, "w", encoding="utf-8").write(text.replace(original, mutated, 1))
-            r = run(["cargo", "test", "--lib", "--quiet"], root)
-        finally:
-            open(full, "w", encoding="utf-8").write(text)
+
+    # A `git worktree` at HEAD, used as the sandbox. The scanner edits THAT copy, so
+    # the working tree is never in a mutated state — which removes three problems at
+    # once rather than patching each: a killed run leaves nothing behind, a concurrent
+    # reader never sees a mutation, and no restore path is needed. The cost is one
+    # full compile here, which incremental mode (few files) makes acceptable.
+    sandbox = os.path.join(root, "target", "mutants-worktree")
+    if os.path.exists(sandbox):
+        run(["git", "worktree", "remove", "--force", sandbox], root)
+    r = run(["git", "worktree", "add", "--detach", sandbox, "HEAD"], root)
+    if r.returncode != 0:
+        print(f"CHECKER ERROR: cannot create a worktree sandbox ({r.stderr.strip()}). "
+              f"Refusing to mutate the working tree instead: this tool has already been "
+              f"caught corrupting it twice.", file=sys.stderr)
+        return 3
+    print(f"  sandbox: {os.path.relpath(sandbox, root)} (a worktree at HEAD; the working "
+          f"tree is never mutated)")
+
+    try:
+        for path, name, lineno, original, mutated in sites:
+            rel = os.path.relpath(os.path.abspath(path), root)
+            full = os.path.join(sandbox, rel)
+            if not os.path.exists(full):
+                unviable.append(f"{rel}:{lineno} [{name}] (not in the sandbox)")
+                continue
+            text = open(full, encoding="utf-8").read()
             try:
-                os.remove(os.path.join(backup_dir,
-                                       os.path.relpath(full, root).replace("/", "__")))
-            except OSError:
-                pass
-        out = (r.stdout or "") + (r.stderr or "")
-        label = f"{os.path.relpath(full, root)}:{lineno} [{name}]"
-        if BUILD_ERROR_RE.search(out):
-            unviable.append(label)
-        elif r.returncode != 0:
-            caught.append(label)
-        else:
-            missed.append(label)
-        print(f"  {'caught  ' if label in caught else 'MISSED  ' if label in missed else 'unviable'} {label}")
+                open(full, "w", encoding="utf-8").write(text.replace(original, mutated, 1))
+                r = run(["cargo", "test", "--lib", "--quiet"], sandbox)
+            finally:
+                open(full, "w", encoding="utf-8").write(text)
+            out = (r.stdout or "") + (r.stderr or "")
+            label = f"{rel}:{lineno} [{name}]"
+            if BUILD_ERROR_RE.search(out):
+                unviable.append(label)
+                verdict = "unviable"
+            elif r.returncode != 0:
+                caught.append(label)
+                verdict = "caught  "
+            else:
+                missed.append(label)
+                verdict = "MISSED  "
+            print(f"  {verdict} {label}")
+    finally:
+        run(["git", "worktree", "remove", "--force", sandbox], root)
 
     elapsed = time.time() - started
     print(f"\n=== result: caught={len(caught)} missed={len(missed)} unviable={len(unviable)} "
