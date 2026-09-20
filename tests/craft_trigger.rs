@@ -40,6 +40,7 @@ impl MemoryAdapter for CraftMemory {
             nodes: vec![],
             impasse_level: 0,
             suggested_actions: vec![],
+            provenance: None,
         })
     }
     async fn remember(&self, _content: &str, _parent_ids: &[String]) -> Result<String, String> {

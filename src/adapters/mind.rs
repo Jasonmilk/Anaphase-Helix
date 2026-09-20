@@ -25,7 +25,7 @@ use crate::helix_mind_api::{
     AnaWakeupAckRequest, AnaWakeupRequest, AutonomyLevel, BudgetTier, CognitiveMode, EnergyContext,
     HelixConsolidateRequest, HelixCraftRequest, HelixQueryRequest, RememberRequest,
 };
-use super::{MemoryAdapter, MemoryNode, QueryResult};
+use super::{MemoryAdapter, MemoryNode, MindProvenance, QueryResult};
 
 pub struct GrpcMindAdapter {
     client: HelixMindClient<Channel>,
@@ -117,6 +117,14 @@ impl MemoryAdapter for GrpcMindAdapter {
                         .into_iter()
                         .map(|a| a.action_type)
                         .collect(),
+                    // These two rode the wire all along (HelixQueryResult fields 1-2) and
+                    // were simply not copied out. Keeping `suggested_mode` beside the
+                    // effective one is the point: the interesting fact is the DIFFERENCE.
+                    provenance: Some(MindProvenance {
+                        suggested_mode: suggested_mode.as_str_name().to_string(),
+                        effective_mode: mode_name(inner.effective_mode),
+                        negotiation: inner.mode_negotiation,
+                    }),
                 })
             }
             Err(e) => {
@@ -319,6 +327,19 @@ fn derive_budget_tier(query: &str, system_load: f64, cfg: &MindConfig) -> Budget
 /// （1=简单→Skilled / 2=中等→Anchor / 3=复杂→Imagination）；`0`（未知/未设状态）时
 /// 回退 query 长度启发式兜底（不 panic）。长度阈值来自 MindConfig
 /// （ADR-0022 O-4，DNA 原则 11）。
+/// Renders a wire mode value as its stable name.
+///
+/// An unrecognised value is **named as unknown** rather than defaulting to a real mode:
+/// a mode this side cannot read is a fact worth seeing in the ProveTrack, and silently
+/// reporting `Skilled` for it would be the same defect as reporting `Pass` for an
+/// unreachable gate.
+fn mode_name(raw: i32) -> String {
+    match CognitiveMode::try_from(raw) {
+        Ok(m) => m.as_str_name().to_string(),
+        Err(_) => format!("unknown({raw})"),
+    }
+}
+
 fn derive_suggested_mode(query: &str, complexity: u8, cfg: &MindConfig) -> CognitiveMode {
     match complexity {
         1 => CognitiveMode::Skilled,

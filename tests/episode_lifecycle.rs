@@ -39,6 +39,7 @@ impl MemoryAdapter for RecordingMemory {
             nodes: vec![],
             impasse_level: 0,
             suggested_actions: vec![],
+            provenance: None,
         })
     }
     async fn remember(&self, content: &str, _parent_ids: &[String]) -> Result<String, String> {

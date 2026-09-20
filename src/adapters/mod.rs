@@ -39,11 +39,37 @@ pub struct MemoryNode {
     pub recessive: bool,
 }
 
+/// What Mind **actually did**, and why — the part this side used to drop.
+///
+/// Mind *negotiates* the mode: the caller suggests, and Mind may override on impasse
+/// depth, energy, and autonomy level, returning the effective mode plus its reason.
+/// Both were on the wire all along (`HelixQueryResult` fields 1-2); this side simply
+/// never copied them out of the response, so the ProveTrack could not say which mode a
+/// loop ran in, nor tell the mode it *asked for* from the mode that *ran*.
+///
+/// `suggested_mode` is kept next to `effective_mode` on purpose: the interesting fact is
+/// usually the **difference** between them. Keeping only the effective one would hide
+/// that Mind overrode the body — which is the one thing this record exists to show
+/// (VISION 原则 3: 意志优先于框架，Mind 决策、身体建议).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct MindProvenance {
+    /// What Anaphase asked for (its suggestion; Mind may ignore it).
+    pub suggested_mode: String,
+    /// What Mind ran.
+    pub effective_mode: String,
+    /// Mind's reason for the override. Empty = no negotiation happened.
+    pub negotiation: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QueryResult {
     pub nodes: Vec<MemoryNode>,
     pub impasse_level: u8,
     pub suggested_actions: Vec<String>,
+    /// `None` means **this adapter does not report provenance** (Noop, test doubles) —
+    /// which is a different fact from "Mind reported no negotiation". Collapsing the two
+    /// is the same defect as `security_gate: None` (B7) and `last_reflex_block: Option`.
+    pub provenance: Option<MindProvenance>,
 }
 
 /// Cognitive craft outcome (P10a, ADR-0031): the deterministic orchestration
@@ -126,7 +152,14 @@ pub struct NoopMemoryAdapter;
 #[async_trait]
 impl MemoryAdapter for NoopMemoryAdapter {
     async fn query(&self, _query: &str, _include_recessive: bool) -> Result<QueryResult, String> {
-        Ok(QueryResult { nodes: vec![], impasse_level: 0, suggested_actions: vec![] })
+        Ok(QueryResult {
+            nodes: vec![],
+            impasse_level: 0,
+            suggested_actions: vec![],
+            // Noop has no provenance to report — which is NOT the same as
+            // "Mind reported no negotiation".
+            provenance: None,
+        })
     }
     async fn remember(&self, _content: &str, _parent_ids: &[String]) -> Result<String, String> {
         Ok(String::new())

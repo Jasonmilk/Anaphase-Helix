@@ -59,6 +59,7 @@ use std::sync::Arc;
                 nodes: (*self.0).clone(),
                 impasse_level: 0,
                 suggested_actions: vec![],
+                provenance: None,
             })
         }
         async fn remember(&self, _c: &str, _p: &[String]) -> Result<String, String> {

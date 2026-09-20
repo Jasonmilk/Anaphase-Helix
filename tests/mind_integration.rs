@@ -16,7 +16,7 @@ use anaphase::run_cycle::AgentLoop;
 use anaphase::config::AnaphaseConfig;
 use anaphase::helix_mind_api::helix_mind_server::{HelixMind, HelixMindServer};
 use anaphase::helix_mind_api::{
-    AdvancedQueryRequest, AlarmDue, ForgetRequest, ForgetResponse,
+    AdvancedQueryRequest, AlarmDue, CognitiveMode, ForgetRequest, ForgetResponse,
     HelixConsolidateRequest, HelixConsolidateResult, HelixCraftRequest, HelixCraftResult,
     HelixQueryRequest, HelixQueryResult, Node,
     QueryRequest, QueryResponse, ReloadGeneLockRequest, ReloadGeneLockResponse, RememberRequest,
@@ -76,9 +76,18 @@ impl HelixMind for MockMind {
     ) -> Result<Response<HelixQueryResult>, Status> {
         let req = request.into_inner();
         self.captured.0.lock().unwrap().push(req.clone());
+        // **Deliberately overrides the body's suggestion.** An echoing mock would make
+        // `suggested_mode == effective_mode` and could not tell a captured override from
+        // a copied echo — which is the only thing this record exists to show
+        // (VISION 原则 3: Mind 决策，身体建议). The test below asserts they DIFFER.
+        let overridden = if req.suggested_mode == CognitiveMode::Imagination as i32 {
+            CognitiveMode::Anchor as i32
+        } else {
+            CognitiveMode::Imagination as i32
+        };
         let result = HelixQueryResult {
-            effective_mode: req.suggested_mode,
-            mode_negotiation: "mock".into(),
+            effective_mode: overridden,
+            mode_negotiation: "mock override: body suggested a cheaper mode".into(),
             nodes: vec![mock_node("test-node-content")],
             edges: vec![],
             trace_id: "mock-trace".into(),
@@ -117,6 +126,10 @@ impl HelixMind for MockMind {
             latency_ms: 0,
             is_partial: false,
             exhaustion_reason: "".into(),
+            // Not exercised by this fixture; the HelixQuery mock below is the one the
+            // provenance path runs through.
+            effective_mode: CognitiveMode::Skilled as i32,
+            mode_negotiation: "".into(),
         }))
     }
     async fn advanced_query(
@@ -130,6 +143,10 @@ impl HelixMind for MockMind {
             latency_ms: 0,
             is_partial: false,
             exhaustion_reason: "".into(),
+            // Not exercised by this fixture; the HelixQuery mock below is the one the
+            // provenance path runs through.
+            effective_mode: CognitiveMode::Skilled as i32,
+            mode_negotiation: "".into(),
         }))
     }
     async fn forget(
@@ -556,4 +573,34 @@ async fn consolidate_via_grpc_runs_sleep_review_chain() {
 
     adapter.consolidate("hibernate").await.unwrap();
     handle.abort();
+}
+
+/// The mode Mind **actually ran**, and its reason, must reach Anaphase's own type.
+///
+/// Both rode the wire all along (`HelixQueryResult` fields 1-2) and were simply not
+/// copied out of the response — so the ProveTrack could not say which mode a loop used.
+/// The mock above **deliberately overrides** the body's suggestion, because an echoing
+/// mock would make the two equal and could not tell a captured override from a copied
+/// echo. The override is the only thing this record exists to show
+/// (VISION 原则 3: Mind 决策，身体建议).
+#[tokio::test]
+async fn mind_mode_provenance_reaches_the_body() {
+    let (endpoint, _captured, _tx, _handle) = spawn_mock_mind().await;
+    let adapter = GrpcMindAdapter::new(&endpoint, Default::default()).await.unwrap();
+    let result = adapter.query("查询", false).await.unwrap();
+
+    let prov = result
+        .provenance
+        .expect("a gRPC Mind adapter must report provenance");
+    assert!(!prov.effective_mode.is_empty(), "the effective mode must arrive");
+    assert!(
+        prov.negotiation.contains("override"),
+        "the REASON must survive too, not just the mode: {:?}",
+        prov.negotiation
+    );
+    assert_ne!(
+        prov.suggested_mode, prov.effective_mode,
+        "the mock overrides on purpose: equal values mean either the mock echoed or the \
+         capture copied the wrong field"
+    );
 }
