@@ -38,6 +38,14 @@ message QueryResponse {
   uint64 latency_ms = 4;
   bool is_partial = 5;
   string exhaustion_reason = 6;
+  // Append-Only (ADR-0012), fields 7-8. Mind *negotiates* the mode: the caller suggests
+  // and Mind may override on impasse depth / energy / autonomy (see `negotiate_mode`).
+  // It computes the effective mode plus its reason internally in `HelixQueryResult`, but
+  // until now neither reached the wire — so a caller could not tell the mode it asked for
+  // from the one that ran, and the ProveTrack could not say which mode a loop used.
+  // **A fact Mind computes and does not send is indistinguishable from one it never had.**
+  CognitiveMode effective_mode = 7;
+  string mode_negotiation = 8;  // why this mode; empty = no negotiation happened
 }
 
 message RememberRequest {
