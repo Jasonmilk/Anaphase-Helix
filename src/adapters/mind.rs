@@ -65,15 +65,14 @@ impl MemoryAdapter for GrpcMindAdapter {
             self.complexity.load(Ordering::Relaxed),
             &self.config,
         );
-        let request = tonic::Request::new(HelixQueryRequest {
-            query: query.to_string(),
-            suggested_mode: suggested_mode as i32,
-            energy_context: Some(build_energy_context(query, system_load, &self.config)),
+        let request = tonic::Request::new(build_query_request(
+            query,
             include_recessive,
-            allow_imagination: suggested_mode == CognitiveMode::Imagination,
-            autonomy_level: derive_autonomy_level() as i32,
-            traceparent: traceparent.clone(),
-        });
+            suggested_mode,
+            system_load,
+            traceparent.clone(),
+            &self.config,
+        ));
         match self.client.clone().helix_query(request).await {
             Ok(response) => {
                 let inner = response.into_inner();
@@ -303,7 +302,7 @@ fn probe_system_load(fallback: f64) -> f64 {
 /// Exogenous 探索；极简→Endogenous（0-token 只查晶体）；长/探索且负载正常→
 /// ExogenousRequired；默认 Augmentable。阈值与关键词均来自 MindConfig
 /// （ADR-0022 O-4，DNA 原则 11）。P10b 接状态机驱动。
-fn derive_budget_tier(query: &str, system_load: f64, cfg: &MindConfig) -> BudgetTier {
+pub fn derive_budget_tier(query: &str, system_load: f64, cfg: &MindConfig) -> BudgetTier {
     let q = query.trim();
     let len = q.chars().count();
     if system_load > cfg.high_load {
@@ -316,7 +315,7 @@ fn derive_budget_tier(query: &str, system_load: f64, cfg: &MindConfig) -> Budget
     }
     if q.is_empty() || len <= cfg.short_query {
         BudgetTier::Endogenous
-    } else if len >= cfg.long_query || cfg.explore_keywords.iter().any(|k| q.contains(k)) {
+    } else if len >= cfg.long_query || exploratory_intent(q, cfg) {
         BudgetTier::ExogenousRequired
     } else {
         BudgetTier::Augmentable
@@ -340,7 +339,64 @@ fn mode_name(raw: i32) -> String {
     }
 }
 
-fn derive_suggested_mode(query: &str, complexity: u8, cfg: &MindConfig) -> CognitiveMode {
+/// Build the outgoing `HelixQueryRequest`.
+///
+/// Pure: every field is a deterministic function of its arguments. It was inline
+/// in `query()` before, which is exactly why the self-authorising
+/// `allow_imagination: suggested_mode == Imagination` survived review — the
+/// adapter needs a live gRPC channel, so an inline literal can only be checked by
+/// reading it, never by running it. Extracting it is what makes *who decides
+/// what* testable: `suggested_mode` is the body's **suggestion**,
+/// `allow_imagination` is the human's **grant**, and `autonomy_level` is the
+/// posture. Three different authorities, one struct — worth being able to assert.
+///
+/// Public so `tests/mind_grant_policy.rs` can assert the wiring: `src/` sits under
+/// the line-count ratchet and `tests/` does not, so the assertions live there.
+pub fn build_query_request(
+    query: &str,
+    include_recessive: bool,
+    suggested_mode: CognitiveMode,
+    system_load: f64,
+    traceparent: String,
+    cfg: &MindConfig,
+) -> HelixQueryRequest {
+    HelixQueryRequest {
+        query: query.to_string(),
+        // 身体可建议，不决策（VISION 原则 3）：这是建议。由调用方推导后传入，
+        // 以便同一份建议既进请求、也进证轨（provenance），不会出现两个来源。
+        suggested_mode: suggested_mode as i32,
+        energy_context: Some(build_energy_context(query, system_load, cfg)),
+        include_recessive,
+        // 授权来自人类自己的措辞，不由身体自我签发。见 `exploratory_intent`。
+        allow_imagination: exploratory_intent(query, cfg),
+        autonomy_level: derive_autonomy_level() as i32,
+        traceparent,
+    }
+}
+
+/// Does the human's own wording ask to explore?
+///
+/// This is the **human's** signal, not the body's guess, and it is the only
+/// thing that may grant Imagination (`allow_imagination`). Two things were wrong
+/// before:
+///
+/// 1. **Self-authorisation.** The grant was `suggested_mode == Imagination` —
+///    the body suggested Imagination and then permitted itself to use it, so the
+///    gate could never refuse. A permission the requester issues to itself is not
+///    a permission (VISION 原则 3: 身体可建议，不决策).
+/// 2. **An inversion.** `suggested_mode` falls back to query *length*, so
+///    「探索一下这个」 is short ⇒ suggested Skilled ⇒ the human's own explicit
+///    request to explore was the one case that could never reach Imagination,
+///    while a long technical question with no such request could.
+///
+/// Single source for the explore vocabulary (DNA principle 11): the same
+/// `explore_keywords` in `MindConfig` that `derive_budget_tier` already trusts.
+pub fn exploratory_intent(query: &str, cfg: &MindConfig) -> bool {
+    let q = query.trim();
+    cfg.explore_keywords.iter().any(|k| q.contains(k))
+}
+
+pub fn derive_suggested_mode(query: &str, complexity: u8, cfg: &MindConfig) -> CognitiveMode {
     match complexity {
         1 => CognitiveMode::Skilled,
         2 => CognitiveMode::Anchor,

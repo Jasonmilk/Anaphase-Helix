@@ -451,15 +451,19 @@ cap    = 14
 k_id   = "B7"
 reason = "the `None` arm that blocks high-risk calls when no door-keeper is configured, and the message that names the explicit opt-out. Measured 269 -> 282 (+13); the cap is set one line above the measurement so a later edit that adds a line has to come back and say so rather than slipping through"
 
-# K-045: the body starts carrying the mode Mind actually ran, and Mind's reason for
-# overriding. Both are facts that were already on the wire and were being dropped here.
-# Ratio ceilings: mind.rs max(36, 36) = 36 against +11; adapters/mod.rs max(36, 18) = 36
-# against +13. Both well inside.
+# K-045 + K-059: the body carries the mode Mind actually ran and Mind's reason for
+# overriding, and the mode that is *reported* is now the mode that *diffuses*. Both are
+# facts about the same seam, so they share this target's single window —
+# `load_fix_windows` returns `{target: (cap, k_id)}`, so a second entry for the same
+# target would REPLACE this one rather than add to it. That is why the cap carries both
+# pits' lines, and why `k_id` is a list rather than one id.
+# Measured 363 -> 395 (+32): K-045's +11 plus K-059's +21.
+# Ratio ceiling: mind.rs max(36, 363 // 10) = 36, so a cap of 33 is inside it.
 [[fix_window]]
 target = "src/adapters/mind.rs"
-cap    = 12
-k_id   = "K-045"
-reason = "copy `effective_mode`/`mode_negotiation` out of the response into MindProvenance, plus the helper that names an unreadable mode as unknown instead of defaulting to a real one. Measured 363 -> 374"
+cap    = 33
+k_id   = "K-045, K-059"
+reason = "K-045 (+11): copy `effective_mode`/`mode_negotiation` out of the response into MindProvenance, plus the helper that names an unreadable mode as unknown instead of defaulting to a real one. K-059 (+21): `build_query_request`/`exploratory_intent`/`derive_suggested_mode`/`derive_budget_tier` become `pub` so the grant wiring is asserted by `tests/mind_grant_policy.rs`; those assertions moved out of `#[cfg(test)]` because `src/` is ratcheted and `tests/` is not. Measured 363 -> 395; the cap sits one line above the measurement so a later edit has to come back and say so"
 
 [[fix_window]]
 target = "src/adapters/mod.rs"
