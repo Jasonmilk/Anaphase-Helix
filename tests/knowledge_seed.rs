@@ -10,7 +10,7 @@ use anaphase::adapters::MemoryAdapter;
 const MIND: &str = "http://127.0.0.1:50052";
 
 #[tokio::test]
-#[ignore]
+#[ignore = "writes into a live Helix-Mind at :50052; manual run, see file header"]
 async fn seed_l2_three_laws() {
     let adapter = GrpcMindAdapter::new(MIND, Default::default())
         .await
