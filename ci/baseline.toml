@@ -445,11 +445,25 @@ reason = "one `pub mod` line registering the new HTTP security gate"
 # the second match arm plus the explicit opt-out message, and the alternative (leaving
 # the hole) is the thing this window exists to pay for. Ratio ceiling for a 269-line
 # file is max(36, 26) = 36, so a cap of 14 is well inside it.
+#
+# K-112 keeps the same target rather than opening a second window: `load_fix_windows`
+# returns {target: (cap, k_id)}, so a second entry for one target REPLACES the first.
+# Both pits' lines therefore ride one cap, which is why `k_id` is a list.
 [[fix_window]]
 target = "src/pipeline/mod.rs"
-cap    = 14
-k_id   = "B7"
-reason = "the `None` arm that blocks high-risk calls when no door-keeper is configured, and the message that names the explicit opt-out. Measured 269 -> 282 (+13); the cap is set one line above the measurement so a later edit that adds a line has to come back and say so rather than slipping through"
+cap    = 22
+k_id   = "B7, K-112"
+reason = "B7 (+13): the `None` arm that blocks high-risk calls when no door-keeper is configured, and the message that names the explicit opt-out — measured 269 -> 282. K-112 (+8): `gate_presence()` and one stage-3 `gate` event per call, so a missing gate is recorded as absent instead of being indistinguishable from a gate that passed — measured 269 -> 290. Measured 269 -> 291 together; the cap sits one line above the measurement so a later edit has to come back and say so rather than slipping through"
+
+# K-113: the trace export's arithmetic stopped depending on arrival order, and an
+# out-of-order stream is now refused at the door. The ledger-side half is
+# `next_attempt()`, which derives the retry parent the pipeline previously passed as
+# `None`; ratio ceiling here is max(36, 219 // 10) = 36, so a cap of 2 is inside it.
+[[fix_window]]
+target = "src/ledger/mod.rs"
+cap    = 2
+k_id   = "K-113"
+reason = "`next_attempt()` derives the retry parent and attempt count from the ledger, so the lineage M1.5 counts by is actually written instead of every attempt looking like a first. Measured 219 -> 221 (+2); the cap sits at the measurement so any further line in this file trips the ratchet again"
 
 # K-045 + K-059: the body carries the mode Mind actually ran and Mind's reason for
 # overriding, and the mode that is *reported* is now the mode that *diffuses*. Both are
