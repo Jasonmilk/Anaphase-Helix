@@ -203,6 +203,17 @@ impl Ledger {
             .collect()
     }
 
+    /// Parent and attempt count for the next run of `job_id` (ADR-0003 decision 10).
+    /// A lineage field is only a lineage if something writes it: `unmet()` takes a
+    /// `parent_id` and the pipeline passed `None` unconditionally, so every attempt
+    /// looked like a first and the chain length M1.5 counts never exceeded one.
+    /// Derived from the ledger, not a counter in memory, so a restart names the same root.
+    pub fn next_attempt(&self, job_id: &str) -> (Option<String>, u32) {
+        let hits = self.records.iter().filter(|r| matches!(r, LedgerRecord::Verdict { job_id: id, .. } if id == job_id));
+        let n = hits.count() as u32;
+        (if n > 0 { Some(job_id.to_string()) } else { None }, n)
+    }
+
     /// Lossless JSONL serialization.
     pub fn to_jsonl(&self) -> String {
         let mut out = String::new();

@@ -366,7 +366,13 @@ impl Pipeline {
         // stage 5 (pure)
         let reports = Self::check_results(self.evidence.records(), &self.config.rules);
         // stage 6 (in-memory)
-        let verdict = self.build_verdict(&job.job_id, evidence_ids.clone(), &reports, None);
+        // A repeat of the same job names the chain it belongs to. Passing `None`
+        // unconditionally made every attempt look like a first attempt, so the
+        // lineage "count attempts by chain length" relies on had nothing to count
+        // (ADR-0003 decision 10). Derived from the ledger, not from a counter
+        // carried in memory, so a restarted process names the same root.
+        let (parent, _attempt) = self.ledger.next_attempt(&job.job_id);
+        let verdict = self.build_verdict(&job.job_id, evidence_ids.clone(), &reports, parent);
         let (verdict_status, retry_due) = match &verdict {
             LedgerRecord::Verdict { status, retry_due, .. } => (status.clone(), *retry_due),
             // Blocked records are appended inside execute_calls and short-circuit

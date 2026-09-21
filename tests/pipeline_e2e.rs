@@ -278,3 +278,141 @@ fn unqueueable_accounting_survives_the_jsonl_round_trip() {
         );
     }
 }
+
+/* ---- the retry lineage is written by the pipeline, not just declared ----
+ *
+ * `LedgerRecord::unmet` takes a `parent_id` and the module docs promise that
+ * M1.5 "can requeue them by lineage". The pipeline passed `None` unconditionally,
+ * so every attempt looked like a first attempt and the chain length that
+ * lineage is supposed to measure was always 1. This runs the SAME job twice
+ * through the real `run()` and reads the ledger back — a hand-built record would
+ * prove the constructor works, which was never in doubt.
+ *
+ * The failure fixture is the one `pipeline_e2e_unmet` already uses (a check that
+ * fails), because a MET outcome is terminal and has no next attempt to name.
+ */
+const FAILING_JOB: &str = "tt_job-e2e-lineage";
+const FAILING_LLM: &str = r#"{"calls":[
+    {"tool":"rate","args":{},"expect":"rate"}
+]}"#;
+
+fn make_failing_tentacle() -> MockTentacle {
+    MockTentacle::new().with_tool("rate", r#"{"rates":[0.1]}"#)
+}
+
+async fn run_twice() -> Pipeline {
+    // Reuse the closed loop's wiring but run the same job id twice on one
+    // pipeline, which is the only way the second attempt can see the first.
+    let (llm_endpoint, _llm_tx, _llm_handle) = spawn_mock_llm(FAILING_LLM.to_string()).await;
+    let cfg = AnaphaseConfig {
+        reasoning_endpoint: Some(llm_endpoint),
+        reasoning_model: Some("mock".into()),
+        reasoning_max_tokens: Some(16),
+        ..AnaphaseConfig::default()
+    };
+    let llm = HttpReasoningAdapter::new(&cfg, None);
+    let content = llm.reason("plan", "left_brain", "t-lineage").await.unwrap();
+
+    let (tent_endpoint, _captured, _tx, _handle) = spawn_mock_tentacle(make_failing_tentacle()).await;
+    let tentacle = anaphase::adapters::tentacle::GrpcTentacleAdapter::new(&tent_endpoint)
+        .await
+        .unwrap();
+    let pipe_config = PipelineConfig::from_codex("knowledge_base/fixture-codex.json").unwrap();
+    let mut pipeline = Pipeline::new(tentacle, Box::new(FakeClock(1000)), pipe_config);
+
+    for _ in 0..2 {
+        pipeline
+            .run(PipelineInput {
+                job_id: FAILING_JOB.to_string(),
+                created_at: "2026-09-03T00:00:00Z".to_string(),
+                llm_content: content.clone(),
+                identity_labels: std::collections::BTreeMap::new(),
+            })
+            .await
+            .expect("the closed loop completes even when a check fails");
+    }
+    pipeline
+}
+
+#[tokio::test]
+async fn a_second_attempt_names_the_chain_it_belongs_to() {
+    let pipeline = run_twice().await;
+
+    let attempts: Vec<(String, Option<String>, VerdictStatus)> = pipeline
+        .ledger
+        .records()
+        .iter()
+        .filter_map(|r| match r {
+            LedgerRecord::Verdict { job_id, parent_id, status, .. } => {
+                Some((job_id.clone(), parent_id.clone(), status.clone()))
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(attempts.len(), 2, "two runs, two verdicts: {attempts:?}");
+
+    // The first attempt is the root: naming itself as its own parent would make
+    // the chain a cycle, and naming nothing is what it does today.
+    assert_eq!(attempts[0].0, FAILING_JOB);
+    assert_eq!(
+        attempts[0].1, None,
+        "the first attempt must not claim a parent"
+    );
+
+    // The second must name the chain it is a retry of. This is the assertion the
+    // old `None` failed: it reads green only because the pipeline now derives it.
+    assert_eq!(
+        attempts[1].1.as_deref(),
+        Some(FAILING_JOB),
+        "attempt 2 named parent {:?}; a None here means lineage is declared but never written",
+        attempts[1].1
+    );
+
+    // Both attempts are the same job, so `next_attempt` sees a chain of two —
+    // the number ADR-0003 decision 10 says M1.5 counts by.
+    let (root, count) = pipeline.ledger.next_attempt(FAILING_JOB);
+    assert_eq!(root.as_deref(), Some(FAILING_JOB));
+    assert_eq!(count, 2, "the chain length must be visible, not inferred");
+}
+
+#[tokio::test]
+async fn a_first_attempt_does_not_claim_a_parent() {
+    // Positive control for the assertion above: the same path, run once. If the
+    // pipeline named a parent unconditionally, this is where it would show, and
+    // the previous test could not tell "derived" from "always set".
+    let (llm_endpoint, _llm_tx, _llm_handle) = spawn_mock_llm(FAILING_LLM.to_string()).await;
+    let cfg = AnaphaseConfig {
+        reasoning_endpoint: Some(llm_endpoint),
+        reasoning_model: Some("mock".into()),
+        reasoning_max_tokens: Some(16),
+        ..AnaphaseConfig::default()
+    };
+    let llm = HttpReasoningAdapter::new(&cfg, None);
+    let content = llm.reason("plan", "left_brain", "t-control").await.unwrap();
+    let (tent_endpoint, _captured, _tx, _handle) = spawn_mock_tentacle(make_failing_tentacle()).await;
+    let tentacle = anaphase::adapters::tentacle::GrpcTentacleAdapter::new(&tent_endpoint)
+        .await
+        .unwrap();
+    let pipe_config = PipelineConfig::from_codex("knowledge_base/fixture-codex.json").unwrap();
+    let mut pipeline = Pipeline::new(tentacle, Box::new(FakeClock(1000)), pipe_config);
+
+    let outcome = pipeline
+        .run(PipelineInput {
+            job_id: "tt_job-e2e-control".to_string(),
+            created_at: "2026-09-03T00:00:00Z".to_string(),
+            llm_content: content,
+            identity_labels: std::collections::BTreeMap::new(),
+        })
+        .await
+        .unwrap();
+    assert_eq!(outcome.verdict, VerdictStatus::Unmet, "control needs an UNMET row");
+    let (root, count) = pipeline.ledger.next_attempt("tt_job-e2e-control");
+    assert_eq!(root.as_deref(), Some("tt_job-e2e-control"));
+    assert_eq!(count, 1);
+    match pipeline.ledger.records().first() {
+        Some(LedgerRecord::Verdict { parent_id, .. }) => {
+            assert_eq!(*parent_id, None, "a first attempt names no parent");
+        }
+        other => panic!("unexpected: {other:?}"),
+    }
+}
