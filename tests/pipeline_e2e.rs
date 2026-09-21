@@ -165,3 +165,116 @@ async fn pipeline_e2e_deterministic_replay() {
         "same input + same clock must be byte-identical"
     );
 }
+
+/* ---- the requeue story accounts for every UNMET row (K-113's sibling) ----
+ *
+ * `scan_due` returns the rows that are DUE, which is why it filters on
+ * `retry_due: Some(..)`. That filter is right — an untimed row is not due — but
+ * it used to leave no trace: a record saying UNMET with no due would sit in the
+ * ledger forever looking like scheduled work. `LedgerRecord::unmet` always sets
+ * a due, so the reachable case is `from_jsonl`, whose input is external; the
+ * orphan below is therefore built through the enum, because a probe that cannot
+ * produce the state proves nothing.
+ *
+ * The first version of this accounting compared `scan_due + unqueueable` against
+ * ALL unmet rows and went red for the ordinary case of "not due yet". That was
+ * the checker being wrong, not the ledger, and it was fixed in the checker: the
+ * invariant is due + still-scheduled + unqueueable == all UNMET, at every now.
+ */
+
+/// UNMET rows split by state at `now`. Local on purpose: the point is that an
+/// independent reading of the records agrees with what `scan_due` reports.
+fn unmet_by_state(
+    ledger: &anaphase::ledger::Ledger,
+    now: u64,
+) -> (usize, usize, usize) {
+    let (mut due, mut scheduled, mut unqueueable) = (0, 0, 0);
+    for r in ledger.records() {
+        if let LedgerRecord::Verdict { status: VerdictStatus::Unmet, retry_due, .. } = r {
+            match retry_due {
+                Some(d) if *d <= now => due += 1,
+                Some(_) => scheduled += 1,
+                None => unqueueable += 1,
+            }
+        }
+    }
+    (due, scheduled, unqueueable)
+}
+
+fn orphan_unmet(job: &str) -> LedgerRecord {
+    LedgerRecord::Verdict {
+        status: VerdictStatus::Unmet,
+        job_id: job.into(),
+        evidence_ids: vec![],
+        check_reports: vec![],
+        retry_due: None,
+        parent_id: None,
+    }
+}
+
+#[test]
+fn every_unmet_record_is_due_scheduled_or_named_unqueueable() {
+    let mut ledger = anaphase::ledger::Ledger::new(Box::new(FakeClock(1000)));
+    ledger.append(LedgerRecord::met("done", vec![], vec![]));
+    ledger.append(LedgerRecord::unmet("scheduled", vec![], vec![], 900, None));
+    ledger.append(LedgerRecord::unmet("later", vec![], vec![], 5000, None));
+    ledger.append(orphan_unmet("orphan"));
+
+    let total = ledger
+        .records()
+        .iter()
+        .filter(|r| matches!(r, LedgerRecord::Verdict { status: VerdictStatus::Unmet, .. }))
+        .count();
+    assert_eq!(total, 3, "the fixture itself must hold three UNMET rows");
+
+    for now in [0u64, 900, 1000, 4999, 5000, 10_000] {
+        let (due, scheduled, unqueueable) = unmet_by_state(&ledger, now);
+        assert_eq!(
+            due + scheduled + unqueueable,
+            total,
+            "at now={now}: {due} due + {scheduled} scheduled + {unqueueable} unqueueable != \
+             {total} UNMET — a record left the requeue story without being named"
+        );
+        assert_eq!(
+            ledger.scan_due(now).len(),
+            due,
+            "scan_due must be exactly the due set at now={now}"
+        );
+    }
+
+    let unqueueable = ledger.unqueueable_unmet();
+    assert_eq!(unqueueable.len(), 1, "exactly the hand-built row is unqueueable");
+    match unqueueable[0] {
+        LedgerRecord::Verdict { job_id, .. } => assert_eq!(job_id, "orphan"),
+        other => panic!("unexpected: {other:?}"),
+    }
+}
+
+#[test]
+fn unqueueable_accounting_survives_the_jsonl_round_trip() {
+    let mut ledger = anaphase::ledger::Ledger::new(Box::new(FakeClock(1000)));
+    ledger.append(LedgerRecord::unmet("scheduled", vec![], vec![], 900, None));
+    ledger.append(orphan_unmet("orphan"));
+
+    let back = anaphase::ledger::Ledger::from_jsonl(&ledger.to_jsonl(), Box::new(FakeClock(1000)))
+        .expect("round trip parses");
+    assert_eq!(
+        back.unqueueable_unmet().len(),
+        1,
+        "the unqueueable row must still be identifiable after a round trip — a future edit that \
+         dropped retry_due from the encoding would otherwise pass every in-memory test"
+    );
+    let total = back
+        .records()
+        .iter()
+        .filter(|r| matches!(r, LedgerRecord::Verdict { status: VerdictStatus::Unmet, .. }))
+        .count();
+    for now in [0u64, 900, 1000, 10_000] {
+        let (due, scheduled, unqueueable) = unmet_by_state(&back, now);
+        assert_eq!(
+            due + scheduled + unqueueable,
+            total,
+            "accounting must hold on the read-back ledger at now={now}"
+        );
+    }
+}

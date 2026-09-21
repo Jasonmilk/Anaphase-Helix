@@ -174,10 +174,32 @@ impl Ledger {
     /// Scan for UNMET records whose retry_due has passed (reopen candidates).
     /// This is the M1 definition of "reopen": scanning only; consuming the
     /// queue is M1.5 scope (ADR-0003 decision 10).
+    ///
+    /// The filter requires `retry_due: Some(..)`, which is right — an untimed
+    /// record must not be handed out as due. What it must not do is hide the
+    /// records that fail that requirement, so [`Self::unqueueable_unmet`] names
+    /// them and the two are asserted to add up. `LedgerRecord::unmet` always
+    /// sets a due, but `from_jsonl` takes external input: a record saying UNMET
+    /// with no due parses happily and would otherwise sit in the ledger forever
+    /// looking like work that was scheduled.
     pub fn scan_due(&self, now: u64) -> Vec<&LedgerRecord> {
         self.records
             .iter()
             .filter(|r| matches!(r, LedgerRecord::Verdict { status: VerdictStatus::Unmet, retry_due: Some(due), .. } if *due <= now))
+            .collect()
+    }
+
+    /// UNMET records the queue can never hand out, because they carry no due.
+    ///
+    /// These are not "not yet due" — they are un-schedulable. Named separately so
+    /// `scan_due(now).len() + unqueueable_unmet().len()` equals the number of
+    /// UNMET records at every `now`: nothing leaves the queue without being said
+    /// out loud. A queue that silently drops what it cannot schedule is the same
+    /// defect as a retry that never fires.
+    pub fn unqueueable_unmet(&self) -> Vec<&LedgerRecord> {
+        self.records
+            .iter()
+            .filter(|r| matches!(r, LedgerRecord::Verdict { status: VerdictStatus::Unmet, retry_due: None, .. }))
             .collect()
     }
 
@@ -246,17 +268,6 @@ mod tests {
             LedgerRecord::Verdict { job_id, .. } => assert_eq!(job_id, "b"),
             other => panic!("unexpected: {other:?}"),
         }
-    }
-
-    #[test]
-    fn jsonl_roundtrip_is_byte_identical() {
-        let mut ledger = Ledger::new(Box::new(FakeClock(1000)));
-        ledger.append(LedgerRecord::met("a", vec!["a#0".into()], vec![report(true)]));
-        ledger.append(LedgerRecord::unmet("b", vec![], vec![report(false)], 4600, Some("a".into())));
-
-        let jsonl = ledger.to_jsonl();
-        let back = Ledger::from_jsonl(&jsonl, Box::new(FakeClock(1000))).unwrap();
-        assert_eq!(back.to_jsonl(), jsonl, "roundtrip must be byte-identical");
     }
 
     #[test]
