@@ -214,6 +214,36 @@ impl Ledger {
         (if n > 0 { Some(job_id.to_string()) } else { None }, n)
     }
 
+    /// One job's queue state: the lineage root, how many attempts it has, and the
+    /// earliest instant the queue may hand it out again.
+    ///
+    /// The lineage was being written and then read by nobody, which is the same
+    /// fact as not writing it: a field no one consumes changes no decision. This is
+    /// the read side — derived from the records, so it needs no new column and a
+    /// restarted process reports the same thing.
+    ///
+    /// `next_due` is the EARLIEST due among attempts that are not MET, because a
+    /// job with a past attempt still pending is due as soon as any of them is; a
+    /// job that has passed is due never. `attempts` counts every verdict, so a job
+    /// that succeeded on the second try reports two — that number is the whole
+    /// point of the lineage, not a count of failures.
+    pub fn job_state(&self, job_id: &str) -> (Option<String>, u32, Option<u64>) {
+        let (root, attempts) = self.next_attempt(job_id);
+        let next_due = self
+            .records
+            .iter()
+            .filter_map(|r| match r {
+                LedgerRecord::Verdict { job_id: id, status, retry_due, .. }
+                    if id == job_id && *status == VerdictStatus::Unmet =>
+                {
+                    *retry_due
+                }
+                _ => None,
+            })
+            .min();
+        (root, attempts, next_due)
+    }
+
     /// Lossless JSONL serialization.
     pub fn to_jsonl(&self) -> String {
         let mut out = String::new();

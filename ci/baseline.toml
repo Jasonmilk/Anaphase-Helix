@@ -461,9 +461,9 @@ reason = "B7 (+13): the `None` arm that blocks high-risk calls when no door-keep
 # `None`; ratio ceiling here is max(36, 219 // 10) = 36, so a cap of 2 is inside it.
 [[fix_window]]
 target = "src/ledger/mod.rs"
-cap    = 2
+cap    = 18
 k_id   = "K-113"
-reason = "`next_attempt()` derives the retry parent and attempt count from the ledger, so the lineage M1.5 counts by is actually written instead of every attempt looking like a first. Measured 219 -> 221 (+2); the cap sits at the measurement so any further line in this file trips the ratchet again"
+reason = "`next_attempt()` derives the retry parent and attempt count from the ledger, so the lineage M1.5 counts by is actually written instead of every attempt looking like a first (+2), and `job_state()` is the read side of that lineage: without a consumer the field changes no decision, which is the same as not writing it (+16). Measured 219 -> 237; the cap sits at the measurement so any further line in this file trips the ratchet again"
 
 # K-045 + K-059: the body carries the mode Mind actually ran and Mind's reason for
 # overriding, and the mode that is *reported* is now the mode that *diffuses*. Both are

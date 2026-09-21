@@ -416,3 +416,66 @@ async fn a_first_attempt_does_not_claim_a_parent() {
         other => panic!("unexpected: {other:?}"),
     }
 }
+
+/* ---- the lineage has a READER, not just a writer ----
+ *
+ * `parent_id` is written now, but a field no one consumes changes no decision —
+ * the same fact as not writing it. `Ledger::job_state` is the read side: root,
+ * attempt count, and the earliest instant the queue may hand the job out again.
+ *
+ * These assertions run on a hand-built ledger on purpose. The question here is
+ * what the READER reports for a given set of records, and driving that through
+ * the whole pipeline would test the writer again by a longer route.
+ */
+#[test]
+fn job_state_reports_the_chain_and_when_it_is_next_due() {
+    let mut ledger = anaphase::ledger::Ledger::new(Box::new(FakeClock(1000)));
+    // First attempt fails at t=1000, due at 2000; second attempt succeeds.
+    ledger.append(LedgerRecord::unmet("job-a", vec![], vec![], 2000, None));
+    ledger.append(LedgerRecord::met("job-a", vec![], vec![]));
+    // A different job that never failed is never due.
+    ledger.append(LedgerRecord::met("job-b", vec![], vec![]));
+
+    let (root, attempts, next_due) = ledger.job_state("job-a");
+    assert_eq!(root.as_deref(), Some("job-a"), "the root is the job's own id");
+    assert_eq!(
+        attempts, 2,
+        "attempts counts every verdict, so a job that succeeded on the second try \
+         reports two — that number is the point of the lineage, not a failure count"
+    );
+    assert_eq!(
+        next_due, Some(2000),
+        "a job whose earlier attempt is still UNMET is due at that attempt's time"
+    );
+
+    let (root_b, attempts_b, due_b) = ledger.job_state("job-b");
+    assert_eq!(root_b.as_deref(), Some("job-b"));
+    assert_eq!(attempts_b, 1);
+    assert_eq!(due_b, None, "a job that has passed is due never");
+
+    // An unknown job is not a job: no root, no attempts, nothing due.
+    assert_eq!(ledger.job_state("never-ran"), (None, 0, None));
+}
+
+#[test]
+fn job_state_goes_red_if_the_unmet_attempt_is_ignored() {
+    // Control. The first version of the assertion above read only the LAST record,
+    // which for this fixture is MET — so a reader that forgot the earlier UNMET
+    // attempt would still have reported "root set, one attempt, never due". This
+    // fixture orders the records so that mistake cannot pass: the due attempt is
+    // followed by a pass, and the reader must still find the due.
+    let mut ledger = anaphase::ledger::Ledger::new(Box::new(FakeClock(1000)));
+    ledger.append(LedgerRecord::unmet("job-c", vec![], vec![], 900, None));
+    ledger.append(LedgerRecord::met("job-c", vec![], vec![]));
+
+    let (_, attempts, next_due) = ledger.job_state("job-c");
+    assert_eq!(
+        (attempts, next_due),
+        (2, Some(900)),
+        "a reader that looks only at the final record reports (1, None) here — the \
+         earlier UNMET attempt is exactly what it would drop"
+    );
+    // Both halves of the mistake, named, so the failure says which one happened.
+    assert_ne!(attempts, 1, "the earlier attempt must be counted");
+    assert_ne!(next_due, None, "the earlier attempt's due must be visible");
+}
