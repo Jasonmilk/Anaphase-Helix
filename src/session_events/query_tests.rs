@@ -80,6 +80,76 @@
         let _ = fs::remove_dir_all(&dir);
     }
 
+    /// A parent written as a JOB id is refused, and the SAME period resolves once
+    /// the parent is the canonical period id.
+    ///
+    /// This is the measured shape of a live defect, not a hypothetical. The panel
+    /// sends its current selection in a field called `job_id`, and the server used
+    /// to store whatever arrived as the parent pointer — so a chain created from a
+    /// job id records `run-<hex>` where the reader requires `run-<hex>-p<16hex>`.
+    /// Observed in this workspace's own history: 166 periods, two with a
+    /// resolvable parent, and a four-period chain whose every `resume_from` is a
+    /// job id. The sidebar groups by period identity, so all four read as roots
+    /// and each card stood alone.
+    ///
+    /// The reader is right to refuse: `is_period_id` is what keeps prose out (the
+    /// K-004 fault). The fix belongs at the writer, which now resolves the key
+    /// before recording it.
+    ///
+    /// What this assertion can and cannot catch, measured rather than assumed:
+    /// removing EITHER reader guard (`is_period_id`, or the later "the parent must
+    /// be one of the known period ids" pass) still yields `None`, because the two
+    /// are independent defences over the same value. So this is an end-to-end
+    /// assertion and it will NOT go red for a single-layer regression — verified by
+    /// mutating each in turn. It is written down because a check believed to be
+    /// stronger than it is is worse than one that is known to be weak; the writer
+    /// half below is the part that is asserted for a reason.
+    #[test]
+    fn a_job_id_parent_is_refused_while_its_period_id_resolves() {
+        let dir = test_support::tmp_dir("job_id_parent_refused");
+        let parent_id = allocate_period_id("run-aaaa1111", 1_760_000_000);
+        let job_form = "run-aaaa1111";
+        let child_id = allocate_period_id("run-bbbb2222", 1_760_000_002);
+
+        let mut parent = SessionEventStream::open(dir.clone(), &parent_id, job_form, Redaction::default()).unwrap();
+        parent.emit("2026-09-07T00:00:00Z", EventType::UserMessage, json!({ "text": "root" })).unwrap();
+        parent.emit("2026-09-07T00:00:01Z", EventType::TurnEnd, json!({})).unwrap();
+
+        // Exactly what the old writer produced: the job id, not the period.
+        let mut child = SessionEventStream::open(dir.clone(), &child_id, "run-bbbb2222", Redaction::default()).unwrap();
+        child.emit("2026-09-07T00:00:10Z", EventType::ContextInject, json!({ "resume_from": job_form })).unwrap();
+        child.emit("2026-09-07T00:00:11Z", EventType::TurnEnd, json!({})).unwrap();
+
+        let list = list_periods(&dir, 10).unwrap();
+        let child_row = list.iter().find(|p| p.period_id == child_id).unwrap();
+        assert_eq!(
+            child_row.parent, None,
+            "a job id is not a period id and must not be read as one — the sidebar groups by period identity"
+        );
+
+        // The other half, and the reason the fix is at the writer: the key the
+        // client sent DOES resolve to exactly one period, so a writer that
+        // resolves it first produces a parent the reader accepts.
+        let resolved = resolve_one(&dir, job_form).expect("one period carries this job id");
+        assert_eq!(resolved, parent_id, "the job id resolves to the period that owns it");
+        assert!(is_period_id(&resolved), "and what it resolves to satisfies the reader's check");
+
+        // Re-open as the fixed writer would: the canonical period id in the same
+        // slot makes the child a child.
+        let child2_id = allocate_period_id("run-bbbb2222", 1_760_000_003);
+        let mut child2 = SessionEventStream::open(dir.clone(), &child2_id, "run-bbbb2222", Redaction::default()).unwrap();
+        child2.emit("2026-09-07T00:00:20Z", EventType::ContextInject, json!({ "resume_from": resolved })).unwrap();
+        child2.emit("2026-09-07T00:00:21Z", EventType::TurnEnd, json!({})).unwrap();
+        let after = list_periods(&dir, 10).unwrap();
+        let fixed = after.iter().find(|p| p.period_id == child2_id).unwrap();
+        assert_eq!(
+            fixed.parent,
+            Some(parent_id),
+            "with the canonical id in the slot the parent is found — this is what the writer now records"
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
     /// T1 + T8: the same input twice. Both periods survive, both are listed,
     /// and the shared `job_id` refuses to resolve to either one.
     #[test]

@@ -378,18 +378,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // true history so the new period continues the
                     // conversation instead of meeting a stranger.
                     if let Some(job) = body.get("job_id").and_then(|v| v.as_str()) {
-                        // Machine-readable parent for ProveTrack threading
-                        // (session list aggregation).
-                        built.agent.context.resume_job = Some(job.to_string());
-                        if let Some(dir) = &cfg.anaphase.session_events_path {
-                            let resume = anaphase::session_events::read_summary(
-                                &std::path::PathBuf::from(dir),
-                                job,
-                                400,
-                            );
-                            if let Some(r) = resume {
-                                built.agent.context.resume = Some(r);
-                            }
+                        // The recorded parent must be a PERIOD id (`run-<hex>-p<16hex>`),
+                        // and it used to be whatever arrived: a job id (`run-<hex>`, which
+                        // can own several periods) or, historically, prose. Measured in
+                        // this workspace: 166 periods, two with a resolvable parent, and a
+                        // four-period chain whose every `resume_from` is a job id — so the
+                        // sidebar, which groups by period identity, saw four roots.
+                        //
+                        // Normalise once, here, and use the SAME value for the injected
+                        // history and the recorded lineage: two resolutions could describe
+                        // two different periods. Unresolvable or ambiguous yields no
+                        // parent rather than a guessed one — a wrong parent is worse than
+                        // a missing one, and `read_summary` refuses ambiguity for the same
+                        // reason. (See `query_tests::a_job_id_parent_…` for what this can
+                        // and cannot assert.)
+                        let dir = cfg.anaphase.session_events_path.clone();
+                        let resolved = dir
+                            .as_ref()
+                            .and_then(|d| {
+                                anaphase::session_events::resolve_one(&std::path::PathBuf::from(d), job).ok()
+                            })
+                            .filter(|id| anaphase::session_events::is_period_id(id));
+                        built.agent.context.resume_job =
+                            Some(resolved.clone().unwrap_or_else(|| job.to_string()));
+                        if let (Some(id), Some(d)) = (resolved, dir) {
+                            built.agent.context.resume = anaphase::session_events::read_summary(
+                                &std::path::PathBuf::from(d), &id, 400);
                         }
                     }
                     if wants_sse {
