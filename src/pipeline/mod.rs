@@ -142,6 +142,15 @@ impl Pipeline {
         TtJob { job_id: job_id.to_string(), created_at: created_at.to_string(), calls }
     }
 
+    /// I7 (§13.3): record whether a gate exists at all — "none" is a fact, not silence.
+    /// Presence only; no verdict is produced here and no decision changes.
+    fn gate_presence(&self) -> String {
+        match &self.security_gate {
+            Some(g) => format!("gate={}", std::any::type_name_of_val(g.as_ref())),
+            None => "gate=none".to_string(),
+        }
+    }
+
     // ---- stage 3: IO (gRPC) ----
 
     /// Execute every call against Tentacle, returning one evidence record each.
@@ -158,6 +167,10 @@ impl Pipeline {
             let params = serde_json::to_string(&call.args)
                 .map_err(|e| format!("serialize args: {e}"))?;
             let trace_id = format!("{}#{i}", job.job_id);
+
+            // I7 (§13.3): "no gate installed" must not look like a gate that passed.
+            let presence = self.gate_presence();
+            self.emit_event(&job.job_id, 3, "gate", &presence);
 
             // Security gate before execution (ADR-0008 D'-2). Reject/HITL
             // block the call and write a `blocked` ledger record — the
