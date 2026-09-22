@@ -302,13 +302,31 @@ impl AgentLoop {
                     // write). The full prompt/response body stays in the
                     // reasoning trace; the event carries the output so a
                     // client can render the turn without opening trace.
+                    //
+                    // The ATTEMPT reports what was ATTEMPTED, which is not the
+                    // answer. It used to carry the raw output — the reply again,
+                    // word for word — so one chain showed the same text twice and
+                    // a reader could reasonably think two things had happened.
+                    // The plan is parsed here, not 30 lines down, so the row
+                    // describes THIS round: `self.context.calls` is only assigned
+                    // by the parse below, so reading it describes the LAST one.
+                    let plan = parse_reasoning_output(&output);
+                    let planned = match &plan {
+                        Ok(sig) => sig.calls.iter().map(|c| c.tool.as_str()).collect::<Vec<_>>().join(", "),
+                        Err(_) => String::new(),
+                    };
                     if let Some(ev) = self.session_events.as_mut() {
                         let ts = crate::ledger::unix_secs_to_rfc3339(self.clock.now());
+                        let attempted = if planned.is_empty() {
+                            "no calls planned — answered directly".to_string()
+                        } else {
+                            format!("planned calls: {}", planned)
+                        };
                         let _ = ev.emit(
                             &ts,
                             crate::session_events::EventType::Attempt,
                             serde_json::json!({
-                                "text": output,
+                                "text": attempted,
                                 // ADR-0034: honest terminal — after the
                                 // bounded retry the reply may still be
                                 // empty (model refused/starved); the
@@ -322,7 +340,7 @@ impl AgentLoop {
                     // replaces the legacy contains("tool_call") matching.
                     // parse_reasoning_output yields the calls plan + an
                     // explicit impasse flag (see docs/contracts/).
-                    match parse_reasoning_output(&output) {
+                    match plan {
                         Ok(sig) => {
                             self.context.reasoning_output = output;
                             self.context.calls = sig.calls.clone();

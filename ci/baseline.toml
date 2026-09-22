@@ -498,6 +498,6 @@ reason = "the `injected_chars` parameter and the one line that writes it into th
 
 [[fix_window]]
 target = "src/run_cycle/reasoning.rs"
-cap    = 3
+cap    = 16
 k_id   = "K-115"
-reason = "the measured injection beside the configured budget, computed from the fold that already happened rather than re-deriving it. Measured 229 -> 232 (+3); the cap sits at the measurement so any further line in this file trips the ratchet again"
+reason = "K-115 (+3): the measured injection beside the configured budget, computed from the fold that already happened rather than re-deriving it — measured 229 -> 232. K-116 (+13): the tool-free attempt names what it attempted (`no calls planned — answered directly`) instead of repeating the reply, which is a branch, the string it produces, and the reason it exists — measured 229 -> 242. One window because `load_fix_windows` returns {target: (cap, k_id)} and a second entry for one target REPLACES the first, which is why the cap carries both pits' lines and cites both ids"

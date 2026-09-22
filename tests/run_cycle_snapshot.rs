@@ -48,6 +48,76 @@ impl ReasoningAdapter for FixedPlanReasoning {
     }
 }
 
+/// Reasoning that plans NO tool — the tool-free path, which is where the attempt
+/// used to repeat the reply.
+struct FixedNoToolReasoning;
+
+#[async_trait]
+impl ReasoningAdapter for FixedNoToolReasoning {
+    async fn reason(&self, _prompt: &str, _model: &str, _trace_id: &str) -> Result<String, String> {
+        Ok(r#"{"calls":[],"impasse":false}"#.to_string())
+    }
+}
+
+fn no_tool_agent(events_dir: &Path) -> AgentLoop {
+    let mut agent = AgentLoop::new(
+        Arc::new(NoopMemoryAdapter),
+        Arc::new(FixedNoToolReasoning),
+        Arc::new(NoopToolAdapter),
+        Arc::new(NoopSafetyAdapter),
+        Arc::new(NoopUiAdapter),
+        Arc::new(NoopFearAdapter),
+        ReflexArc { safety_rules: vec![] },
+    )
+    .with_clock(Arc::new(FakeClock(FIXED_NOW)));
+    agent.session_events_dir = Some(events_dir.to_path_buf());
+    agent
+}
+
+/// A tool-free round must ATTEMPT something that is not just its answer again.
+///
+/// Measured before this: `assistant/attempt` carried the model's raw output, so
+/// on a tool-free round it repeated `assistant/reply` word for word and the same
+/// text appeared twice in one chain. A tool round never had the problem — its
+/// attempt says `planned calls: …`, which is a statement about what was attempted.
+/// The two assertions below pin both halves: the attempt states a decision, and it
+/// is not the reply.
+#[tokio::test]
+async fn a_tool_free_attempt_does_not_repeat_its_reply() {
+    let dir = scratch("no-tool-attempt");
+    let mut agent = no_tool_agent(&dir);
+    agent.run_cycle("随便问一句").await.expect("the cycle runs");
+
+    let path = fs::read_dir(&dir)
+        .unwrap()
+        .flatten()
+        .map(|e| e.path())
+        .find(|p| p.extension().and_then(|x| x.to_str()) == Some("jsonl"))
+        .expect("a period was recorded");
+    let rows: Vec<serde_json::Value> = fs::read_to_string(&path)
+        .unwrap()
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+
+    let data = |t: &str| -> Option<serde_json::Value> {
+        rows.iter().find(|r| r["type"] == t).map(|r| r["data"].clone())
+    };
+    let attempt = data("assistant/attempt").expect("an attempt row exists");
+    let reply = data("assistant/reply").expect("a reply row exists");
+
+    assert_eq!(
+        attempt["text"], "no calls planned — answered directly",
+        "a tool-free attempt must say what it attempted"
+    );
+    assert_ne!(
+        attempt["text"], reply["text"],
+        "the attempt and the reply are different facts and must not be the same text"
+    );
+    let _ = fs::remove_dir_all(&dir);
+}
+
 /// A tool that echoes a fixed result, so tool output is a constant too.
 struct FixedTool;
 
@@ -165,6 +235,14 @@ async fn a_whole_cycle_matches_the_snapshot() {
     assert_eq!(
         produced, golden,
         "the cycle's observable output changed; a pure move must not change it"
+    );
+    // The other half of the attempt contract (`a_tool_free_attempt_…` covers the
+    // tool-free half): when the model DID plan calls, the attempt names them. This
+    // also lived in the golden above, but a golden is regenerated on command and can
+    // be regenerated without reading, so state the intent where it cannot be lost.
+    assert!(
+        produced.contains("\"assistant/attempt\"") && produced.contains("planned calls: numbers"),
+        "a round that planned a call must say so on its attempt row:\n{produced}"
     );
     let _ = fs::remove_dir_all(&dir);
 }
