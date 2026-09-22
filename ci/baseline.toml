@@ -484,3 +484,20 @@ target = "src/adapters/mod.rs"
 cap    = 14
 k_id   = "K-045"
 reason = "the MindProvenance type and the `provenance: Option<..>` field; `None` means this adapter reports nothing, which is a different fact from 'Mind reported no negotiation'. Measured 183 -> 196"
+
+# K-115: `context/inject` carried only the BUDGET (`chars` = memory_inject_chars),
+# so a reader could not tell "allowed 800" from "injected 412" — measured: `nodes`
+# varied 0/6/12/20 while `chars` stayed 800. The fact now travels beside the setting
+# as `injected_chars`, which is two lines here (field + emit) and one at the call
+# site plus its signature. Ratio ceilings: max(36, 15) = 36 and max(36, 22) = 36.
+[[fix_window]]
+target = "src/session_events/types_and_stream.rs"
+cap    = 4
+k_id   = "K-115"
+reason = "the `injected_chars` parameter and the one line that writes it into the event, so the stream distinguishes the budget from the measurement. Measured 154 -> 158 (+4); the cap sits at the measurement so any further line in this file trips the ratchet again"
+
+[[fix_window]]
+target = "src/run_cycle/reasoning.rs"
+cap    = 3
+k_id   = "K-115"
+reason = "the measured injection beside the configured budget, computed from the fold that already happened rather than re-deriving it. Measured 229 -> 232 (+3); the cap sits at the measurement so any further line in this file trips the ratchet again"

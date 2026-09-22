@@ -99,6 +99,9 @@ impl AgentLoop {
             // only what this round needs. Memory nodes (retrieved in
             // MemoryRetrieval, previously never consumed by the LLM) are
             // folded into the prompt up to the budget; 0 = stateless.
+            // The fact beside the budget: `nodes` varied 0/6/12/20 while `chars`
+            // stayed 800, so the budget was the only number the stream carried.
+            let mut injected_chars = 0usize;
             let prompt = if self.memory_inject_chars == 0 {
                 prompt
             } else {
@@ -109,6 +112,7 @@ impl AgentLoop {
                 if inject.is_empty() {
                     prompt
                 } else {
+                    injected_chars = inject.chars().count();
                     format!("{}
 \n[memory: Helix's past experiences — true history, answer from them]\n{}", prompt, inject)
                 }
@@ -199,6 +203,7 @@ impl AgentLoop {
                     self.memory_inject_chars,
                     resume_from,
                     detail.as_ref(),
+                    Some(injected_chars),
                 );
             }
             // Streaming when a delta sink is attached (SSE chat); the

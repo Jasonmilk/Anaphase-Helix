@@ -125,7 +125,7 @@
             "top": [{ "id": "n-1", "tier": "L3", "heat": 0.82, "phase": "liquid" }]
         });
         stream
-            .emit_period_start(&t, "hello", 8, 800, Some("run-abc"), Some(&detail))
+            .emit_period_start(&t, "hello", 8, 800, Some("run-abc"), Some(&detail), Some(412))
             .unwrap();
         let rows: Vec<SessionEvent> = fs::read_to_string(stream.path())
             .unwrap()
@@ -137,6 +137,15 @@
         assert_eq!(ctx.event_type, "context/inject");
         assert_eq!(ctx.data["nodes"], 8);
         assert_eq!(ctx.data["chars"], 800);
+        // The budget and the fact must travel together and must not be read as
+        // one: `chars` is what injection was ALLOWED, `injected_chars` is what it
+        // contributed. Asserted as an inequality too, on purpose — a stream where
+        // the two are always equal carries no information about the second.
+        assert_eq!(ctx.data["injected_chars"], 412);
+        assert_ne!(
+            ctx.data["chars"], ctx.data["injected_chars"],
+            "the budget and the measured injection are different facts"
+        );
         assert_eq!(ctx.data["resume_from"], "run-abc");
         assert_eq!(ctx.data["choice"]["tiers"]["L3"], 5);
         assert_eq!(ctx.data["choice"]["top"][0]["tier"], "L3");

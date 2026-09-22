@@ -4,7 +4,7 @@ impasse = false
 current_state = Perception
 event_rows = 7
   {"data":{"chars":78,"model":null,"text":"{\"calls\":[{\"tool\":\"numbers\",\"args\":{\"expression\":\"7**9\"},\"expect\":\"numbers\"}]}"},"job_id":"run-35718410f20c6cda","seq":5,"time":"2023-11-14T22:13:20Z","type":"assistant/reply"}
-  {"data":{"chars":800,"nodes":0},"job_id":"run-35718410f20c6cda","seq":2,"time":"2023-11-14T22:13:20Z","type":"context/inject"}
+  {"data":{"chars":800,"injected_chars":0,"nodes":0},"job_id":"run-35718410f20c6cda","seq":2,"time":"2023-11-14T22:13:20Z","type":"context/inject"}
   {"data":{"done":true,"impasse":false,"model":null,"reply":"{\"calls\":[{\"tool\":\"numbers\",\"args\":{\"expression\":\"7**9\"},\"expect\":\"numbers\"}]}","success":true,"verdict":null},"job_id":"run-35718410f20c6cda","seq":6,"time":"2023-11-14T22:13:20Z","type":"turn/end"}
   {"data":{"empty":false,"text":"{\"calls\":[{\"tool\":\"numbers\",\"args\":{\"expression\":\"7**9\"},\"expect\":\"numbers\"}]}"},"job_id":"run-35718410f20c6cda","seq":4,"time":"2023-11-14T22:13:20Z","type":"assistant/attempt"}
   {"data":{"text":""},"job_id":"run-35718410f20c6cda","seq":3,"time":"2023-11-14T22:13:20Z","type":"assistant/think"}

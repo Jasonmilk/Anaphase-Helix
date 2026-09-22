@@ -55,6 +55,9 @@ fn write_fixed_period(dir: &Path) -> Vec<u8> {
         800,
         Some("run-0000beef-p00000001"),
         Some(&json!({ "chosen": "memory", "why": "fixture" })),
+        // None, not 0: this fixture does not measure injection, and absent must
+        // stay distinct from measured-zero.
+        None,
     )
     .unwrap();
     stream

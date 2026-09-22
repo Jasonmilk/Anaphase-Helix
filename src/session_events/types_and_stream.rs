@@ -211,6 +211,9 @@ impl SessionEventStream {
         inject_chars: usize,
         resume_from: Option<&str>,
         detail: Option<&Value>,
+        // The FACT beside `chars` (the configured budget): what injection actually
+        // contributed. `Option`, so "no measurement" stays distinct from zero.
+        injected_chars: Option<usize>,
     ) -> io::Result<()> {
         self.emit(time, EventType::TurnStart, json!({}))?;
         self.emit(
@@ -249,6 +252,9 @@ impl SessionEventStream {
         }
         if let Some(d) = detail {
             data["choice"] = d.clone();
+        }
+        if let Some(n) = injected_chars {
+            data["injected_chars"] = json!(n);
         }
         self.emit(time, EventType::ContextInject, data)
     }
