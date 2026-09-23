@@ -72,6 +72,45 @@ impl HITLApprover {
     }
 }
 
+/// 人类答复的**闭集**（参照 DSH 的 `ApprovalOutcome`，四值同为闭集）。
+///
+/// 布尔会把"人说了不可以"和"**没有任何人能回答**"折叠成一个值，而调用方很快
+/// 又把它折成同一个 `TransitionCondition` —— 这就是 K-033/K-114 的"缺席被当成
+/// 通过／被当成拒绝"。闭集让"缺席"成为一等事实：可记录、可断言、可显示。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ApprovalOutcome {
+    /// 人明确批准**这一次**。唯一授权，且不自动延续到下一个动作。
+    AllowedOnce,
+    /// 人明确拒绝。
+    Rejected,
+    /// 提问被撤回（超时、回合中止）。**不是**批准。
+    Cancelled,
+    /// 没有应答者或应答者失败。fail-closed 的落点，**不是**批准。
+    Unavailable,
+}
+
+impl ApprovalOutcome {
+    /// 四值里**只有** `AllowedOnce` 允许动作发生 —— A5 的安全底线。
+    pub fn allows_execution(self) -> bool {
+        matches!(self, ApprovalOutcome::AllowedOnce)
+    }
+}
+
+/// 等待的**呈现**方式，不承载安全语义（三态/四值/fail-closed/审计成对都与它无关）。
+///
+/// 同一句需求的三个参数，不是三种机制：挂起始终是 async suspend（不轮询、不占线程）；
+/// `approval/asked` 始终**先落盘再等待**（DSH 同法），所以"先发送完再等"是默认行为，
+/// 那条记录本身就是"告知"；`Announce` 只在长等待时额外广播一条状态。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WaitMode {
+    /// 等了，不额外交代（预期瞬时答复）。
+    Silent,
+    /// 等了，并让等待对外可见（长等待）。
+    Announce,
+    /// 先把已推进的部分发完，再等。
+    AwaitingHuman,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

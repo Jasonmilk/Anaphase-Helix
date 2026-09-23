@@ -501,3 +501,15 @@ target = "src/run_cycle/reasoning.rs"
 cap    = 16
 k_id   = "K-115"
 reason = "K-115 (+3): the measured injection beside the configured budget, computed from the fold that already happened rather than re-deriving it — measured 229 -> 232. K-116 (+13): the tool-free attempt names what it attempted (`no calls planned — answered directly`) instead of repeating the reply, which is a branch, the string it produces, and the reason it exists — measured 229 -> 242. One window because `load_fix_windows` returns {target: (cap, k_id)} and a second entry for one target REPLACES the first, which is why the cap carries both pits' lines and cites both ids"
+
+# A5 (K-118) step 1: the approval channel needs a type that can say "we could not
+# ask". Measured: src/hitl.rs 86 -> 104 NCLOC (+18) for the closed set and its single
+# predicate. The cap is 19 — one line above the measurement — so a later edit that
+# adds another line has to come back and say so, which is the same convention the B7
+# window follows. Under FIX_CAP_FLOOR the ceiling here is 36, so 19 is an ordinary
+# fix window and not a way around the cap.
+[[fix_window]]
+target = "src/hitl.rs"
+cap    = 19
+k_id   = "K-118"
+reason = "the approval outcome closed set: `ApprovalOutcome` (AllowedOnce / Rejected / Cancelled / Unavailable) and `allows_execution()`, which only AllowedOnce satisfies. Measured 86 -> 104 (+18); the cap sits one line above the measurement so any further line in this file trips the ratchet again. The assertions live in `tests/approval_outcome.rs` on purpose: `tests/` is outside the ratchet, and the point of the type is that it can be asserted, not that it is small"
