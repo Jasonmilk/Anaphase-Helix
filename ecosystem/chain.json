@@ -13,7 +13,10 @@
       "anaphase_env": "ANAPHASE_TUCK_ENDPOINT",
       "anaphase_value": "http://127.0.0.1:60052",
       "order": 1,
-      "note": "Tuck:ADR-0006 — without TUCK_GATEWAY__AUDIT_PATH the gateway still serves but /v1/audit answers 404 no_audit_chain."
+      "note": "Tuck:ADR-0006 — without TUCK_GATEWAY__AUDIT_PATH the gateway still serves but /v1/audit answers 404 no_audit_chain.",
+      "start_env": {
+        "TUCK_GATEWAY__AUDIT_PATH": "<workspace>/.helix/tuck/audit.chain"
+      }
     },
     {
       "name": "tentacle",

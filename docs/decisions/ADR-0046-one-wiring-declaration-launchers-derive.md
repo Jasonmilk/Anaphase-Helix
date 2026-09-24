@@ -52,7 +52,10 @@
 
 1. **建立唯一声明**：`anaphase-helix/ecosystem/chain.json`。每个组件声明
    `name / process / role / kind / port / order`，需要注入 Anaphase 的再声明
-   `anaphase_env` + `anaphase_value`（可选 `health_path`、`note`）。
+   `anaphase_env` + `anaphase_value`；另有三种可选字段：
+   `health_path`、`note`，以及 **`start_env`** —— 组件**自己被启动时**需要的环境
+   （例如 Tuck 的 `TUCK_GATEWAY__AUDIT_PATH`，见 `Tuck:ADR-0006`）。
+   `start_env` 的值支持 `<workspace>` 占位符，因为声明里的事实可以是工作区相对的。
    **只放事实，不放 argv**：怎么拼命令是各启动器自己的机制（它们的 UX 不同），
    但"起什么、在哪、注入什么"不许各自回答。
 2. **格式选 JSON，理由是可解析性**：三个消费者都已具备 JSON 解析器 ——
@@ -167,7 +170,7 @@
 | 期 | 内容 | 状态 |
 |---|---|---|
 | **C1** | 声明 + `start-panel.sh` 派生 + 判据入网 | ✅ **本笔** |
-| C2 | `Cellrix/web/src/bin/up.rs` 派生（含默认引导路径补齐组件 + 注入 env） | ⏳ |
+| **C2** | `Cellrix/web/src/bin/up.rs` 派生（含默认引导路径补齐组件 + 注入 env + `start_env`） | ✅ **已落地** |
 | C3 | `anaphase-helix/src/bin/up.rs` 派生 | ⏳ |
 | C4 | `session_events_path` 进声明/覆盖面（证轨白盒，见 `Anaphase:ADR-0045` §6.2） | ⏳ |
 
