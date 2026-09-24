@@ -365,21 +365,32 @@ pub fn load_config() -> Result<Config, Box<dyn std::error::Error>> {
 /// Env vars win over the file: the launcher is the caller, the file is the
 /// base state. Unknown/empty env values are ignored (fail-open).
 fn apply_env_overrides(mut config: Config) -> Config {
-    if let Ok(v) = std::env::var("ANAPHASE_TENTACLE_ENDPOINT") {
-        if !v.is_empty() {
-            config.anaphase.tentacle_endpoint = Some(v);
+    // Endpoint overrides, table-driven (ADR-0045).
+    //
+    // `config.rs` is declared DATA-ONLY and ratcheted, so the override surface
+    // must grow as **rows, not as branches**: completing it (tuck / flowmodus /
+    // cellrix were missing) used to cost one `if let` pair per field, which both
+    // blew the branch budget and re-wrote the same three lines six times.
+    // One closure, two branches, however many endpoints follow.
+    //
+    // A launcher can only be the chain's single source of truth if EVERY
+    // endpoint is declarable from outside `config.toml` — which is gitignored,
+    // so a rebuilt config silently lost `tuck_endpoint` (audit leg + fail-closed
+    // gate) with no channel to supply it.
+    let cfg = &mut config.anaphase;
+    let mut take = |field: &mut Option<String>, var: &str| {
+        if let Ok(v) = std::env::var(var) {
+            if !v.is_empty() {
+                *field = Some(v);
+            }
         }
-    }
-    if let Ok(v) = std::env::var("ANAPHASE_REASONING_ENDPOINT") {
-        if !v.is_empty() {
-            config.anaphase.reasoning_endpoint = Some(v);
-        }
-    }
-    if let Ok(v) = std::env::var("ANAPHASE_MIND_ENDPOINT") {
-        if !v.is_empty() {
-            config.anaphase.mind_endpoint = Some(v);
-        }
-    }
+    };
+    take(&mut cfg.tentacle_endpoint, "ANAPHASE_TENTACLE_ENDPOINT");
+    take(&mut cfg.reasoning_endpoint, "ANAPHASE_REASONING_ENDPOINT");
+    take(&mut cfg.mind_endpoint, "ANAPHASE_MIND_ENDPOINT");
+    take(&mut cfg.tuck_endpoint, "ANAPHASE_TUCK_ENDPOINT");
+    take(&mut cfg.flowmodus_endpoint, "ANAPHASE_FLOWMODUS_ENDPOINT");
+    take(&mut cfg.cellrix_endpoint, "ANAPHASE_CELLRIX_ENDPOINT");
     config
 }
 
@@ -470,6 +481,7 @@ mod tests {
         let c = apply_env_overrides(base_config());
         assert_eq!(c.anaphase.reasoning_endpoint.as_deref(), Some("http://127.0.0.1:19999"));
     }
+
 }
 
 /// Partner-mode mind-craft adapter parameters (ADR-0022 O-4).

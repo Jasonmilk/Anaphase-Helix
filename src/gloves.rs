@@ -165,12 +165,14 @@ fn cellrix_probe_target(cfg: &crate::config::AnaphaseConfig) -> Option<String> {
 }
 
 /// 单端点物理探测：解析协议前缀后，TCP 连接或 socket 文件存在性。
+///
+/// The parsing is **not** done here any more (ADR-0045): this function used to
+/// strip `http://` / `https://` / `unix://` by hand, so `grpc://127.0.0.1:60054`
+/// fell through to the path branch, `Path::exists()` was false, and the
+/// flowmodus lamp read `Unavailable` — while the reasoning adapter required
+/// exactly that scheme. One string, one parser: `health::endpoint_authority`.
 fn probe_endpoint(ep: &str) -> GloveStatus {
-    let bare = ep
-        .trim()
-        .trim_start_matches("http://")
-        .trim_start_matches("https://")
-        .trim_start_matches("unix://");
+    let bare = crate::health::endpoint_authority(ep);
     // TCP：host:port（IPv4/IPv6/[::1]:port 均可被 SocketAddr 解析）。
     if let Ok(addr) = bare.parse::<SocketAddr>() {
         return match TcpStream::connect_timeout(&addr, Duration::from_millis(400)) {

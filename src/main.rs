@@ -732,8 +732,14 @@ async fn build_agent(config: &config::Config) -> BuiltAgent {
         else if let Some(endpoint) = &config.anaphase.flowmodus_endpoint {
             if endpoint.is_empty() {
                 Arc::new(NoopReasoningAdapter)
-            } else if endpoint.starts_with("grpc://") {
-                match GrpcFlowModusAdapter::new(&endpoint[7..]).await {
+            } else if !endpoint.starts_with("http://") {
+                // gRPC is the real channel: `grpc://` and a bare `host:port` both
+                // select it (`http://` is the deprecated legacy path below).
+                // Dispatch by scheme is legitimate — the scheme names the channel
+                // — but **parsing** is shared (ADR-0045). The `&endpoint[7..]`
+                // hardcoded prefix length is gone: it encoded `len("grpc://")`
+                // in a second place, next to the parser that already knew it.
+                match GrpcFlowModusAdapter::new(endpoint).await {
                     Ok(adapter) => Arc::new(adapter),
                     Err(e) => {
                         eprintln!("Warning: Failed to connect to FlowModus at {}: {}. Falling back to Noop reasoning.", endpoint, e);

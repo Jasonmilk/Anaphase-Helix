@@ -15,18 +15,29 @@ use serde_json::json;
 use serde_json::Value;
 
 use crate::config::AnaphaseConfig;
+/// Strip the scheme and any path, leaving the authority (host:port, or a Unix
+/// socket path).
+///
+/// **One string, one interpretation** (ADR-0045). Measured 2026-09-24 on the
+/// live hub: `/v1/health` said `flowmodus ok=false "bad endpoint:
+/// grpc://127.0.0.1:60054"` while the reasoning adapter **required** that exact
+/// prefix and `gloves::probe_endpoint` called the organ `Unavailable` — three
+/// parsers, two verdicts, one string. Scheme-agnostic because whichever scheme
+/// names the channel, the socket underneath is the same TCP address.
+pub fn endpoint_authority(endpoint: &str) -> &str {
+    let t = endpoint.trim();
+    let rest = t.rfind("://").map_or(t, |i| &t[i + 3..]);
+    if rest.starts_with('/') { rest } else { rest.split('/').next().unwrap_or(rest) }
+}
 
-/// Extract host:port from an endpoint that may carry a scheme or a path
-/// (e.g. `http://127.0.0.1:11434/v1` -> `127.0.0.1:11434`).
-fn endpoint_addr(endpoint: &str) -> Result<SocketAddr, String> {
-    let bare = endpoint
-        .trim_start_matches("http://")
-        .trim_start_matches("https://");
-    let hostport = bare.split('/').next().unwrap_or(bare);
-    hostport
+/// `host:port` from an endpoint that may carry a scheme or a path
+/// (`grpc://127.0.0.1:60054` -> `127.0.0.1:60054`).
+pub fn endpoint_addr(endpoint: &str) -> Result<SocketAddr, String> {
+    endpoint_authority(endpoint)
         .parse()
         .map_err(|_| format!("bad endpoint: {endpoint}"))
 }
+
 
 /// Deterministic reachability probe: a plain blocking connect on a helper
 /// thread, with a hard 2s timeout on the caller side. `connect_timeout` is
@@ -261,7 +272,4 @@ mod tests {
         assert_eq!(creds["configured"], true);
         assert!(!v.to_string().contains("super-secret"));
     }
-
 }
-// SYNTAX ERROR TEST
-// change marker 1788769106

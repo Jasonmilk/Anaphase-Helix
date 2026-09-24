@@ -19,9 +19,14 @@ pub struct GrpcTentacleAdapter {
 
 impl GrpcTentacleAdapter {
     pub async fn new(endpoint: &str) -> Result<Self, Box<dyn std::error::Error>> {
-        let channel = Channel::from_shared(endpoint.to_string())?
-            .connect()
-            .await?;
+        // One interpretation for every endpoint (ADR-0045). tonic needs an
+        // `http://` URI, so `grpc://host:port`, `http://host:port` and a bare
+        // `host:port` all resolve to the same channel. Before this the FlowModus
+        // adapter accepted both spellings while this one passed the raw string
+        // through, so `grpc://…` wired the reasoning leg and silently failed the
+        // execution leg — the same field meaning two different things.
+        let uri = format!("http://{}", crate::health::endpoint_authority(endpoint));
+        let channel = Channel::from_shared(uri)?.connect().await?;
         let client = TentacleServiceClient::new(channel);
         Ok(Self { client })
     }
