@@ -41,7 +41,14 @@ pub struct GrpcFlowModusAdapter {
 
 impl GrpcFlowModusAdapter {
     pub async fn new(endpoint: &str) -> Result<Self, Box<dyn std::error::Error>> {
-        let channel = Channel::from_shared(endpoint.to_string())?
+        // tonic 的 Channel::from_shared 需要带 scheme（http://）的地址；
+        // 调用方剥离 grpc:// 后只剩 host:port，这里补上（0 硬编码：只有缺 scheme 才补）。
+        let addr = if endpoint.contains("://") {
+            endpoint.to_string()
+        } else {
+            format!("http://{endpoint}")
+        };
+        let channel = Channel::from_shared(addr)?
             .connect()
             .await?;
         let client = FlowModusClient::new(channel);
