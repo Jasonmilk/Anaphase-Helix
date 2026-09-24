@@ -393,6 +393,12 @@ fn apply_env_overrides(mut config: Config) -> Config {
     // period produces no event stream, so the panel's trajectory has nothing to
     // show and the two event-replay suites have no fixtures to read.
     take(&mut cfg.session_events_path, "ANAPHASE_SESSION_EVENTS_PATH");
+    // The model is a CONFIG field, not a request field — measured 2026-09-24: a
+    // turn driven with `{"model":"mock-chat-1"}` ignored it and ran with
+    // `model: null`, which impasses BEFORE any upstream call. So the model needs
+    // a declarable surface for the same reason every endpoint does: config.toml
+    // is gitignored, and a rebuilt machine silently loses the field.
+    take(&mut cfg.reasoning_model, "ANAPHASE_REASONING_MODEL");
     config
 }
 

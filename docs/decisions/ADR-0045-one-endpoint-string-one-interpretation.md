@@ -66,6 +66,10 @@ overall ok = False        governance.state = ungoverned
    `http://<authority>`。修前它与 FlowModus 适配器**不对称**：后者两种写法都收，前者只收带 scheme 的。
 5. **覆盖面补全**：新增 `ANAPHASE_TUCK_ENDPOINT`、`ANAPHASE_FLOWMODUS_ENDPOINT`、
    `ANAPHASE_CELLRIX_ENDPOINT`。启动器从此可以声明**整条链**而不碰任何文件。
+   **并补 `ANAPHASE_REASONING_MODEL`**（2026-09-24 实测）：模型不是端点，却与端点
+   同病 —— 它是 `Config` 字段而非请求字段，`/v1/chat` 的 `model` 会被**忽略**，
+   而 `reasoning_model` 此前**没有覆盖通道**，只能手改被 gitignore 的 `config.toml`。
+   「每个端点都可从文件外声明」这条纪律的准则是**每个运行期事实**，不只是 URL。
    （空值忽略的既有权衡不变；机密不在本仓，故不涉密。）
 6. **顺手清掉仓库里的注入残留**：`src/health.rs` 末尾有 `// SYNTAX ERROR TEST` 与
    `// change marker 1788769106`（`5626c38` 带入，全生态仅此一处、无任何引用）。
