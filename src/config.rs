@@ -379,10 +379,8 @@ fn apply_env_overrides(mut config: Config) -> Config {
     // gate) with no channel to supply it.
     let cfg = &mut config.anaphase;
     let mut take = |field: &mut Option<String>, var: &str| {
-        if let Ok(v) = std::env::var(var) {
-            if !v.is_empty() {
-                *field = Some(v);
-            }
+        if let Some(v) = std::env::var(var).ok().filter(|v| !v.is_empty()) {
+            *field = Some(v);
         }
     };
     take(&mut cfg.tentacle_endpoint, "ANAPHASE_TENTACLE_ENDPOINT");
@@ -391,6 +389,10 @@ fn apply_env_overrides(mut config: Config) -> Config {
     take(&mut cfg.tuck_endpoint, "ANAPHASE_TUCK_ENDPOINT");
     take(&mut cfg.flowmodus_endpoint, "ANAPHASE_FLOWMODUS_ENDPOINT");
     take(&mut cfg.cellrix_endpoint, "ANAPHASE_CELLRIX_ENDPOINT");
+    // The white-box trail (ADR-0023 ProveTrack timeline). Without it every
+    // period produces no event stream, so the panel's trajectory has nothing to
+    // show and the two event-replay suites have no fixtures to read.
+    take(&mut cfg.session_events_path, "ANAPHASE_SESSION_EVENTS_PATH");
     config
 }
 

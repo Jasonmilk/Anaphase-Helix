@@ -69,7 +69,10 @@
       "port": 50061,
       "health_path": "/v1/health",
       "order": 6,
-      "note": "Resolves tentacle/mind/tuck/flowmodus AT STARTUP; a missing endpoint env means a silent Noop adapter, not an error."
+      "note": "Resolves tentacle/mind/tuck/flowmodus AT STARTUP; a missing endpoint env means a silent Noop adapter, not an error. start_env carries its own white-box trail path (ADR-0023 ProveTrack timeline) — without it every period produces no event stream, so the panel's trajectory is empty and the event-replay suites have no fixtures.",
+      "start_env": {
+        "ANAPHASE_SESSION_EVENTS_PATH": "<workspace>/.helix/events"
+      }
     }
   ]
 }

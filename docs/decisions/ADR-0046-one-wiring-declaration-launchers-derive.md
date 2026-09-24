@@ -172,7 +172,23 @@
 | **C1** | 声明 + `start-panel.sh` 派生 + 判据入网 | ✅ **本笔** |
 | **C2** | `Cellrix/web/src/bin/up.rs` 派生（含默认引导路径补齐组件 + 注入 env + `start_env`） | ✅ **已落地** |
 | C3 | `anaphase-helix/src/bin/up.rs` 派生 | ⏳ |
-| C4 | `session_events_path` 进声明/覆盖面（证轨白盒，见 `Anaphase:ADR-0045` §6.2） | ⏳ |
+| **C4** | `session_events_path` 进覆盖面 + 声明（证轨白盒） | ✅ **已落地** |
+
+**C4 实测与其暴露的一件事**：声明派生后 `up --restart` 起出的栈写出了第一个真实事件流
+（`<workspace>/.helix/events/run-*.events.jsonl`，5 个事件），`GET /v1/events?job_id=…`
+返回 `{"configured":true,"events":[…]} `—— 白盒腿**第一次通了**。
+
+但它同时把 Cellrix 的两个轨迹套件从 **SKIP 变成红**，因为它们的守卫问的是
+「有没有 `.events.jsonl`」，而判据真正需要的是**某一种**记录：
+- `prove_track_nodes_test.js` 认的是**一条特定的已录链条**（叶 `run-0537fb101ecccb5e`）；
+- `pt_replay.js` 认的是**含 `assistant/usage`+`assistant/reply` 的文件**。
+⇒ 两者已改为按**需要的那一种**缺输入 ⇒ `NEEDS-INPUT` 并写明原因（不是红）。
+**「有文件」不等于「这条判据要的夹具在」** —— 与 §6.2 同一条纪律。
+
+⚠️ 仍待裁决：`all_views_test.js` 的两条检查（`event rows rendered`、紧凑态保留交付物）
+需要一个**有过程行**的周期（它排除 `e-reply` 行）；而一个只产出回复、没有工具/思考行的
+回合**本来就没有**过程行。有周期在台上时它因此变红。这是**夹具形状假定**还是**真 UI 缺口**，
+需要先读 `prove_track.node.js` 的行映射才能判断 —— 本轮**不擅自加豁免**，如实登记。
 
 **分期不靠人记**：判据的 `CONVERTED` 清单是本表的机器可读版本；每转换一个启动器，
 判据的覆盖面随之扩大，漏接即红。
