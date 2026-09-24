@@ -283,6 +283,52 @@ def declares_data_only(text, lang="rust"):
         if line.startswith(DATA_ONLY_MARK):
             return True
     return False
+# ── The ruler's own reference values ────────────────────────────────────────
+# `ci/canary/` exists so the counter can be measured against a file whose answer
+# is known by construction, and it is excluded from budgeting for exactly that
+# reason ("budgeting it would be budgeting the ruler"). Nothing ever MEASURED it,
+# though: the fixture sat there while the only thing reading it was a comment.
+#
+# What these numbers are, honestly stated: they pin the counter's CURRENT verdict
+# on those two files. That buys drift detection — if the comment handling changes,
+# the count moves and this refuses — and it does NOT prove the counter is right
+# today, because the values came from the counter itself. Pinning today's answer
+# is a regression baseline; calling it proof would be the tautology it is not.
+#
+# Re-taking a value here is a DELIBERATE, reviewed act: it means "the counter now
+# answers differently and that is correct". Editing it to silence a red is the one
+# thing this file exists to make visible.
+CANARY_KNOWN = {
+    "ci/canary/ncloc_known.rs": ("rust", 52),
+    "ci/canary/ncloc_known.py": ("python", 65),
+}
+
+
+def calibrate(root):
+    """Measure the instrument before measuring the product.
+
+    Returns an explanation when the counter disagrees with its reference, empty
+    when it is usable. A judge that cannot tell whether its own ruler is sound has
+    no business emitting PASS/FAIL — so this is a refusal, not a warning.
+    """
+    bad = []
+    for rel, (lang, expected) in sorted(CANARY_KNOWN.items()):
+        try:
+            with open(os.path.join(root, rel), encoding="utf-8") as fh:
+                got = ncloc(fh.read(), lang)
+        except OSError as exc:
+            bad.append(f"{rel}: unreadable ({exc})")
+            continue
+        if got != expected:
+            bad.append(f"{rel}: reference says {expected}, counter says {got}")
+    if bad:
+        return ("UNCALIBRATED — refusing to judge: " + "; ".join(bad) +
+                "\n        The NCLOC counter disagrees with its own reference fixture, so no "
+                "PASS/FAIL it produces is evidence.\n"
+                "        Fix the counter, or re-take the reference as a deliberate signed act.")
+    return ""
+
+
 RATCHET_FILE = "ci/ratchet.gen.toml"
 # A fix may add at most this fraction of a target's own baseline. The absolute
 # floor keeps small files from being unable to cite any fix at all.
@@ -893,6 +939,10 @@ def main():
     ap.add_argument("--emit-ratchet", action="store_true")
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args()
+    unc = calibrate(args.root)
+    if unc:
+        print(unc)
+        return 2
     override = None
     if args.ratchet_override:
         target, _, value = args.ratchet_override.partition("=")
