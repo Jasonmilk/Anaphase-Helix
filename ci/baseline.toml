@@ -348,14 +348,14 @@ reason  = "reading ci/baseline.toml: eight loaders, no decisions. Every one rais
 # one module boundary plus the import surface in the file it left.
 [[split_window]]
 target    = "ci/"
-allowance = 459
+allowance = 506
 reason    = "ci/allowances.py split out of ci/check_line_budget.py (eight loaders, no decisions), plus ci/scan_mutants.py, a genuinely new file. Estimate when opened was 320; the actual has since been 355 and then 386, so the estimate was 11% low and then 17% low. Kept as a running comparison rather than a single corrected number, because D5 wanted the window to carry an estimate so that predicted and actual could be COMPARED — and a comparison with one side edited to match is not a comparison"
 due       = "2026-10-16"
 
 # The reverted re-take, bounded and dated instead. A split window expires; a raised
 # seed does not. `check_guards.py` grew 316 -> 360 when crash-safety landed, which is
 # 44 against a 10% ratio ceiling of 31 — so it does not fit, and the answer is a
-# bounded allowance now and a split before the window closes.
+# bounded allowance now and a split before the window closes. The allowance moved 459 -> 506 on 2026-09-24: three controls that make existing mechanisms trustworthy rather than making the machinery bigger (the freeze order's own exception class, the same one `ci/scan_mutants.py`'s positive control is carried under) — the NCLOC counter is now measured against `ci/canary/` before it is trusted to judge, measurement no longer rewrites the ratchet it is measuring, and the config loader refuses two allowances for one target instead of silently letting the second win. Measured overage, not a chosen number.
 [[split_window]]
 target    = "ci/check_guards.py"
 allowance = 70
@@ -516,3 +516,21 @@ cap    = 26
 k_id   = "K-120,K-121"
 reason = "Two fixes in one seam, both measured rather than estimated. K-120: `ReasonRequest` gave the model and the cognitive mode one field, so the adapter had to be told both facts separately (the model lives on the adapter, built from `reasoning_model`). K-121: the same adapter never overrode `last_meta()`, so the routed model and the upstream's usage were discarded — and the wire field it would have read (`tokens_consumed`) was a derived total that Anaphase's `UsageSnapshot` deliberately refuses to decompose, so the leg could not be closed honestly without carrying disjoint counts instead. 78 NCLOC against a baseline of 52 is the measured overage, not a chosen one; the previous cap of 7 was what K-120 alone measured before K-121 was understood."
 
+
+# The freeze order names this exception class explicitly — "a control that makes an
+# existing mechanism trustworthy rather than one that makes the machinery bigger" —
+# and `ci/scan_mutants.py`'s positive control is carried exactly this way. These two
+# are the same kind of addition: the counter is checked against a reference file
+# before it is allowed to judge anything, and the config loader refuses an illegal
+# duplicate instead of silently picking one. Both are bounded and both expire.
+[[split_window]]
+target    = "ci/check_line_budget.py"
+allowance = 41
+reason    = "calibrate(): measure `ci/canary/` before judging, and refuse to emit PASS/FAIL when the counter disagrees with its own reference (exit 3, the registered 'checker's own error'); plus hermetic measurement, which restores the ratchet bytes a check run used to overwrite. Measured 2026-09-24: 645 -> 689 against a +3 fix window, so 41 unaccounted. Both are controls on the existing mechanism, not new machinery: no new checker, no new directory."
+due       = "2026-10-16"
+
+[[split_window]]
+target    = "ci/allowances.py"
+allowance = 5
+reason    = "two fix windows for one target were silently replacing each other (measured: a 104-line allowance became 69 when a second entry was added, and `src/adapters/mod.rs` had carried a hidden `1 -> 14` replacement). The loader now refuses. Measured 2026-09-24: 377 -> 382."
+due       = "2026-10-16"
