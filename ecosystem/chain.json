@@ -73,6 +73,16 @@
       "start_env": {
         "ANAPHASE_SESSION_EVENTS_PATH": "<workspace>/.helix/events"
       }
+    },
+    {
+      "name": "panel",
+      "process": "Cellrix",
+      "role": "the chain's front door (驾驶舱) — what a human actually looks at",
+      "kind": "http",
+      "port": 50050,
+      "health_path": "/",
+      "order": 7,
+      "note": "The panel's port used to be restated in FOUR places (18932 in start-panel.sh, 8080 in the binary and the test runner, 18932 in two suites) — four defaults for one fact, which is what this declaration exists to end. 8080 was abandoned because llama.cpp's llama-server defaults to it and held the port on this machine (measured 2026-09-24)."
     }
   ]
 }
