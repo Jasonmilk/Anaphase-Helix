@@ -34,4 +34,9 @@ message ReasonResponse {
     string content = 1;
     // Number of tokens consumed (for energy tracking).
     uint32 tokens_consumed = 2;
+    // The model that ACTUALLY served the request — the routed fact, not the
+    // caller's declared name (ADR-0036). Empty when the upstream did not say.
+    // Without it a turn cannot report which supplier answered, so the panel's
+    // 证轨 shows `model: null` for a turn that succeeded.
+    string model = 3;
 }
