@@ -1,0 +1,72 @@
+{
+  "version": 1,
+  "adr": "anaphase:ADR-0046",
+  "note": "The Helix chain's WIRING FACTS — the one source. Launchers derive 'which components, on which ports, injecting which Anaphase endpoint env' from here and must not restate them. Measured 2026-09-24: three launchers disagreed, and only one of them closed the loop.",
+  "components": [
+    {
+      "name": "tuck",
+      "process": "Tuck",
+      "role": "audit gateway — the only LLM door",
+      "kind": "http",
+      "port": 60052,
+      "health_path": "/v1/audit?limit=1",
+      "anaphase_env": "ANAPHASE_TUCK_ENDPOINT",
+      "anaphase_value": "http://127.0.0.1:60052",
+      "order": 1,
+      "note": "Tuck:ADR-0006 — without TUCK_GATEWAY__AUDIT_PATH the gateway still serves but /v1/audit answers 404 no_audit_chain."
+    },
+    {
+      "name": "tentacle",
+      "process": "helix-tentacle",
+      "role": "tool execution (the deterministic channel)",
+      "kind": "grpc",
+      "port": 50051,
+      "anaphase_env": "ANAPHASE_TENTACLE_ENDPOINT",
+      "anaphase_value": "http://127.0.0.1:50051",
+      "order": 2,
+      "note": "Without --plugins-dir it registers no tools and the tools block is silently dropped from the prompt."
+    },
+    {
+      "name": "mind",
+      "process": "helix-mind",
+      "role": "memory hub",
+      "kind": "grpc",
+      "port": 50052,
+      "anaphase_env": "ANAPHASE_MIND_ENDPOINT",
+      "anaphase_value": "http://127.0.0.1:50052",
+      "order": 3,
+      "note": "helix-mind's own default is 50051; the ecosystem lands on 50052 to avoid tentacle."
+    },
+    {
+      "name": "flowmodus-serve",
+      "process": "FlowModus/flowmodus-rs",
+      "role": "supplier pool + routing (the panel's Flows view reads it)",
+      "kind": "http",
+      "port": 60053,
+      "health_path": "/api/status",
+      "order": 4,
+      "note": "Resolves its registry through the RELATIVE path 'registry' — must run from flowmodus-rs/."
+    },
+    {
+      "name": "flowmodus-reason",
+      "process": "FlowModus/flowmodus-rs",
+      "role": "the reasoning entry (gRPC Reason)",
+      "kind": "grpc",
+      "port": 60054,
+      "anaphase_env": "ANAPHASE_FLOWMODUS_ENDPOINT",
+      "anaphase_value": "grpc://127.0.0.1:60054",
+      "order": 5,
+      "note": "Same binary as flowmodus-serve, second listener. Anaphase dispatches to gRPC on any non-http scheme (anaphase:ADR-0045)."
+    },
+    {
+      "name": "anaphase",
+      "process": "anaphase-helix",
+      "role": "cognitive loop (the hub)",
+      "kind": "http",
+      "port": 50061,
+      "health_path": "/v1/health",
+      "order": 6,
+      "note": "Resolves tentacle/mind/tuck/flowmodus AT STARTUP; a missing endpoint env means a silent Noop adapter, not an error."
+    }
+  ]
+}
