@@ -504,7 +504,7 @@ cap    = 19
 k_id   = "K-118"
 reason = "the approval outcome closed set: `ApprovalOutcome` (AllowedOnce / Rejected / Cancelled / Unavailable) and `allows_execution()`, which only AllowedOnce satisfies. Measured 86 -> 104 (+18); the cap sits one line above the measurement so any further line in this file trips the ratchet again. The assertions live in `tests/approval_outcome.rs` on purpose: `tests/` is outside the ratchet, and the point of the type is that it can be asserted, not that it is small"
 
-# K-119 is a fix, and a fix may open a bounded window — but the window has to be
+# K-120 is a fix, and a fix may open a bounded window — but the window has to be
 # bounded by the MEASUREMENT, not by convenience. `src/adapters/flowmodus.rs` was
 # already 5 over its ratchet (52 -> 57) before this change; separating the model
 # from the cognitive mode adds exactly 2 more (2026-09-24: 52 -> 59). Cap 7 covers
@@ -513,6 +513,6 @@ reason = "the approval outcome closed set: `ApprovalOutcome` (AllowedOnce / Reje
 [[fix_window]]
 target = "src/adapters/flowmodus.rs"
 cap    = 26
-k_id   = "K-119,K-120"
-reason = "Two fixes in one seam, both measured rather than estimated. K-119: `ReasonRequest` gave the model and the cognitive mode one field, so the adapter had to be told both facts separately (the model lives on the adapter, built from `reasoning_model`). K-120: the same adapter never overrode `last_meta()`, so the routed model and the upstream's usage were discarded — and the wire field it would have read (`tokens_consumed`) was a derived total that Anaphase's `UsageSnapshot` deliberately refuses to decompose, so the leg could not be closed honestly without carrying disjoint counts instead. 78 NCLOC against a baseline of 52 is the measured overage, not a chosen one; the previous cap of 7 was what K-119 alone measured before K-120 was understood."
+k_id   = "K-120,K-121"
+reason = "Two fixes in one seam, both measured rather than estimated. K-120: `ReasonRequest` gave the model and the cognitive mode one field, so the adapter had to be told both facts separately (the model lives on the adapter, built from `reasoning_model`). K-121: the same adapter never overrode `last_meta()`, so the routed model and the upstream's usage were discarded — and the wire field it would have read (`tokens_consumed`) was a derived total that Anaphase's `UsageSnapshot` deliberately refuses to decompose, so the leg could not be closed honestly without carrying disjoint counts instead. 78 NCLOC against a baseline of 52 is the measured overage, not a chosen one; the previous cap of 7 was what K-120 alone measured before K-121 was understood."
 

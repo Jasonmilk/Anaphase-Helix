@@ -941,8 +941,14 @@ def main():
     args = ap.parse_args()
     unc = calibrate(args.root)
     if unc:
+        # Exit 3, NOT a new code: `CI-144_码注册表.md` §2 fixes 0=PASS, 1=FAIL,
+        # 2=AMBIGUOUS over threshold, 3=**the checker's own error**. An uncalibrated
+        # ruler is precisely "this checker cannot vouch for itself", which is that
+        # third class. Minting 2 for it would have put two meanings in one code —
+        # the very fault this repository records five times over, in the namespace
+        # whose whole point is that a code means one thing.
         print(unc)
-        return 2
+        return 3
     override = None
     if args.ratchet_override:
         target, _, value = args.ratchet_override.partition("=")
