@@ -897,8 +897,33 @@ def main():
     if args.ratchet_override:
         target, _, value = args.ratchet_override.partition("=")
         override = (target, int(value))
+    # ── Measurement must not modify what it measures ─────────────────────────
+    # Run against the ratchet and it gets REWRITTEN in place: the file is the
+    # ruler and the ruler was a side effect of the reading. Measured 2026-09-24:
+    # a default invocation left `ci/ratchet.gen.toml` modified, and every check in
+    # that session needed a `git checkout --` afterwards to undo it. A ritual that
+    # exists to erase the instrument's fingerprints is the instrument telling you
+    # it is wrong.
+    #
+    # Tightening is a real, deliberate act with a human on the other end, so it
+    # keeps its own switch. Checking is now read-only: the bytes are restored and
+    # the caller is TOLD that a tightening was waiting to happen, rather than
+    # having it applied behind their back.
+    ratchet_file = os.path.join(args.root, RATCHET_FILE)
+    before = None
+    if os.path.exists(ratchet_file):
+        with open(ratchet_file, "rb") as fh:
+            before = fh.read()
     code = run(args.root, args.budget, args.branch_budget, args.max_line, args.check,
                args.line_mode, not args.no_ratchet, args.emit_ratchet, override)
+    if before is not None and not args.emit_ratchet:
+        with open(ratchet_file, "rb") as fh:
+            after = fh.read()
+        if after != before:
+            with open(ratchet_file, "wb") as fh:
+                fh.write(before)
+            print("NOTE  the ratchet was rewritten during this check and has been RESTORED: "
+                  "measurement is read-only. Pass --emit-ratchet to tighten it deliberately.")
     if args.json:
         print(json.dumps({"exit": code}))
     return code
