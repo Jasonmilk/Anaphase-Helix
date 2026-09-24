@@ -15,7 +15,16 @@ message ReasonRequest {
     // The cognitive mode requested by Anaphase:
     // "auto" = let FlowModus decide (default)
     // "left_brain" / "right_brain" / "cerebellum" = specific routing hints
-    string model = 2;
+    //
+    // Tag 2 keeps this meaning; only the NAME changed. It used to be called
+    // `model`, which is what let two repos disagree about the same field without
+    // either of them erroring (measured 2026-09-24).
+    string cognitive_mode = 2;
+    // The model the caller asks for, by registry model id (e.g. `mock-chat-1`).
+    // Empty = let FlowModus route it (Auto). Anaphase fills this from
+    // `reasoning_model`; without it the model a caller declared never reached
+    // the router, so routing silently fell back to whatever Auto preferred.
+    string model = 4;
     // Maximum tokens to generate (default: 2048)
     uint32 max_tokens = 3;
 }

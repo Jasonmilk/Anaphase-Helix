@@ -25,7 +25,7 @@ impl FlowModusAdapter {
 
 #[async_trait]
 impl ReasoningAdapter for FlowModusAdapter {
-    async fn reason(&self, _prompt: &str, _model: &str, _trace_id: &str) -> Result<String, String> {
+    async fn reason(&self, _prompt: &str, _mode: &str, _trace_id: &str) -> Result<String, String> {
         // Legacy HTTP implementation placeholder
         Ok("HTTP FlowModus is deprecated, use gRPC instead".to_string())
     }
@@ -37,10 +37,12 @@ use crate::flowmodus_api::ReasonRequest;
 
 pub struct GrpcFlowModusAdapter {
     client: FlowModusClient<Channel>,
+    /// The model to ask for, from `reasoning_model`. Empty = let FlowModus route.
+    model: String,
 }
 
 impl GrpcFlowModusAdapter {
-    pub async fn new(endpoint: &str) -> Result<Self, Box<dyn std::error::Error>> {
+    pub async fn new(endpoint: &str, model: &str) -> Result<Self, Box<dyn std::error::Error>> {
         // tonic 的 Channel::from_shared 需要带 scheme（http://）的地址；
         // 调用方剥离 grpc:// 后只剩 host:port，这里补上（0 硬编码：只有缺 scheme 才补）。
         let addr = if endpoint.contains("://") {
@@ -52,16 +54,17 @@ impl GrpcFlowModusAdapter {
             .connect()
             .await?;
         let client = FlowModusClient::new(channel);
-        Ok(Self { client })
+        Ok(Self { client, model: model.to_string() })
     }
 }
 
 #[async_trait]
 impl ReasoningAdapter for GrpcFlowModusAdapter {
-    async fn reason(&self, prompt: &str, model: &str, _trace_id: &str) -> Result<String, String> {
+    async fn reason(&self, prompt: &str, mode: &str, _trace_id: &str) -> Result<String, String> {
         let request = tonic::Request::new(ReasonRequest {
             prompt: prompt.to_string(),
-            model: model.to_string(),
+            cognitive_mode: mode.to_string(),
+            model: self.model.clone(),
             max_tokens: 2048,
         });
         let response = self

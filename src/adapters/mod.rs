@@ -232,7 +232,13 @@ pub trait ReasoningAdapter: Send + Sync {
     /// Run one reasoning round trip. `trace_id` is the derived job id —
     /// carried to the gateway (x-tuck-trace) so the Tuck audit chain, the
     /// Anaphase body trace and the ledger share one join key (ProveTrack).
-    async fn reason(&self, prompt: &str, model: &str, trace_id: &str) -> Result<String, String>;
+    /// `mode` is the COGNITIVE MODE (`auto` / `left_brain` / ...) — that is what
+    /// the wire field always meant (`flowmodus.proto` says so), even while this
+    /// parameter was named `model` and the caller passed `reasoning_mode` into
+    /// it. The model is a separate fact and lives in the adapter, which is built
+    /// from config (measured 2026-09-24: overloading the one field let two repos
+    /// disagree without either erroring).
+    async fn reason(&self, prompt: &str, mode: &str, trace_id: &str) -> Result<String, String>;
 
     /// Streaming variant: emits content/thinking deltas into `deltas` as they
     /// arrive and returns the full text (same contract as `reason`). Default

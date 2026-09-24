@@ -739,7 +739,7 @@ async fn build_agent(config: &config::Config) -> BuiltAgent {
                 // — but **parsing** is shared (ADR-0045). The `&endpoint[7..]`
                 // hardcoded prefix length is gone: it encoded `len("grpc://")`
                 // in a second place, next to the parser that already knew it.
-                match GrpcFlowModusAdapter::new(endpoint).await {
+                match GrpcFlowModusAdapter::new(endpoint, config.anaphase.reasoning_model.as_deref().unwrap_or("")).await {
                     Ok(adapter) => Arc::new(adapter),
                     Err(e) => {
                         eprintln!("Warning: Failed to connect to FlowModus at {}: {}. Falling back to Noop reasoning.", endpoint, e);
