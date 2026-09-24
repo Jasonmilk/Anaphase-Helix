@@ -31,6 +31,8 @@ impl ReasoningAdapter for FlowModusAdapter {
     }
 }
 
+use super::usage::{UpstreamMeta, UsageSnapshot};
+
 // gRPC adapter (corrected imports)
 use crate::flowmodus_api::flow_modus_client::FlowModusClient;
 use crate::flowmodus_api::ReasonRequest;
@@ -39,6 +41,11 @@ pub struct GrpcFlowModusAdapter {
     client: FlowModusClient<Channel>,
     /// The model to ask for, from `reasoning_model`. Empty = let FlowModus route.
     model: String,
+    /// What the last round trip actually was (ADR-0036 + 0038). Same shape as the
+    /// HTTP adapter, for the same reason: this is response metadata already on the
+    /// wire, and it is the ONLY source for `assistant/usage` and for the routed
+    /// model's name.
+    last_meta: std::sync::Arc<std::sync::Mutex<UpstreamMeta>>,
 }
 
 impl GrpcFlowModusAdapter {
@@ -54,7 +61,11 @@ impl GrpcFlowModusAdapter {
             .connect()
             .await?;
         let client = FlowModusClient::new(channel);
-        Ok(Self { client, model: model.to_string() })
+        Ok(Self {
+            client,
+            model: model.to_string(),
+            last_meta: std::sync::Arc::new(std::sync::Mutex::new(UpstreamMeta::default())),
+        })
     }
 }
 
@@ -74,6 +85,27 @@ impl ReasoningAdapter for GrpcFlowModusAdapter {
             .await
             .map_err(|e| e.to_string())?
             .into_inner();
+        /* Record the round trip where the response is in hand.
+         *
+         * This adapter never overrode `last_meta()`, so the routed model and the
+         * usage the upstream reported were dropped on the floor: `emit_usage` saw
+         * `usage: None` and wrote no `assistant/usage` row, and a turn that had
+         * SUCCEEDED still showed `model: null` in the 证轨 — the one thing a
+         * reader needs to tell which layer actually answered. */
+        {
+            let mut m = self.last_meta.lock().unwrap();
+            m.model = if response.model.is_empty() { None } else { Some(response.model.clone()) };
+            m.usage = response.usage.map(|u| UsageSnapshot {
+                prompt_tokens: u.prompt_tokens,
+                completion_tokens: u.completion_tokens,
+                cached_tokens: u.cached_tokens,
+                reasoning_tokens: u.reasoning_tokens,
+            });
+        }
         Ok(response.content)
+    }
+
+    fn last_meta(&self) -> UpstreamMeta {
+        self.last_meta.lock().unwrap().clone()
     }
 }

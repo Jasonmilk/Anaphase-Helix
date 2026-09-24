@@ -32,11 +32,32 @@ message ReasonRequest {
 message ReasonResponse {
     // The generated text response.
     string content = 1;
-    // Number of tokens consumed (for energy tracking).
-    uint32 tokens_consumed = 2;
+    // RETIRED (was `uint32 tokens_consumed = 2`).
+    //
+    // A derived TOTAL cannot rebuild a breakdown, and Anaphase's `UsageSnapshot`
+    // has no field for one: it stores disjoint counts and its own parser refuses
+    // a total-only usage object outright (`adapters/usage.rs`: "`total_tokens`
+    // alone is not enough — it is deliberately not read", with a test asserting
+    // it). Keeping the field would therefore have forced whoever wired the
+    // metering leg to put a sum into `prompt_tokens` — a fabricated measurement,
+    // which is K-115's fault wearing new clothes. So it is reserved, not reused.
+    reserved 2;
+    reserved "tokens_consumed";
     // The model that ACTUALLY served the request — the routed fact, not the
     // caller's declared name (ADR-0036). Empty when the upstream did not say.
-    // Without it a turn cannot report which supplier answered, so the panel's
-    // 证轨 shows `model: null` for a turn that succeeded.
     string model = 3;
+    // What the round trip cost, as the upstream reported it. Absent = it reported
+    // no usage at all; Anaphase then writes no `assistant/usage` row rather than a
+    // fabricated zero (ADR-0038).
+    Usage usage = 4;
+}
+
+// The upstream's usage facts, DISJOINT — exactly the shape Anaphase stores.
+// `cached_tokens` / `reasoning_tokens` are explicitly optional so "not reported"
+// stays distinct from "reported zero"; a plain uint64 cannot express that.
+message Usage {
+    uint64 prompt_tokens = 1;
+    uint64 completion_tokens = 2;
+    optional uint64 cached_tokens = 3;
+    optional uint64 reasoning_tokens = 4;
 }
