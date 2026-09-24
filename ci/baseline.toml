@@ -526,14 +526,3 @@ cap    = 26
 k_id   = "K-119,K-120"
 reason = "Two fixes in one seam, both measured rather than estimated. K-119: `ReasonRequest` gave the model and the cognitive mode one field, so the adapter had to be told both facts separately (the model lives on the adapter, built from `reasoning_model`). K-120: the same adapter never overrode `last_meta()`, so the routed model and the upstream's usage were discarded — and the wire field it would have read (`tokens_consumed`) was a derived total that Anaphase's `UsageSnapshot` deliberately refuses to decompose, so the leg could not be closed honestly without carrying disjoint counts instead. 78 NCLOC against a baseline of 52 is the measured overage, not a chosen one; the previous cap of 7 was what K-119 alone measured before K-120 was understood."
 
-# The MEASURED overage of the directory, not a round number. `src/adapters/`
-# stands at 1419 against a bound of 1246 + 104 (the K-044 window), so the gap is
-# 69. Only 19 of that is this seam's (K-119 + K-120, measured as flowmodus.rs
-# 59 -> 78); the rest was already there once the file's own window made it
-# visible. Covering the whole gap is the point: a window that covered only my 19
-# would leave the directory red and prove nothing about the state it left behind.
-[[fix_window]]
-target = "src/adapters/"
-cap    = 69
-k_id   = "K-119,K-120"
-reason = "The reasoning seam between Anaphase and FlowModus: one field carrying two meanings (K-119) and an adapter that discarded the upstream's model and usage, on a wire field that could not honestly fill the struct it was meant to fill (K-120)."
