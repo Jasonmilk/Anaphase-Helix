@@ -320,6 +320,18 @@ def load_fix_windows(path, base_ncloc, pits):
                 f"{os.path.basename(PITS_FILE)} does not list. Record the pit first: "
                 "the id is the only evidence this class accepts."
             )
+        # Entries are keyed by target, so a second one REPLACES the first —
+        # TOML-legal, semantically not. Measured 2026-09-24: adding a fix window
+        # for `src/adapters/` silently replaced the K-044 window's 104 lines with
+        # 69 — the allowance SHRANK and the check got strictly worse, with nothing
+        # said. Existence is not semantics; the loader refuses rather than picking
+        # one, because which of the two the author meant is not knowable here.
+        if target in out:
+            raise WaiverError(
+                f"two fix windows target {target!r}: they share a key, so the second "
+                f"would silently replace the first ({out[target][0]} -> {cap}). "
+                "Merge them into one entry — a target has one allowance, not several."
+            )
         out[target] = (cap, k_id)
 
     for raw in open(path, encoding="utf-8"):
