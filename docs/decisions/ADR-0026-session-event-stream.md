@@ -41,6 +41,7 @@ Anaphase run_cycle 每轮（一个认知周期）向 `session_events_path` 目�
 | `check/status` | `{check_id, check, expect, actual, gate}` | 判据执行（hard/soft，judge=谁判的） |
 | `verdict/status` | `{job_id, status}` | criteria 判据（MET/UNMET/blocked） |
 | `assistant/reply` | `{text, chars, model}` | 交付物：最终回答（verdict 与 turn/end 之间；空回答也诚实发出）；`model` = 上游真实路由模型（ADR-0036，非 config 声明值，可为 null） |
+| `assistant/usage` | `{prompt_tokens, completion_tokens, cached_tokens, reasoning_tokens, model}` | 上游计量（**ADR-0038**）；**只作披露，永不参与判据**；**词表 1.1.0（2026-09-15）起** —— 该行由 `Cellrix/web/tests/wordlist_parity_test.js` 守着（文档词表 == 代码词表） |
 | `turn/end` | `{done, success, impasse, reply, model}` | 周期结束，回 Perception；`reply` = 最终回答冗余字段（消费端可直接取）；`model` 同 `assistant/reply` |
 
 每行 `{type, seq, time, data}`：`seq` 周期内单调（确定性重放），`time` 注入时钟的 RFC3339（可重放）。
