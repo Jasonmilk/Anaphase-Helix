@@ -946,12 +946,19 @@ async fn run_stdio_mode() -> Result<(), Box<dyn std::error::Error>> {
     // Action handler: protocol layer stays business-free; real actions
     // (send_message -> one cognitive period) live here, in the launcher.
     let act_agent = std::sync::Arc::clone(&agent);
+    /* THE GATE'S CONFIG MUST REACH THE CI-144 PATH (ADR-0048 §205/§206): `config` lives
+     * outside this `move` closure, so the path had no gate not from intent but from capture.
+     * Arc ⇒ the closure stays `Fn`; it is cloned per call (below), before the async block. */
+    let gate_cfg = std::sync::Arc::new(config.anaphase.clone());
     let handle_action = move |req: &anaphase::ci144::ActionRequest| {
         let act = std::sync::Arc::clone(&act_agent);
         // Clone owned inputs before the async block: the future must not
         // borrow the request reference (lifetime must outlive Fn).
         let action_id = req.action_id.clone();
         let message = req.parameters["message"].as_str().unwrap_or("").to_string();
+        /* PER CALL, BEFORE THE ASYNC BLOCK (ADR-0048 §206): capturing the Arc INTO the async
+         * block demotes this closure to `FnOnce` (measured E0525); cloning here keeps it `Fn`. */
+        let gate_cfg = gate_cfg.clone();
         async move {
         use anaphase::ci144::ActionResponse;
         match action_id.as_str() {
@@ -962,7 +969,7 @@ async fn run_stdio_mode() -> Result<(), Box<dyn std::error::Error>> {
                         let cap = a.run_config.cycle_cap;
                         let mut completed = false;
                         for _ in 0..cap {
-                            match a.run_cycle(&message).await {
+                            match a.run_cycle_gated(&message, &gate_cfg).await {
                                 Ok(out) if out.done => {
                                     completed = true;
                                     break;
