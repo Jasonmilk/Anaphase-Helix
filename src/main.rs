@@ -618,6 +618,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or_else(|| "events.jsonl".to_string());
     let mut flushed_seq = 0u64;
     let mut completed = false;
+    /* DID IT RUN AT ALL? (ADR-0048 §207): the gate break below leaves `completed = false`, and
+     * the terminal sentence was chosen by that ONE bool — so "did NOT complete … within 7 cycles"
+     * was printed after ZERO cycles had run, i.e. the number was literally false. Measured: reading
+     * that sentence, P(truth = Tuck absent) swings with an UNMEASURED prior (0.60/0.71); naming it
+     * makes P(truth | observation) = 1.0000 for any prior. */
+    let mut gate_refused = false;
     for _ in 0..agent.run_config.cycle_cap {
         // Fail-closed gate (Tuck): refuse to reason while the audit/LLM
         // gateway is down — Tuck down = Helix stops thinking (SPOF
@@ -626,6 +632,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         if let Err(e) = anaphase::health::gate_ok(&config.anaphase) {
             eprintln!("\n⚠️  Tuck 不在岗，已停止工作：{e}");
             eprintln!("   请恢复 Tuck（如运行 `tuck` 网关）后重新运行本命令。");
+            gate_refused = true;
             break;
         }
         let out = agent.run_cycle(&user_input).await?;
@@ -660,10 +667,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // `done = false` for an incomplete period it must say so.
     if completed {
         println!("\nCognitive cycle completed successfully.");
+    } else if gate_refused {
+        /* "DID NOT RUN" AND "RAN OUT OF BUDGET" MUST NOT SHARE A SENTENCE (§205/§207). */
+        println!(
+            "\nCognitive cycle did NOT RUN: reason=TUCK-GATE-REFUSED (the audit/LLM gateway was \
+             not on duty, so no period was attempted). This is NOT a budget exhaustion."
+        );
     } else {
         println!(
             "\nCognitive cycle did NOT complete: the state machine stopped without \
-             returning to Perception within {} cycles.",
+             returning to Perception within {} cycles (reason=cycle-cap-exhausted).",
             agent.run_config.cycle_cap
         );
     }
