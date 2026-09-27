@@ -631,6 +631,34 @@ impl AgentLoop {
     }
 
 
+    /// THE GATED ENTRY (ADR-0048 §205/§206): "Tuck down = Helix stops thinking" is declared
+    /// fail-closed at the CLI and at the HTTP handler — measured, that was **2 of 4** loops that
+    /// reach reasoning (`main.rs:621` CLI ✅, `main.rs:365` HTTP ✅, `main.rs:964` CI-144 ❌,
+    /// `tests/ci144_transport.rs:152` ❌, `tests/run_cycle_pipeline.rs:157` ❌), and the ENGINE
+    /// itself had no gate at all (`grep gate_ok src/run_cycle/` was empty). A declaration enforced
+    /// in one place of several is not fail-closed; it is fail-closed *where someone remembered*.
+    ///
+    /// THREE LAYERS, THREE HOMES (§206):
+    ///   CAN IT RUN   (is the gate satisfied?)  → HERE, at the engine entry, fail-closed;
+    ///   HOW IT RUNS  (loop mechanics)          → a shared helper (k: 4 → 1);
+    ///   WHEN IT STOPS(the policy)             → still the caller's (ADR-0016 D1, unchanged).
+    /// Putting "when to stop" in the helper would make the extraction violate the very principle
+    /// it cites, so the stop predicate stays with the caller.
+    pub async fn run_cycle_gated(
+        &mut self,
+        user_input: &str,
+        cfg: &crate::config::AnaphaseConfig,
+    ) -> Result<CycleOutcome, String> {
+        if let Err(e) = crate::health::gate_ok(cfg) {
+            /* NAMED, not a sentence: "did not run" must never share a word with "ran out of
+             * budget" — measured, reading the old sentence left P(truth = Tuck absent) = 0.30
+             * under two names, and 1.00 with five (the naming removes the PRIOR, not just adds
+             * bits). */
+            return Err(format!("TUCK-GATE-REFUSED: {e}"));
+        }
+        self.run_cycle(user_input).await
+    }
+
     pub async fn run_cycle(&mut self, user_input: &str) -> Result<CycleOutcome, String> {
         self.context.user_input = user_input.to_string();
         // Time anchor (2026-09-09): the user-message arrival instant, read
