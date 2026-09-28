@@ -670,6 +670,18 @@ impl AgentLoop {
     }
 
     pub async fn run_cycle(&mut self, user_input: &str) -> Result<CycleOutcome, String> {
+        /* THE SINK (ADR-0048 §235): every path that reaches reasoning asks the judge HERE, so the
+         * check cannot be forgotten by a caller — §206 measured that a declaration enforced at two
+         * of four call sites is fail-closed only "where someone remembered". The cost model is the
+         * breaker's (§210): O(1) and IO-free unless it is half-open; an open breaker refuses without
+         * touching the downstream at all (measured <100ms).
+         *
+         * `Unconfigured` passes, which is today's announced-ungoverned policy, so no existing test
+         * changes meaning. The refusal is NAMED; turning it into "skip and record" is the next node
+         * (`gate.refusal_record`). */
+        if let Err(reason) = self.gate.check() {
+            return Err(format!("TUCK-GATE-REFUSED: {reason}"));
+        }
         self.context.user_input = user_input.to_string();
         // Time anchor (2026-09-09): the user-message arrival instant, read
         // from the single injected clock — physical fact, zero tokens.
