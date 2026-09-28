@@ -9,6 +9,178 @@
 use std::sync::Arc;
 
 /// 人类确认回调：`(command, args) -> Ok(true)=确认放行 / Ok(false)=拒绝 / Err=无通道`
+/// THE SINGLE WORD TABLE (ADR-0048 §231). Every action word this crate knows, WITH THE ROLES IT
+/// SERVES — one host for the words, and the differences between classifiers become DECLARED tags
+/// instead of two hand-written lists that drift (measured: two same-named EXECUTION constants of
+/// 83 and 77 words, differing in ten places each, both hidden inside function bodies).
+///
+/// Roles
+///   A  executor NAME, matched with ALL tokens   (`is_executor_name`: a name whose every word runs)
+///   B  COMMAND string, matched with ANY token   (`is_high_risk`: a command containing a risky word)
+///   S  the CREDENTIAL subset used by SUBSTRING matching in the command role
+///   CD dangerous BARE name, and dangerous when ALL tokens match   (`is_dangerous_name`)
+///   C  dangerous BARE name only (generic words that must not fire on a compound)
+const ACTION_WORDS: &[(&str, &str)] = &[
+    ("ansible", "AB"),
+    ("api_key", "BS"),
+    ("apikey", "C"),
+    ("apt", "AB"),
+    ("apt-get", "B"),
+    ("at", "B"),
+    ("auth", "C"),
+    ("awk", "AB"),
+    ("bash", "AB"),
+    ("bearer", "BSC"),
+    ("brew", "AB"),
+    ("bun", "AB"),
+    ("bundle", "AB"),
+    ("cargo", "AB"),
+    ("chgrp", "ABCD"),
+    ("chmod", "ABCD"),
+    ("chown", "ABCD"),
+    ("cmake", "AB"),
+    ("cmd", "AB"),
+    ("code", "A"),
+    ("command", "A"),
+    ("computeruse", "A"),
+    ("cookie", "BSC"),
+    ("copy", "C"),
+    ("cp", "BC"),
+    ("credential", "BSC"),
+    ("credentials", "C"),
+    ("crontab", "ABCD"),
+    ("csh", "AB"),
+    ("curl", "BCD"),
+    ("dash", "AB"),
+    ("dd", "BCD"),
+    ("delete", "BC"),
+    ("deno", "AB"),
+    ("dispatch", "A"),
+    ("dnf", "AB"),
+    ("doas", "ABCD"),
+    ("docker", "AB"),
+    ("env", "B"),
+    ("eval", "AB"),
+    ("exec", "AB"),
+    ("execute", "A"),
+    ("executor", "A"),
+    ("fdisk", "CD"),
+    ("fetch", "BC"),
+    ("fish", "AB"),
+    ("format", "CD"),
+    ("ftp", "CD"),
+    ("gem", "AB"),
+    ("go", "B"),
+    ("gradle", "AB"),
+    ("halt", "CD"),
+    ("helm", "AB"),
+    ("http", "BC"),
+    ("https", "BC"),
+    ("interpreter", "A"),
+    ("invoke", "A"),
+    ("julia", "AB"),
+    ("key", "BSC"),
+    ("kill", "CD"),
+    ("killall", "CD"),
+    ("ksh", "AB"),
+    ("kubectl", "AB"),
+    ("launchctl", "ABCD"),
+    ("lua", "AB"),
+    ("make", "AB"),
+    ("maven", "B"),
+    ("mkdir", "BC"),
+    ("mkfs", "CD"),
+    ("mount", "ABCD"),
+    ("move", "C"),
+    ("mv", "BC"),
+    ("mvn", "AB"),
+    ("nc", "BCD"),
+    ("ncat", "BCD"),
+    ("netcat", "CD"),
+    ("node", "AB"),
+    ("nodejs", "AB"),
+    ("npm", "AB"),
+    ("npx", "AB"),
+    ("osremove", "B"),
+    ("pacman", "AB"),
+    ("passwd", "BC"),
+    ("password", "BSC"),
+    ("perl", "AB"),
+    ("php", "AB"),
+    ("pip", "AB"),
+    ("pip3", "AB"),
+    ("pkexec", "ABCD"),
+    ("pkill", "CD"),
+    ("pnpm", "AB"),
+    ("podman", "AB"),
+    ("post", "BC"),
+    ("powershell", "AB"),
+    ("process", "A"),
+    ("pwsh", "AB"),
+    ("py", "AB"),
+    ("python", "AB"),
+    ("python2", "AB"),
+    ("python3", "AB"),
+    ("r", "B"),
+    ("reboot", "CD"),
+    ("remove", "BC"),
+    ("request", "C"),
+    ("rm", "BCD"),
+    ("rmdir", "BC"),
+    ("ruby", "AB"),
+    ("run", "A"),
+    ("runcommand", "A"),
+    ("sandbox", "A"),
+    ("scp", "BCD"),
+    ("script", "A"),
+    ("secret", "BSC"),
+    ("sed", "AB"),
+    ("send", "BC"),
+    ("service", "AB"),
+    ("sftp", "BCD"),
+    ("sh", "AB"),
+    ("shell", "A"),
+    ("shred", "BCD"),
+    ("shutdown", "CD"),
+    ("shutil", "B"),
+    ("source", "B"),
+    ("spawn", "A"),
+    ("ssh", "BCD"),
+    ("su", "ABCD"),
+    ("sudo", "ABCD"),
+    ("systemctl", "ABCD"),
+    ("tcsh", "AB"),
+    ("telnet", "CD"),
+    ("terminal", "A"),
+    ("terraform", "AB"),
+    ("token", "BSC"),
+    ("touch", "BC"),
+    ("truncate", "BCD"),
+    ("umount", "ABCD"),
+    ("unlink", "BCD"),
+    ("unlinkat", "B"),
+    ("upload", "C"),
+    ("useradd", "B"),
+    ("usermod", "B"),
+    ("vagrant", "AB"),
+    ("wget", "BCD"),
+    ("write", "BC"),
+    ("xargs", "AB"),
+    ("yarn", "AB"),
+    ("yum", "AB"),
+    ("zsh", "AB"),
+];
+
+/// The DERIVED view a classifier reads: every word tagged with at least one of `roles`.
+/// It is a projection of the one table — never a second copy.
+fn role_words(roles: &str) -> Vec<&'static str> {
+    ACTION_WORDS
+        .iter()
+        .filter(|(_, r)| r.chars().any(|c| roles.contains(c)))
+        .map(|(w, _)| *w)
+        .collect()
+}
+
 pub type ApproveFn = Arc<dyn Fn(&str, &[String]) -> ApprovalOutcome + Send + Sync>;
 
 /// 把**旧布尔合同**装进闭集（ADR-0048 §226）:`Ok(true) ⇒ AllowedOnce` · `Ok(false) ⇒ Rejected` ·
@@ -99,15 +271,8 @@ impl HITLApprover {
     /// dangerous if it IS one of them, or if EVERY word in it is dangerous (so `code_review`,
     /// `dry_run`, `send_message`, `run_query` stay allowed — those were the measured FPs).
     pub fn is_dangerous_name(tool: &str) -> bool {
-        const DESTRUCTIVE: &[&str] = &[
-            "rm", "dd", "shred", "truncate", "unlink", "mkfs", "fdisk", "format",
-        ];
-        const NETWORK: &[&str] = &[
+        const _UNUSED_NETWORK: &[&str] = &[
             "curl", "wget", "nc", "ncat", "netcat", "ssh", "scp", "sftp", "telnet", "ftp",
-        ];
-        const PRIVILEGE: &[&str] = &[
-            "sudo", "su", "doas", "pkexec", "chmod", "chown", "chgrp", "mount", "umount", "kill",
-            "killall", "pkill", "shutdown", "reboot", "halt", "systemctl", "launchctl", "crontab",
         ];
         /* THE OTHER GATE'S HALF (ADR-0048 §222). Measured: the ENGINE gate's list (`is_high_risk`)
          * and this pipeline gate's list shared only 79 words (Jaccard 0.577) — 30 words were blocked
@@ -117,22 +282,15 @@ impl HITLApprover {
          * reached Tentacle without confirmation on this path.
          * These are BARE-name words: a tool called `key` is a credential reader, while a FIELD called
          * `key` is not scanned by this predicate at all (that was §216's false-positive channel). */
-        const WRITE_BARE: &[&str] = &[
-            "write", "delete", "remove", "mv", "cp", "move", "copy", "mkdir", "touch", "rmdir",
-        ];
-        const NETWORK_BARE: &[&str] = &["http", "https", "fetch", "post", "send", "request", "upload"];
-        const CREDENTIAL_BARE: &[&str] = &[
-            "token", "key", "secret", "password", "passwd", "cookie", "credential", "credentials",
-            "apikey", "bearer", "auth",
-        ];
+        const _UNUSED_NETWORK_BARE: &[&str] = &["http", "https", "fetch", "post", "send", "request", "upload"];
         let lower = tool.to_lowercase();
         let bare = lower.replace(['_', '-'], "");
-        if DESTRUCTIVE.contains(&bare.as_str())
-            || NETWORK.contains(&bare.as_str())
-            || PRIVILEGE.contains(&bare.as_str())
-            || WRITE_BARE.contains(&bare.as_str())
-            || NETWORK_BARE.contains(&bare.as_str())
-            || CREDENTIAL_BARE.contains(&bare.as_str())
+        if role_words("CD").contains(&bare.as_str())
+            || role_words("C").contains(&bare.as_str())
+            || role_words("C").contains(&bare.as_str())
+            || role_words("C").contains(&bare.as_str())
+            || role_words("C").contains(&bare.as_str())
+            || role_words("C").contains(&bare.as_str())
         {
             return true;
         }
@@ -142,27 +300,16 @@ impl HITLApprover {
             .collect();
         !toks.is_empty()
             && toks.iter().all(|t| {
-                DESTRUCTIVE.contains(t) || NETWORK.contains(t) || PRIVILEGE.contains(t)
+                role_words("D").contains(t)
             })
     }
 
     /// Is this tool itself a program runner? Matched on its own tokens against the EXECUTION
     /// capability list — the one place where the name really is the capability.
     pub fn is_executor_name(tool: &str) -> bool {
-        const EXECUTION: &[&str] = &[
-            "bash", "sh", "zsh", "fish", "ksh", "dash", "csh", "tcsh", "cmd", "powershell", "pwsh",
-            "python", "python2", "python3", "py", "node", "nodejs", "deno", "bun", "perl", "ruby",
-            "php", "lua", "julia", "awk", "sed", "eval", "exec", "execute", "executor", "xargs",
-            "sudo", "su", "doas", "pkexec", "docker", "podman", "kubectl", "helm", "terraform",
-            "ansible", "vagrant", "systemctl", "service", "launchctl", "crontab", "mount", "umount",
-            "chmod", "chown", "chgrp", "pip", "pip3", "npm", "npx", "yarn", "pnpm", "cargo", "make",
-            "cmake", "gradle", "mvn", "gem", "bundle", "apt", "brew", "yum", "dnf", "pacman",
-            "shell", "terminal", "interpreter", "spawn", "process", "run", "runcommand", "invoke",
-            "dispatch", "computeruse", "sandbox", "code", "script", "command",
-        ];
         let lower = tool.to_lowercase();
         let bare = lower.replace(['_', '-'], "");
-        if EXECUTION.contains(&bare.as_str()) {
+        if role_words("A").contains(&bare.as_str()) {
             return true;
         }
         /* ALL tokens must be execution words (ADR-0048 §216). Measured with `any`: `dry_run` fires
@@ -174,7 +321,7 @@ impl HITLApprover {
             .split(|c: char| !c.is_alphanumeric())
             .filter(|s| !s.is_empty())
             .collect();
-        !toks.is_empty() && toks.iter().all(|t| EXECUTION.contains(t))
+        !toks.is_empty() && toks.iter().all(|t| role_words("A").contains(t))
     }
 
     /// Does this call hand a *program* to something that could run it? Text-independent by design:
@@ -226,20 +373,9 @@ impl HITLApprover {
     }
 
     pub fn is_high_risk(command: &str) -> bool {
-        const WRITE: &[&str] = &[
-            "rm", "mv", "cp", "mkdir", "touch", "truncate", "dd", "shred", "write", "delete",
-            "remove", "unlink",
-            /* MEASURED, from the owner's own question about `rm` variants: `rmdir /data` was NOT
-             * caught here, while the pipeline gate's WRITE_BARE list already had it — one more
-             * instance of the two-list drift (§222). */
-            "rmdir", "shutil", "unlinkat", "osremove",
-        ];
-        const NETWORK: &[&str] = &[
+        const _UNUSED_NETWORK: &[&str] = &[
             "curl", "wget", "nc", "ncat", "ssh", "scp", "sftp", "http", "https", "fetch",
             "post", "send",
-        ];
-        const CREDENTIAL: &[&str] = &[
-            "token", "key", "secret", "password", "cookie", "credential", "api_key", "bearer",
         ];
         /* THE CAPABILITY AXIS (ADR-0048 §212). Measured before this line existed: the list above
          * blocked `rm`/`curl`/`ssh` (name axis 28.3%) and let `bash`/`python3`/`sudo`/`docker`
@@ -252,20 +388,6 @@ impl HITLApprover {
          * So this is an INTERIM step, not the destination: the destination is an allow-list
          * (permission-based). Until then, anything that can run anything is high-risk by CAPABILITY,
          * regardless of how harmless its name looks. */
-        const EXECUTION: &[&str] = &[
-            /* shells */
-            "bash", "sh", "zsh", "fish", "ksh", "dash", "csh", "tcsh", "cmd", "powershell", "pwsh",
-            /* interpreters / evaluators */
-            "python", "python2", "python3", "py", "node", "nodejs", "deno", "bun", "perl", "ruby",
-            "php", "lua", "r", "julia", "awk", "sed", "eval", "exec", "source", "xargs", "env",
-            /* privilege / orchestration / containers */
-            "sudo", "su", "doas", "pkexec", "docker", "podman", "kubectl", "helm", "terraform",
-            "ansible", "vagrant", "systemctl", "service", "launchctl", "crontab", "at", "mount",
-            "umount", "chmod", "chown", "chgrp", "useradd", "usermod", "passwd",
-            /* package managers / build tools (they run arbitrary post-install scripts) */
-            "pip", "pip3", "npm", "npx", "yarn", "pnpm", "cargo", "go", "make", "cmake", "gradle",
-            "maven", "mvn", "gem", "bundle", "apt", "apt-get", "brew", "yum", "dnf", "pacman",
-        ];
         let cmd = command.to_lowercase();
         let tokens: Vec<String> = cmd
             .split(|c: char| !c.is_alphanumeric())
@@ -273,17 +395,17 @@ impl HITLApprover {
             .map(|s| s.to_string())
             .collect();
         for t in &tokens {
-            if WRITE.contains(&t.as_str())
-                || NETWORK.contains(&t.as_str())
-                || CREDENTIAL.contains(&t.as_str())
-                || EXECUTION.contains(&t.as_str())
+            if role_words("B").contains(&t.as_str())
+                || role_words("B").contains(&t.as_str())
+                || role_words("S").contains(&t.as_str())
+                || role_words("B").contains(&t.as_str())
             {
                 return true;
             }
         }
         // 凭证子串匹配（如 my_api_key / send_credentials）
         let compact = cmd.replace(['_', '-'], "");
-        CREDENTIAL.iter().any(|k| compact.contains(k))
+        role_words("S").iter().any(|k| compact.contains(*k))
     }
 
     /// HITL 执行闸：低风险 → 直接放行；高风险 → 请求人类确认
@@ -522,6 +644,35 @@ pub enum WaitMode {
         assert!(HITLApprover::is_high_risk_call("mystery", "not json at all"));
     }
 
+    #[test]
+    fn one_word_table_with_declared_roles() {
+        /* §231's criteria, all four in one place. */
+        assert!(ACTION_WORDS.len() >= 100, "the table is the single host: {} words", ACTION_WORDS.len());
+        /* ① one literal: every role view is a projection of THIS table (nothing else defines words). */
+        for r in ["A", "B", "S", "C", "D"] {
+            let view = role_words(r);
+            assert!(!view.is_empty(), "role {r} has a declared, non-empty view");
+            for w in &view {
+                assert!(ACTION_WORDS.iter().any(|(t, _)| t == w), "{w} in role {r} comes from the table");
+            }
+        }
+        /* ② no word is listed twice (a duplicate would be a second copy hiding in the table). */
+        let mut seen = std::collections::HashSet::new();
+        for (w, _) in ACTION_WORDS {
+            assert!(seen.insert(*w), "duplicate word in the table: {w}");
+        }
+        /* ③ the A-role difference is DECLARED: `run` may name an executor without making a command
+         *    risky — the tags say so, rather than two lists disagreeing by accident. */
+        assert!(role_words("A").contains(&"run") && !role_words("B").contains(&"run"),
+            "`run` is tagged for the executor-name role only, and that is written down");
+        /* ④ THE FALSE-POSITIVE GUARD: unifying must not widen the COMMAND role (that was §231's trap). */
+        assert!(!HITLApprover::is_high_risk("echo run tests"), "ordinary prose must not become high-risk");
+        assert!(!HITLApprover::is_high_risk("ls -la"), "a read command stays low-risk");
+        assert!(!HITLApprover::is_high_risk("git log --oneline"), "and so does a normal git command");
+        /* …while recall is kept: the destructive verb still fires. */
+        assert!(HITLApprover::is_high_risk("rm -rf /data"));
+        assert!(HITLApprover::is_high_risk("curl https://example.com"));
+    }
     #[test]
     fn capability_axis_is_high_risk_regardless_of_the_name() {
         /* §212 measured: `bash`/`python3`/`sudo`/`docker` were NOT high-risk while `rm`/`curl` were,
