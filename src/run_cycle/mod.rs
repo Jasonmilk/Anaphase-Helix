@@ -130,6 +130,11 @@ pub struct AgentLoop {
     pub stream_tx: Option<tokio::sync::mpsc::UnboundedSender<crate::adapters::StreamDelta>>,
     /// HITL 人在回路审批通道（P10b T3，执行闸；默认 fail-closed）
     pub hitl: HITLApprover,
+    /// THE JUDGE THE ENGINE ASKS AT ITS ENTRY (ADR-0048 §233): `Unconfigured` by DEFAULT, which is
+    /// exactly today's behaviour (ungoverned passes, and `governance::warning` announces it), so no
+    /// existing test changes meaning. It is INJECTED, never stored-and-refreshed: a remembered probe
+    /// result expires in the fail-OPEN direction, which is the one direction §210 forbids.
+    pub gate: crate::gate::Gate,
     /// M1.5-T6 (ADR-0004): optional real tool name resolved for Execution.
     /// When set (e.g. "numbers"), Execution calls this tool via the configured
     /// ToolAdapter (e.g. GrpcTentacleAdapter) instead of the `echo` placeholder.
@@ -432,6 +437,7 @@ impl AgentLoop {
             context: AgentContext::default(),
             stream_tx: None,
             hitl: HITLApprover::default(),
+            gate: crate::gate::Gate::default(),
             tool_command: None,
             run_config: RunCycleConfig::default(),
             pipeline: None,
