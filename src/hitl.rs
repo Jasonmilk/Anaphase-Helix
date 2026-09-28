@@ -64,7 +64,7 @@ impl HITLApprover {
          * not a command runner — the name axis is over-broad in exactly the way §213-D described
          * (and the name is chosen by the LLM). Executors are matched by name because their NAME IS
          * their capability; everything else is decided by the shape of the call. */
-        if Self::is_executor_name(tool) {
+        if Self::is_executor_name(tool) || Self::is_dangerous_name(tool) {
             return true;
         }
         Self::carries_command(args_json)
@@ -76,6 +76,42 @@ impl HITLApprover {
     pub fn capability_undeclared_reason() -> &'static str {
         "capability-undeclared: this call declares no capability class, and an undeclared \
          capability is not permission (B7). Declare one in the tool registry to allow it."
+    }
+
+    /// UN-AMBIGUOUS NAMES ONLY (ADR-0048 §220 ③). §216 narrowed the name axis to EXECUTION and, in
+    /// doing so, silently dropped WRITE/NETWORK/CREDENTIAL *by name*: measured, after that change
+    /// `is_high_risk_call("rm", {"path":"/data"})` returned **false** — a tool literally called `rm`
+    /// was allowed by name. The false positives §216 removed came from COMPOUND names and GENERIC
+    /// FIELD names, so the repair keeps those out while restoring the unambiguous verbs: a name is
+    /// dangerous if it IS one of them, or if EVERY word in it is dangerous (so `code_review`,
+    /// `dry_run`, `send_message`, `run_query` stay allowed — those were the measured FPs).
+    pub fn is_dangerous_name(tool: &str) -> bool {
+        const DESTRUCTIVE: &[&str] = &[
+            "rm", "dd", "shred", "truncate", "unlink", "mkfs", "fdisk", "format",
+        ];
+        const NETWORK: &[&str] = &[
+            "curl", "wget", "nc", "ncat", "netcat", "ssh", "scp", "sftp", "telnet", "ftp",
+        ];
+        const PRIVILEGE: &[&str] = &[
+            "sudo", "su", "doas", "pkexec", "chmod", "chown", "chgrp", "mount", "umount", "kill",
+            "killall", "pkill", "shutdown", "reboot", "halt", "systemctl", "launchctl", "crontab",
+        ];
+        let lower = tool.to_lowercase();
+        let bare = lower.replace(['_', '-'], "");
+        if DESTRUCTIVE.contains(&bare.as_str())
+            || NETWORK.contains(&bare.as_str())
+            || PRIVILEGE.contains(&bare.as_str())
+        {
+            return true;
+        }
+        let toks: Vec<&str> = lower
+            .split(|c: char| !c.is_alphanumeric())
+            .filter(|s| !s.is_empty())
+            .collect();
+        !toks.is_empty()
+            && toks.iter().all(|t| {
+                DESTRUCTIVE.contains(t) || NETWORK.contains(t) || PRIVILEGE.contains(t)
+            })
     }
 
     /// Is this tool itself a program runner? Matched on its own tokens against the EXECUTION
@@ -254,6 +290,31 @@ pub enum WaitMode {
     AwaitingHuman,
 }
 
+
+    #[test]
+    fn dangerous_verbs_by_name_are_restored_without_reviving_the_false_positives() {
+        /* §220 ③ measured this regression: after §216 these were all allowed. A tool that IS the
+         * verb is dangerous regardless of its arguments. */
+        for (tool, args) in [
+            ("rm", r#"{"path":"/data"}"#),
+            ("curl", r#"{"url":"http://x"}"#),
+            ("ssh", r#"{"host":"h"}"#),
+            ("wget", r#"{"url":"http://x"}"#),
+            ("dd", r#"{"if":"/dev/zero"}"#),
+            ("sudo", r#"{"argv":["ls"]}"#),
+            ("mkfs", r#"{"dev":"/dev/sdb"}"#),
+            ("chmod", r#"{"mode":"777"}"#),
+        ] {
+            assert!(HITLApprover::is_high_risk_call(tool, args),
+                "{tool} IS the dangerous verb ⇒ must be high-risk by name");
+        }
+        /* AND the names that were measured false positives must stay allowed (compound / generic). */
+        for tool in ["code_review", "dry_run", "send_message", "run_query", "process_document",
+                     "shell_completion", "service_status", "mount_info", "translate", "render"] {
+            assert!(!HITLApprover::is_high_risk_call(tool, r#"{"x":1}"#),
+                "{tool} is a compound name, not a dangerous verb");
+        }
+    }
 
     #[test]
     fn compound_names_and_generic_fields_are_not_capabilities() {
