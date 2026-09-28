@@ -778,6 +778,15 @@ async fn build_agent(config: &config::Config) -> BuiltAgent {
         let reflex = ReflexArc::with_default_rules();
 
         let mut agent = AgentLoop::new(memory, reason, tool, safety, ui, fear, reflex);
+        /* INJECT THE JUDGE (ADR-0048 §233): the engine now carries a Gate built from CONFIG —
+         * a breaker when a Tuck endpoint is configured, `Unconfigured` (announced-ungoverned) when it
+         * is not, so an unconfigured deployment behaves exactly as before. The judge is asked at the
+         * entry (next sub-step); nothing is stored from a previous answer, because a remembered
+         * result expires in the fail-OPEN direction (§210). */
+        agent.gate = anaphase::gate::Gate::from_config(
+            config.anaphase.tuck_endpoint.as_deref(),
+            anaphase::gate::GATE_COOLDOWN,
+        );
         // O-1 (ADR-0016 D3): one physical probe at task start — "look at the
         // pocket before leaving the house". Fail-open: dark components degrade,
         // never block.
