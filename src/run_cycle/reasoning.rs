@@ -195,7 +195,10 @@ impl AgentLoop {
                 // prompt) and does not belong in lineage. Absent job id =>
                 // absent parent; the reader enforces this too, because history
                 // is append-only and the old rows stay as they were written.
-                let resume_from = self.context.resume_job.as_deref();
+                /* LINEAGE COMES FROM THE LINEAGE FIELD (§251): `resume_period` is `Some` only for a
+                 * resolved PERIOD id. Reading `resume_job` here is what wrote job ids (and prose) into
+                 * a parent slot; the reader refuses those, so the thread collapsed into roots. */
+                let resume_from = self.context.resume_period.as_deref();
                 let _ = ev.emit_period_start(
                     &ts,
                     &self.context.user_input,

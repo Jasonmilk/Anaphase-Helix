@@ -306,6 +306,14 @@ pub struct AgentContext {
     /// aggregation), while `resume` carries the human-readable summary for
     /// prompt injection. One continuation, two carriers.
     pub resume_job: Option<String>,
+    /// THE LINEAGE FACT, kept apart from the history fact (ADR-0048 §251). `resume_job` names the
+    /// SCOPE whose history is injected; THIS names the exact PERIOD this run continues, and it is
+    /// `Some` only when the resolver actually found a period id. Measured before this split: the
+    /// normalized period was stored in `resume_job` and, when resolution failed, the raw job id was
+    /// written into `resume_from` — 4 of 61 periods recorded a job id there and 1 recorded prose, so
+    /// the reader (which refuses non-ids) dropped their threads and the sidebar saw them as roots.
+    /// Absent resolution means ABSENT parent: a wrong parent is worse than a missing one.
+    pub resume_period: Option<String>,
     pub reasoning_output: String,
     /// Private reasoning (thinking) accumulated from the streaming sink
     /// (ADR-0029). Persisted as `assistant/think` (redacted, display-only).

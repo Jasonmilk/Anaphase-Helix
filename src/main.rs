@@ -401,8 +401,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 anaphase::session_events::resolve_one(&std::path::PathBuf::from(d), job).ok()
                             })
                             .filter(|id| anaphase::session_events::is_period_id(id));
+                        /* TWO FACTS, TWO FIELDS (§251): `resume_job` is the SCOPE whose history gets
+                         * injected (a job id is the right value there); `resume_period` is the LINEAGE
+                         * and is set ONLY from a resolved period id. Overloading one field is what put a
+                         * job id (and, historically, prose) into `resume_from`, where the reader refuses
+                         * it — so those runs became apparent roots. */
                         built.agent.context.resume_job =
                             Some(resolved.clone().unwrap_or_else(|| job.to_string()));
+                        built.agent.context.resume_period = resolved.clone();
                         if let (Some(id), Some(d)) = (resolved, dir) {
                             built.agent.context.resume = anaphase::session_events::read_summary(
                                 &std::path::PathBuf::from(d), &id, 400);

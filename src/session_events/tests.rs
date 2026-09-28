@@ -116,6 +116,41 @@
     }
 
     #[test]
+    fn lineage_records_a_period_and_omits_an_unresolved_parent() {
+        /* §251: `resume_from` is MACHINE-READABLE lineage and must hold a PERIOD id. Before the split,
+         * it was filled from `resume_job`, so an unresolved conversation wrote a JOB id there (and,
+         * historically, prose) — the reader refuses those, so 61 periods yielded only 11 edges and the
+         * sidebar read 50 as roots. Two facts, two fields; and an absent resolution stays ABSENT. */
+        let dir = tmp_dir();
+        let mut stream = SessionEventStream::open(dir.clone(), "run-c4", "run-c4", Redaction::default()).unwrap();
+        let t = ts();
+        let parent = "run-abc-p0000000000000001";
+        assert!(crate::session_events::is_period_id(parent), "the fixture must be a period id");
+        stream.emit_period_start(&t, "hello", 1, 10, Some(parent), None, Some(0)).unwrap();
+        let rows: Vec<SessionEvent> = fs::read_to_string(stream.path())
+            .unwrap().lines().map(|l| serde_json::from_str(l).unwrap()).collect();
+        let ctx = rows.iter().find(|r| r.event_type == "context/inject").unwrap();
+        assert_eq!(ctx.data["resume_from"], parent,
+            "a resolved continuation is recorded as a PERIOD id");
+
+        /* And the value the OLD path wrote is not a period id at all — that is what makes this criterion
+         * able to go red rather than merely able to pass. */
+        assert!(!crate::session_events::is_period_id("run-abc"),
+            "MUTATION: a job id is NOT a period id, so recording one would be refused by the reader");
+
+        let dir2 = tmp_dir();
+        let mut s2 = SessionEventStream::open(dir2.clone(), "run-c5", "run-c5", Redaction::default()).unwrap();
+        s2.emit_period_start(&t, "hello", 1, 10, None, None, Some(0)).unwrap();
+        let rows2: Vec<SessionEvent> = fs::read_to_string(s2.path())
+            .unwrap().lines().map(|l| serde_json::from_str(l).unwrap()).collect();
+        let ctx2 = rows2.iter().find(|r| r.event_type == "context/inject").unwrap();
+        assert!(ctx2.data.get("resume_from").is_none(),
+            "an UNRESOLVED continuation records NO parent: absent, never guessed");
+        let _ = fs::remove_dir_all(&dir);
+        let _ = fs::remove_dir_all(&dir2);
+    }
+
+    #[test]
     fn period_start_carries_resume_and_choice_detail() {
         let dir = tmp_dir();
         let mut stream = SessionEventStream::open(dir.clone(), "run-c3", "run-c3", Redaction::default()).unwrap();
