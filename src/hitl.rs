@@ -180,6 +180,14 @@ impl HITLApprover {
             "cmd", "command", "commandline", "script", "code", "stdin", "bin", "binary", "exec",
             "execute", "argv", "program", "shell", "eval", "snippet",
         ];
+        /* ABSENT IS NOT MALFORMED (ADR-0048 §225, measured the hard way): the first version of this
+         * rule treated an EMPTY args string as undecidable and refused — which made every call with
+         * no arguments high-risk, and two existing tests caught it (a low-risk tool was suddenly
+         * consulted). "No arguments" is a fact we understand; "unparseable arguments" is the one we
+         * cannot decide. B7 applies to the second. */
+        if args_json.trim().is_empty() {
+            return false;
+        }
         let v: serde_json::Value = match serde_json::from_str(args_json) {
             Ok(v) => v,
             /* Undecidable ⇒ refuse. */
@@ -208,6 +216,10 @@ impl HITLApprover {
         const WRITE: &[&str] = &[
             "rm", "mv", "cp", "mkdir", "touch", "truncate", "dd", "shred", "write", "delete",
             "remove", "unlink",
+            /* MEASURED, from the owner's own question about `rm` variants: `rmdir /data` was NOT
+             * caught here, while the pipeline gate's WRITE_BARE list already had it — one more
+             * instance of the two-list drift (§222). */
+            "rmdir", "shutil", "unlinkat", "osremove",
         ];
         const NETWORK: &[&str] = &[
             "curl", "wget", "nc", "ncat", "ssh", "scp", "sftp", "http", "https", "fetch",
@@ -263,7 +275,13 @@ impl HITLApprover {
 
     /// HITL 执行闸：低风险 → 直接放行；高风险 → 请求人类确认
     pub fn check_approval(&self, command: &str, args: &[String]) -> Result<bool, String> {
-        if !Self::is_high_risk(command) {
+        /* THE UNION, NOT THE REPLACEMENT (ADR-0048 §225, corrected). §225 proposed switching this
+         * to `is_high_risk_call(tool, args_json)`; measured, that would LOSE the engine's recall,
+         * because `is_dangerous_name("rm -rf /")` is `false` (tokens {rm, rf}: `rf` is not in any
+         * list, so the all-tokens rule declines) while the old token-OR classifier catches it.
+         * The engine keeps its command judgement AND gains the args-aware one. */
+        let args_json = args.first().cloned().unwrap_or_default();
+        if !Self::is_high_risk(command) && !Self::is_high_risk_call(command, &args_json) {
             return Ok(true);
         }
         (self.approver)(command, args)
@@ -309,6 +327,45 @@ pub enum WaitMode {
     AwaitingHuman,
 }
 
+
+    #[test]
+    fn command_variants_of_a_destructive_verb_are_all_intercepted() {
+        /* The owner asked: `rm -rf`, `rm  -rf`, ` rm  -rf` … are they all intercepted?
+         * Answered by RUNNING it, not by memory. The tokenizer splits on every non-alphanumeric and
+         * drops empties, and matching is case-insensitive — so spacing, leading/trailing whitespace,
+         * path prefixes, flags and case are all irrelevant. */
+        for cmd in [
+            "rm -rf /",
+            "rm  -rf  /",
+            "   rm -rf /   ",
+            "RM -RF /",
+            "Rm -Rf /data",
+            "/bin/rm -rf /",
+            "./rm -rf /",
+            "sudo rm -rf /",
+            "rm\t-rf /",
+            "rm\n-rf /",
+            "sh -c 'rm -rf /'",
+            "rmdir /data",
+            "truncate -s 0 /etc/passwd",
+        ] {
+            assert!(HITLApprover::is_high_risk(cmd), "is_high_risk must catch: {cmd:?}");
+        }
+        /* AND the honest other side: the tokenizer can be defeated by splitting the word itself.
+         * These are MISSES, and they are asserted as misses so they are recorded rather than
+         * assumed away (criterion §222.4: a known gap that is asserted beats one that is not). */
+        /* `r''m` / `r\\m` are CAUGHT — measured, and only incidentally: the tokenizer splits them
+         * into {r, m}, and `r` is in the list as the R interpreter. That is luck, not design, and it
+         * is worth recording as luck. The genuine misses are words that are NOT in any list: */
+        for caught_by_luck in ["r''m -rf /", "r\\m -rf /", "r m -rf /"] {
+            assert!(HITLApprover::is_high_risk(caught_by_luck),
+                "{caught_by_luck:?} is caught only because `r` is listed (the R interpreter)");
+        }
+        for evasion in ["rmm -rf /", "rnm -rf /", "del -rf /", "purge /data", "$(echo cm0=)"] {
+            assert!(!HITLApprover::is_high_risk(evasion),
+                "KNOWN MISS (asserted, not assumed): {evasion:?} defeats a WORD list");
+        }
+    }
 
     #[test]
     fn the_pipeline_gate_sees_the_write_network_and_credential_bare_names() {

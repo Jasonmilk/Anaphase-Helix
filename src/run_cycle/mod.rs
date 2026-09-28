@@ -993,11 +993,16 @@ impl AgentLoop {
     /// planned call — low-risk tools pass through with zero extra delay.
     async fn execute_structured(&mut self) -> Result<TransitionCondition, String> {
         for c in &self.context.calls {
+            /* THE ARGS MUST REACH THE JUDGEMENT (ADR-0048 §225 F3): this was `&[]` verbatim —
+             * measured, so the human-confirmation request carried a tool name with an EMPTY
+             * parameter column, and the risk predicate never saw the arguments. The signature
+             * already took `&[String]`; it was simply passed nothing. */
+            let args_json = serde_json::to_string(&c.args).unwrap_or_default();
             match safety_gate::admit(
                 &self.hitl,
                 self.safety.as_ref(),
                 &c.tool,
-                &[],
+                &[args_json],
                 // K-033: this path blocks when the audit cannot run. The legacy
                 // path above reports success for the same situation.
                 safety_gate::OnAuditError::Block,
