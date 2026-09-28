@@ -44,7 +44,88 @@ impl HITLApprover {
     /// `args_json` is the SAME serialization the `Some(gate)` path already passes as
     /// `GateCheck::args_json`, so the two paths finally judge the same thing.
     pub fn is_high_risk_call(tool: &str, args_json: &str) -> bool {
-        Self::is_high_risk(tool) || Self::is_high_risk(args_json)
+        /* THE SURFACE IS CAPABILITY, NOT TEXT (ADR-0048 §215), and §213's "tool ∨ args text" was
+         * only half right — measured, scanning the args as free text gives:
+         *   · false positives 11/12 (91.7%): `{"key":"theme"}` hits CREDENTIAL's `key`;
+         *     `{"query":"how to remove a stain"}` hits WRITE's `remove`; `{"path":"…/.ssh/id_rsa.pub"}`
+         *     hits NETWORK's `ssh`; `translate {"text":"please delete the draft"}` hits `delete`;
+         *   · misses 2/2 on the ELABORATE dangerous forms — `os.system(base64.b64decode(...))` and
+         *     `chr(114)+chr(109)` contain no list token at all.
+         *   ⇒ I = 0.0047 bits: "blocked" barely carries "dangerous".
+         * The reason is a category error: for `read_file`/`search`/`translate` the args are DATA
+         * (a path, a query, a sentence); treating data as a command is exactly the conflation this
+         * repo keeps paying for. For an executor the args are instructions — and then they are
+         * UNDECIDABLE, which is a reason to refuse that does NOT depend on reading them.
+         *
+         * So: a command-bearing FIELD is what we judge, never its content. The rule is stable under
+         * every textual disguise, because it never looks at the text. */
+        /* The NAME axis is kept, but narrowed to the EXECUTION capability only. Measured: the full
+         * token classifier fires on `send_message` (token `send` ∈ NETWORK), which is a message tool,
+         * not a command runner — the name axis is over-broad in exactly the way §213-D described
+         * (and the name is chosen by the LLM). Executors are matched by name because their NAME IS
+         * their capability; everything else is decided by the shape of the call. */
+        if Self::is_executor_name(tool) {
+            return true;
+        }
+        Self::carries_command(args_json)
+    }
+
+    /// Is this tool itself a program runner? Matched on its own tokens against the EXECUTION
+    /// capability list — the one place where the name really is the capability.
+    pub fn is_executor_name(tool: &str) -> bool {
+        const EXECUTION: &[&str] = &[
+            "bash", "sh", "zsh", "fish", "ksh", "dash", "csh", "tcsh", "cmd", "powershell", "pwsh",
+            "python", "python2", "python3", "py", "node", "nodejs", "deno", "bun", "perl", "ruby",
+            "php", "lua", "julia", "awk", "sed", "eval", "exec", "execute", "executor", "xargs",
+            "sudo", "su", "doas", "pkexec", "docker", "podman", "kubectl", "helm", "terraform",
+            "ansible", "vagrant", "systemctl", "service", "launchctl", "crontab", "mount", "umount",
+            "chmod", "chown", "chgrp", "pip", "pip3", "npm", "npx", "yarn", "pnpm", "cargo", "make",
+            "cmake", "gradle", "mvn", "gem", "bundle", "apt", "brew", "yum", "dnf", "pacman",
+            "shell", "terminal", "interpreter", "spawn", "process", "run", "runcommand", "invoke",
+            "dispatch", "computeruse", "sandbox", "code", "script", "command",
+        ];
+        let lower = tool.to_lowercase();
+        let bare = lower.replace(['_', '-'], "");
+        lower
+            .split(|c: char| !c.is_alphanumeric())
+            .filter(|s| !s.is_empty())
+            .any(|t| EXECUTION.contains(&t))
+            || EXECUTION.contains(&bare.as_str())
+    }
+
+    /// Does this call hand a *program* to something that could run it? Text-independent by design:
+    /// an executor's args are undecidable, so the refusal cites the SHAPE of the call, not its words.
+    /// Unparseable args ⇒ refuse (fail-closed: undecidable is not permission — the B7 rule).
+    pub fn carries_command(args_json: &str) -> bool {
+        const CMD_FIELDS: &[&str] = &[
+            "cmd", "command", "commandline", "script", "code", "input", "stdin", "bin", "binary",
+            "exec", "execute", "argv", "args", "program", "action", "shell", "run", "eval", "expr",
+            "expression", "payload", "snippet", "source",
+        ];
+        let v: serde_json::Value = match serde_json::from_str(args_json) {
+            Ok(v) => v,
+            /* Undecidable ⇒ refuse. */
+            Err(_) => return true,
+        };
+        match v {
+            serde_json::Value::Object(map) => map.iter().any(|(k, val)| {
+                let k = k.to_lowercase();
+                let bare = k.replace(['_', '-'], "");
+                let named = CMD_FIELDS
+                    .iter()
+                    .any(|f| &k == f || &bare == f || bare.ends_with(f) || bare.starts_with(f));
+                if !named {
+                    return false;
+                }
+                match val {
+                    serde_json::Value::String(s) => !s.trim().is_empty(),
+                    serde_json::Value::Array(a) => !a.is_empty(),
+                    serde_json::Value::Null => false,
+                    _ => true,
+                }
+            }),
+            _ => false,
+        }
     }
 
     pub fn is_high_risk(command: &str) -> bool {
@@ -154,27 +235,45 @@ pub enum WaitMode {
 
 
     #[test]
-    fn the_surface_is_the_call_not_the_name() {
-        /* §213 measured: name-only ⇒ 0/12 realistic dangerous calls intercepted. These are the
-         * shapes that were let through. */
-        let dangerous = [
-            ("run_command", r#"{"cmd":"rm -rf /data"}"#),
-            ("shell", r#"{"script":"docker run --privileged -v /:/host alpine"}"#),
-            ("terminal", r#"{"input":"sudo chmod 777 /etc"}"#),
-            ("executor", r#"{"code":"python3 -c 'import os; os.system(\"rm -rf /\")'"}"#),
-            ("process", r#"{"bin":"kubectl delete ns prod"}"#),
-            ("dispatch", r#"{"action":"terraform destroy -auto-approve"}"#),
+    fn data_is_not_a_command_and_a_command_is_not_decided_by_its_text() {
+        /* §215 A: these are DATA. Blocking them was the 91.7% false-positive rate. */
+        let harmless = [
+            ("read_file", r#"{"path":"/home/user/.ssh/id_rsa.pub"}"#),
+            ("search", r#"{"query":"how to remove a stain"}"#),
+            ("translate", r#"{"text":"please delete the draft","lang":"en"}"#),
+            ("http_get", r#"{"url":"https://api.example.com/status"}"#),
+            ("send_message", r#"{"to":"bob","text":"send my regards"}"#),
+            ("kv_get", r#"{"key":"theme","value":"dark"}"#),
+            ("db_query", r#"{"sql":"SELECT * FROM users WHERE token = ?"}"#),
+            ("list_dir", r#"{"path":"/var/www"}"#),
+            ("summarize", r#"{"doc":"Chapter 12: the key to the kingdom"}"#),
+            ("render", r#"{"template":"<a href='https://x'>post</a>"}"#),
+            ("config_read", r#"{"key":"timeout"}"#),
         ];
-        for (tool, args) in dangerous {
-            assert!(!HITLApprover::is_high_risk(tool), "{tool} alone is neutral (the old surface)");
-            assert!(HITLApprover::is_high_risk_call(tool, args), "{tool} + {args} must be high-risk");
+        for (tool, args) in harmless {
+            assert!(!HITLApprover::is_high_risk_call(tool, args),
+                "{tool} + {args}: data must not be read as a command");
         }
-        /* AND the other side: noise makes the red worthless (§199/§212). A read with no dangerous
-         * content must stay allowed, or the classifier stops meaning anything. */
-        for (tool, args) in [("ls", "{}"), ("read_file", r#"{"path":"/tmp/a.txt"}"#),
-                             ("grep", r#"{"pattern":"fn main"}"#)] {
-            assert!(!HITLApprover::is_high_risk_call(tool, args), "{tool} + {args} must stay allowed");
+        /* §215 B: `key` is the commonest KV field name on earth, and it was in CREDENTIAL with a
+         * substring match — so this is the shape that made the list unusable. */
+        for probe in [r#"{"monkey":"x"}"#, r#"{"keyword":"x"}"#, r#"{"donkey":"x"}"#] {
+            assert!(!HITLApprover::is_high_risk_call("kv_get", probe), "{probe} is not a credential");
         }
+
+        /* §215 C: the ELABORATE dangerous forms. They contain no list token — and they must still be
+         * refused, because the refusal cites the SHAPE (a command-bearing field), not the words. */
+        let elaborate = [
+            ("code_runner", r#"{"code":"import base64,os;os.system(base64.b64decode('cm0gLXJmIC8=').decode())"}"#),
+            ("executor", r#"{"code":"__import__('os').system(chr(114)+chr(109)+' -rf /')"}"#),
+            ("shell", r#"{"script":"ls -la"}"#),
+            ("run_command", r#"{"cmd":"rm -rf /data"}"#),
+        ];
+        for (tool, args) in elaborate {
+            assert!(HITLApprover::is_high_risk_call(tool, args),
+                "{tool} + {args}: a command-bearing field is undecidable ⇒ refuse, text-independent");
+        }
+        /* And undecidable input is not permission (B7). */
+        assert!(HITLApprover::is_high_risk_call("mystery", "not json at all"));
     }
 
     #[test]
