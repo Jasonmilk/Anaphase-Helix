@@ -26,6 +26,18 @@
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+/// The placeholder an adapter returns when it cannot answer at all (`adapters/mod.rs`). Declared
+/// here so the judgement "did anything real come back?" has ONE home.
+pub const NO_REASONING_PLACEHOLDER: &str = "No reasoning available";
+
+/// Did this call produce something real? Empty and the placeholder both mean NO — see §230: with
+/// flowmodus alive the engine got an empty answer, and with it dead it got this placeholder, and
+/// both reported `success: true`.
+pub fn is_placeholder_or_empty(output: &str) -> bool {
+    let t = output.trim();
+    t.is_empty() || t == NO_REASONING_PLACEHOLDER
+}
+
 /// The cooldown the breaker waits before allowing a single half-open probe. Declared once, with its
 /// reason: `health::tcp_reachable` budgets 10s for one connect, so a shorter cooldown would re-probe
 /// a dependency that has not had time to answer the previous probe.
@@ -54,6 +66,21 @@ impl Gate {
         match tuck_endpoint.map(str::trim).filter(|s| !s.is_empty()) {
             Some(ep) => Gate::Breaker(std::sync::Arc::new(TuckBreaker::new(ep, cooldown))),
             None => Gate::Unconfigured,
+        }
+    }
+
+    /// FEED THE REAL CALL'S OUTCOME (ADR-0048 §234). The distinction this encodes was measured:
+    /// `NoopReasoningAdapter` returns `Ok("No reasoning available")`, so "the call did not error" is
+    /// NOT health. A placeholder or an empty answer is recorded as a FAILURE, which is what lets the
+    /// breaker's memory grow in the fail-closed direction (§210) instead of staying Closed forever
+    /// while the engine silently answers nothing (§230).
+    pub fn note_output(&self, output: &str) {
+        if let Gate::Breaker(b) = self {
+            if is_placeholder_or_empty(output) {
+                b.record_failure("empty or placeholder reasoning output");
+            } else {
+                b.record_success();
+            }
         }
     }
 
@@ -213,6 +240,30 @@ mod tests {
             calls.fetch_add(1, Ordering::SeqCst);
             Ok(())
         })
+    }
+
+    #[test]
+    fn feeding_the_real_outcome_moves_the_breaker_in_one_direction_only() {
+        use std::time::Duration;
+        let g = Gate::from_config(Some("http://127.0.0.1:60052"), Duration::from_secs(600));
+        for bad in ["", "   ", NO_REASONING_PLACEHOLDER] {
+            g.note_output(bad);
+            match &g {
+                Gate::Breaker(b) => assert_eq!(b.state(), GateState::Open,
+                    "{bad:?} must be a FAILURE (a placeholder is not health)"),
+                Gate::Unconfigured => panic!("expected a breaker"),
+            }
+        }
+        let g2 = Gate::from_config(Some("http://127.0.0.1:60052"), Duration::from_secs(600));
+        g2.note_output(r#"{"impasse":false}"#);
+        match &g2 {
+            Gate::Breaker(b) => assert_eq!(b.state(), GateState::Closed, "real output closes it"),
+            Gate::Unconfigured => panic!("expected a breaker"),
+        }
+        /* And the ungoverned gate never records anything (it has nowhere to record it). */
+        Gate::Unconfigured.note_output("");
+        assert!(is_placeholder_or_empty("") && is_placeholder_or_empty("  ") && is_placeholder_or_empty(NO_REASONING_PLACEHOLDER));
+        assert!(!is_placeholder_or_empty("pong"));
     }
 
     #[test]

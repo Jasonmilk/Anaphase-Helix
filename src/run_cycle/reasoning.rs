@@ -310,6 +310,9 @@ impl AgentLoop {
                     // The plan is parsed here, not 30 lines down, so the row
                     // describes THIS round: `self.context.calls` is only assigned
                     // by the parse below, so reading it describes the LAST one.
+                    /* FEED THE BREAKER WITH WHAT ACTUALLY CAME BACK, not with "it did not error"
+                     * (ADR-0048 §234): a placeholder or an empty answer is a FAILURE. */
+                    self.gate.note_output(&output);
                     let plan = parse_reasoning_output(&output);
                     let planned = match &plan {
                         Ok(sig) => sig.calls.iter().map(|c| c.tool.as_str()).collect::<Vec<_>>().join(", "),
