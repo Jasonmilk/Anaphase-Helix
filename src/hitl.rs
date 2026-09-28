@@ -96,11 +96,30 @@ impl HITLApprover {
             "sudo", "su", "doas", "pkexec", "chmod", "chown", "chgrp", "mount", "umount", "kill",
             "killall", "pkill", "shutdown", "reboot", "halt", "systemctl", "launchctl", "crontab",
         ];
+        /* THE OTHER GATE'S HALF (ADR-0048 §222). Measured: the ENGINE gate's list (`is_high_risk`)
+         * and this pipeline gate's list shared only 79 words (Jaccard 0.577) — 30 words were blocked
+         * by the engine and invisible here, and this module's own header says high-risk means
+         * "write / network / credential". The pipeline gate scored **0/20** on bare names for those
+         * three classes, so `delete_database {"target":"prod"}` and `read_secret {"name":"api_key"}`
+         * reached Tentacle without confirmation on this path.
+         * These are BARE-name words: a tool called `key` is a credential reader, while a FIELD called
+         * `key` is not scanned by this predicate at all (that was §216's false-positive channel). */
+        const WRITE_BARE: &[&str] = &[
+            "write", "delete", "remove", "mv", "cp", "move", "copy", "mkdir", "touch", "rmdir",
+        ];
+        const NETWORK_BARE: &[&str] = &["http", "https", "fetch", "post", "send", "request", "upload"];
+        const CREDENTIAL_BARE: &[&str] = &[
+            "token", "key", "secret", "password", "passwd", "cookie", "credential", "credentials",
+            "apikey", "bearer", "auth",
+        ];
         let lower = tool.to_lowercase();
         let bare = lower.replace(['_', '-'], "");
         if DESTRUCTIVE.contains(&bare.as_str())
             || NETWORK.contains(&bare.as_str())
             || PRIVILEGE.contains(&bare.as_str())
+            || WRITE_BARE.contains(&bare.as_str())
+            || NETWORK_BARE.contains(&bare.as_str())
+            || CREDENTIAL_BARE.contains(&bare.as_str())
         {
             return true;
         }
@@ -290,6 +309,37 @@ pub enum WaitMode {
     AwaitingHuman,
 }
 
+
+    #[test]
+    fn the_pipeline_gate_sees_the_write_network_and_credential_bare_names() {
+        /* §222 measured 0/20 here: these were blocked by the ENGINE gate and invisible to this one. */
+        let bare = [
+            "write", "delete", "remove", "mv", "cp", "mkdir", "touch",
+            "http", "https", "fetch", "post", "send",
+            "token", "key", "secret", "password", "cookie", "credential", "api_key", "bearer",
+        ];
+        for t in bare {
+            assert!(HITLApprover::is_high_risk_call(t, "{}"),
+                "{t} IS a write/network/credential verb \u{21d2} the pipeline gate must see it");
+        }
+        /* And the §216 false-positive shapes must STILL be allowed: a compound name is not a verb, and
+         * a field name is never scanned. */
+        for (tool, args) in [
+            ("code_review", r#"{"repo":"x"}"#),
+            ("dry_run", r#"{"enabled":true}"#),
+            ("send_message", r#"{"to":"bob","text":"hi"}"#),
+            ("kv_get", r#"{"key":"theme"}"#),
+            ("translate", r#"{"source":"en"}"#),
+        ] {
+            assert!(!HITLApprover::is_high_risk_call(tool, args),
+                "{tool} + {args} must stay allowed (compound name / field, not a verb)");
+        }
+        /* The residual compound danger is DECLARED, not silently claimed fixed: `delete_database`
+         * is not caught by any list, and that is the measured proof that the NAME axis is
+         * undecidable (criterion ⑤) — it needs a capability declaration, not more words. */
+        assert!(!HITLApprover::is_high_risk_call("delete_database", r#"{"target":"prod"}"#),
+            "residual: compound danger is undeclared-undecidable on the name axis");
+    }
 
     #[test]
     fn dangerous_verbs_by_name_are_restored_without_reviving_the_false_positives() {
