@@ -44,6 +44,31 @@ impl HITLApprover {
         const CREDENTIAL: &[&str] = &[
             "token", "key", "secret", "password", "cookie", "credential", "api_key", "bearer",
         ];
+        /* THE CAPABILITY AXIS (ADR-0048 §212). Measured before this line existed: the list above
+         * blocked `rm`/`curl`/`ssh` (name axis 28.3%) and let `bash`/`python3`/`sudo`/`docker`
+         * through (capability axis **0.0%**) — and an interpreter can perform every blocked action.
+         * Saltzer & Schroeder (1975) name the failure direction of any exclusion list:
+         *   "Access decisions should be based on permission rather than exclusion… mechanisms that
+         *    identify conditions under which access should be refused present the wrong psychological
+         *    base"; and "a mistake in a mechanism that explicitly excludes access tends to fail by
+         *    ALLOWING access… may go unnoticed in normal use."
+         * So this is an INTERIM step, not the destination: the destination is an allow-list
+         * (permission-based). Until then, anything that can run anything is high-risk by CAPABILITY,
+         * regardless of how harmless its name looks. */
+        const EXECUTION: &[&str] = &[
+            /* shells */
+            "bash", "sh", "zsh", "fish", "ksh", "dash", "csh", "tcsh", "cmd", "powershell", "pwsh",
+            /* interpreters / evaluators */
+            "python", "python2", "python3", "py", "node", "nodejs", "deno", "bun", "perl", "ruby",
+            "php", "lua", "r", "julia", "awk", "sed", "eval", "exec", "source", "xargs", "env",
+            /* privilege / orchestration / containers */
+            "sudo", "su", "doas", "pkexec", "docker", "podman", "kubectl", "helm", "terraform",
+            "ansible", "vagrant", "systemctl", "service", "launchctl", "crontab", "at", "mount",
+            "umount", "chmod", "chown", "chgrp", "useradd", "usermod", "passwd",
+            /* package managers / build tools (they run arbitrary post-install scripts) */
+            "pip", "pip3", "npm", "npx", "yarn", "pnpm", "cargo", "go", "make", "cmake", "gradle",
+            "maven", "mvn", "gem", "bundle", "apt", "apt-get", "brew", "yum", "dnf", "pacman",
+        ];
         let cmd = command.to_lowercase();
         let tokens: Vec<String> = cmd
             .split(|c: char| !c.is_alphanumeric())
@@ -54,6 +79,7 @@ impl HITLApprover {
             if WRITE.contains(&t.as_str())
                 || NETWORK.contains(&t.as_str())
                 || CREDENTIAL.contains(&t.as_str())
+                || EXECUTION.contains(&t.as_str())
             {
                 return true;
             }
@@ -111,6 +137,20 @@ pub enum WaitMode {
     AwaitingHuman,
 }
 
+
+    #[test]
+    fn capability_axis_is_high_risk_regardless_of_the_name() {
+        /* §212 measured: `bash`/`python3`/`sudo`/`docker` were NOT high-risk while `rm`/`curl` were,
+         * so the blacklist blocked names and released capability (0.0% on that axis). */
+        for t in ["bash", "sh", "python3", "node", "perl", "ruby", "eval", "exec",
+                  "sudo", "docker", "kubectl", "terraform", "pip", "npm", "cargo", "make", "crontab"] {
+            assert!(HITLApprover::is_high_risk(t), "{t} runs anything ⇒ must be high-risk");
+        }
+        /* And the axis must not eat the genuinely low-risk case, or the classifier becomes noise. */
+        for t in ["ls", "cat", "read_file", "grep", "head", "wc"] {
+            assert!(!HITLApprover::is_high_risk(t), "{t} is a read ⇒ must not be high-risk");
+        }
+    }
 #[cfg(test)]
 mod tests {
     use super::*;

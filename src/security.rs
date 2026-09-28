@@ -108,46 +108,17 @@ impl SecurityGate for PermissiveGate {
     }
 }
 
-/// DECLARE THE ABSENCE (ADR-0048 §211): `None` means **THERE IS NO DOOR**, not "the old door
-/// still works" — the distinction this project keeps having to relearn. And the fix is NOT a
-/// `PermissiveGate`: `security.rs:28` forbids it because a gate that permits everything makes the
-/// pipeline *look* gated while nothing is checked — **worse than `None`**, since the absence stops
-/// being visible. So this reports the state; it never substitutes for one.
-///
-/// Measured (this repo, this file's own header): `with_security_gate` is called only from `tests/`,
-/// `PipelineConfig` defaults the field to `None`, and no production path calls the setter ⇒ every
-/// tool call executes ungated while every *period-level* gate looks healthy.
-pub fn gate_declaration(gate: &Option<std::sync::Arc<dyn SecurityGate>>) -> String {
-    match gate {
-        None => "security_gate: ABSENT — there is no door; every tool call executes UNGATED. \
-                 (Announced, not silent: a PermissiveGate would hide exactly this fact.)"
-            .to_string(),
-        Some(_) => "security_gate: installed".to_string(),
-    }
-}
+/* THE DECLARATION WAS DELETED (ADR-0048 §212): the string it returned said "every tool call
+ * executes UNGATED", and that is FALSE — measured, pipeline/mod.rs:198-212 blocks high-risk
+ * calls when the gate is None ("absence is not approval (B7)") and writes a `blocked` ledger
+ * record. Worse, the absence was ALREADY declared PER CALL by `gate_presence()`
+ * (pipeline/mod.rs:173, I7 §13.3), so this was a THIRD host for one fact — and it had no
+ * consumer. A false statement with zero consumers is the worst combination available:
+ * 2 true states collapsed into 1 observation (H = 0.8595, I = 0.0000 bits).
+ * The treatment had become the case. */
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn absent_security_gate_is_declared_not_hidden() {
-        /* The cheapest fix from §211: make the absence VISIBLE. The measured state is `None` on the
-         * production path, so this string is what an operator must be able to see. */
-        let d = gate_declaration(&None);
-        assert!(d.contains("ABSENT"), "{d}");
-        assert!(d.contains("UNGATED"), "{d}");
-        assert!(d.contains("no door"), "{d}");
-    }
-
-    #[test]
-    fn installed_security_gate_says_so_and_is_distinguishable() {
-        let d = gate_declaration(&Some(std::sync::Arc::new(PermissiveGate)));
-        assert!(d.contains("installed"), "{d}");
-        assert!(!d.contains("ABSENT"), "an installed gate must not read as absent: {d}");
-        /* AND the two states must not share a word — otherwise the declaration itself folds two
-         * facts into one output, which is the disease this whole section is about. */
-        assert_ne!(gate_declaration(&None), d);
-    }
-
     #[test]
     fn hard_override_is_not_folded_into_pass_at_the_verdict_level() {
         /* §211 measured: `permits()` maps 4 verdicts to 2 values (I = 1.0000 of H = 2.0000, 50%
