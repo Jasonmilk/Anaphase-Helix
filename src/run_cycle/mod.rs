@@ -631,8 +631,12 @@ impl AgentLoop {
     }
 
 
-    /// THE GATED ENTRY (ADR-0048 §205/§206): "Tuck down = Helix stops thinking" is declared
-    /// fail-closed at the CLI and at the HTTP handler — measured, that was **2 of 4** loops that
+    /// ⚠️ SUPERSEDED BY §208: this entry is a SECOND NAME for one guard, and the sink into
+    /// `run_cycle` itself (with a CACHED probe) is the prescribed shape — measured, `gate_ok` is
+    /// a blocking TCP probe with a 10s budget, so sinking it WITHOUT a cache would move a
+    /// 0.80 req/s cliff (0.5% of normal) into every period. Kept until that笔 lands.
+    ///
+    /// "Tuck down = Helix stops thinking" is declared fail-closed at the CLI and at the HTTP handler — measured, that was **2 of 4** loops that
     /// reach reasoning (`main.rs:621` CLI ✅, `main.rs:365` HTTP ✅, `main.rs:964` CI-144 ❌,
     /// `tests/ci144_transport.rs:152` ❌, `tests/run_cycle_pipeline.rs:157` ❌), and the ENGINE
     /// itself had no gate at all (`grep gate_ok src/run_cycle/` was empty). A declaration enforced
