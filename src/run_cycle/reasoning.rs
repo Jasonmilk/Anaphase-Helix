@@ -269,6 +269,25 @@ impl AgentLoop {
                     }
                     Err(e) => {
                         warn!("Reasoning failed: {}", e);
+                        /* A FAILURE IS A NAMED ROW, NOT JUST A LOG LINE (ADR-0048 §259). Measured on the
+                         * live chain: flowmodus names every failure it can produce ("路由失败: …",
+                         * "供应商 X 未配置 API key", the `call_chat` error), and this branch threw all of
+                         * that away — it cleared the output and returned `Impass`, so the 证轨 showed
+                         * `impasse` with `model: null` and no cause. "No model available", "upstream 403"
+                         * and "upstream answered nothing" were therefore THE SAME reading. The reason is
+                         * now an event row, which is what a proof-track is for. */
+                        if let Some(ev) = self.session_events.as_mut() {
+                            let ts = crate::ledger::unix_secs_to_rfc3339(self.clock.now());
+                            let _ = ev.emit(
+                                &ts,
+                                crate::session_events::EventType::Attempt,
+                                serde_json::json!({
+                                    "text": format!("reasoning failed: {e}"),
+                                    "error": e,
+                                    "stage": "reasoning",
+                                }),
+                            );
+                        }
                         self.context.reasoning_output.clear();
                         self.context.calls.clear();
                         return Ok(TransitionCondition::Impass);
