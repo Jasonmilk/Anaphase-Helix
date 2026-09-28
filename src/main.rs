@@ -343,7 +343,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // single-period cycle — no shared mutable state, no cross-
                 // session bleed; conversation continuity is a future Memory
                 // concern (L3 情景), not a v1 promise.
-                // Fail-closed: Tuck down = refuse to reason (gate_ok), the
+                    // GOVERNED-FAIL-CLOSED (ADR-0048 §208): when tuck_endpoint IS configured and
+                    // unreachable refuses (fail-closed); **ungoverned (unconfigured) is ALLOWED** and announced at
+                    // startup by governance::warning — a deliberate policy (health.rs:155-160), not a failure.
                 // process stays alive to keep the panel honest.
                 // Two transports, one contract: `Accept: text/event-stream`
                 // yields live SSE deltas (typewriter chat, no timeout cliff);
@@ -625,7 +627,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
      * makes P(truth | observation) = 1.0000 for any prior. */
     let mut gate_refused = false;
     for _ in 0..agent.run_config.cycle_cap {
-        // Fail-closed gate (Tuck): refuse to reason while the audit/LLM
+                    // GOVERNED-FAIL-CLOSED (ADR-0048 §208): when tuck_endpoint IS configured and
+                    // unreachable refuses (fail-closed); **ungoverned (unconfigured) is ALLOWED** and announced at
+                    // startup by governance::warning — a deliberate policy (health.rs:155-160), not a failure.
         // gateway is down — Tuck down = Helix stops thinking (SPOF
         // explicitly accepted). The process stays alive to keep showing
         // the panel and the honest ❌ state; only reasoning halts.
