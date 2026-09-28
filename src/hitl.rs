@@ -271,9 +271,6 @@ impl HITLApprover {
     /// dangerous if it IS one of them, or if EVERY word in it is dangerous (so `code_review`,
     /// `dry_run`, `send_message`, `run_query` stay allowed — those were the measured FPs).
     pub fn is_dangerous_name(tool: &str) -> bool {
-        const _UNUSED_NETWORK: &[&str] = &[
-            "curl", "wget", "nc", "ncat", "netcat", "ssh", "scp", "sftp", "telnet", "ftp",
-        ];
         /* THE OTHER GATE'S HALF (ADR-0048 §222). Measured: the ENGINE gate's list (`is_high_risk`)
          * and this pipeline gate's list shared only 79 words (Jaccard 0.577) — 30 words were blocked
          * by the engine and invisible here, and this module's own header says high-risk means
@@ -282,7 +279,6 @@ impl HITLApprover {
          * reached Tentacle without confirmation on this path.
          * These are BARE-name words: a tool called `key` is a credential reader, while a FIELD called
          * `key` is not scanned by this predicate at all (that was §216's false-positive channel). */
-        const _UNUSED_NETWORK_BARE: &[&str] = &["http", "https", "fetch", "post", "send", "request", "upload"];
         let lower = tool.to_lowercase();
         let bare = lower.replace(['_', '-'], "");
         if role_words("CD").contains(&bare.as_str())
@@ -373,10 +369,6 @@ impl HITLApprover {
     }
 
     pub fn is_high_risk(command: &str) -> bool {
-        const _UNUSED_NETWORK: &[&str] = &[
-            "curl", "wget", "nc", "ncat", "ssh", "scp", "sftp", "http", "https", "fetch",
-            "post", "send",
-        ];
         /* THE CAPABILITY AXIS (ADR-0048 §212). Measured before this line existed: the list above
          * blocked `rm`/`curl`/`ssh` (name axis 28.3%) and let `bash`/`python3`/`sudo`/`docker`
          * through (capability axis **0.0%**) — and an interpreter can perform every blocked action.
