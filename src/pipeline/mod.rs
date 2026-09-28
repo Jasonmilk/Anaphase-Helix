@@ -211,11 +211,10 @@ impl Pipeline {
                 // `args` while the name is neutral — and the name is chosen by the LLM. `params` is
                 // already serialized above for this very call, so this costs nothing new.
                 None => crate::hitl::HITLApprover::is_high_risk_call(&call.tool, &params).then(|| {
-                    format!(
-                        "no security gate configured, and {:?} is high-risk: absence is not \
-                         approval (B7). Configure PermissiveGate to opt out explicitly.",
-                        call.tool
-                    )
+                    /* THE REASON DOES NOT NAME ITS TRIGGER (§216 ⑤): printing the tool or the field
+                     * that fired tells an adaptive adversary which name to change next. It states
+                     * the capability position instead. */
+                    crate::hitl::HITLApprover::capability_undeclared_reason().to_string()
                 }),
             };
             if let Some(reason) = block_reason {

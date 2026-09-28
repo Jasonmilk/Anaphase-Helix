@@ -70,6 +70,14 @@ impl HITLApprover {
         Self::carries_command(args_json)
     }
 
+    /// THE REFUSAL MUST NOT NAME ITS TRIGGER (ADR-0048 §216 ⑤): naming the field or tool that
+    /// fired teaches an adaptive adversary exactly which name to change next. This states the
+    /// capability position instead — "you did not declare a class", never "you wrote `code`".
+    pub fn capability_undeclared_reason() -> &'static str {
+        "capability-undeclared: this call declares no capability class, and an undeclared \
+         capability is not permission (B7). Declare one in the tool registry to allow it."
+    }
+
     /// Is this tool itself a program runner? Matched on its own tokens against the EXECUTION
     /// capability list — the one place where the name really is the capability.
     pub fn is_executor_name(tool: &str) -> bool {
@@ -86,21 +94,36 @@ impl HITLApprover {
         ];
         let lower = tool.to_lowercase();
         let bare = lower.replace(['_', '-'], "");
-        lower
+        if EXECUTION.contains(&bare.as_str()) {
+            return true;
+        }
+        /* ALL tokens must be execution words (ADR-0048 §216). Measured with `any`: `dry_run` fires
+         * (token `run`) although it is the one tool that does NOT run, and `code_review`,
+         * `process_document`, `invoke_api`, `script_lint`, `shell_completion`, `run_query`,
+         * `service_status` all fired on a single token. The judgement was inverted on `dry_run` —
+         * a name is an executor only if every word in it is an execution word. */
+        let toks: Vec<&str> = lower
             .split(|c: char| !c.is_alphanumeric())
             .filter(|s| !s.is_empty())
-            .any(|t| EXECUTION.contains(&t))
-            || EXECUTION.contains(&bare.as_str())
+            .collect();
+        !toks.is_empty() && toks.iter().all(|t| EXECUTION.contains(t))
     }
 
     /// Does this call hand a *program* to something that could run it? Text-independent by design:
     /// an executor's args are undecidable, so the refusal cites the SHAPE of the call, not its words.
     /// Unparseable args ⇒ refuse (fail-closed: undecidable is not permission — the B7 rule).
     pub fn carries_command(args_json: &str) -> bool {
+        /* EXACT, EXPLICIT COMMAND FIELDS ONLY (ADR-0048 §216). Measured false positives from the
+         * previous matching (`ends_with`/`starts_with` + generic names + `_ => true` on any value):
+         *   translate {"source":"en"} · llm_complete {"input":"…"} (an OpenAI STANDARD field) ·
+         *   embeddings {"input":[…]} · form_submit {"action":"submit"} · render {"payload":{…}} ·
+         *   analyze {"expression":"a+b"} · build {"run_id":42} · background_job {"run":false}
+         * — the last two are the inverted case: `{"run":false}` means DO NOT RUN and it was read as
+         * "run", because Bool/Number fell into `_ => true`. A key is a command field only if it NAMES
+         * a program, exactly, and only a string/array value carries anything. */
         const CMD_FIELDS: &[&str] = &[
-            "cmd", "command", "commandline", "script", "code", "input", "stdin", "bin", "binary",
-            "exec", "execute", "argv", "args", "program", "action", "shell", "run", "eval", "expr",
-            "expression", "payload", "snippet", "source",
+            "cmd", "command", "commandline", "script", "code", "stdin", "bin", "binary", "exec",
+            "execute", "argv", "program", "shell", "eval", "snippet",
         ];
         let v: serde_json::Value = match serde_json::from_str(args_json) {
             Ok(v) => v,
@@ -111,17 +134,15 @@ impl HITLApprover {
             serde_json::Value::Object(map) => map.iter().any(|(k, val)| {
                 let k = k.to_lowercase();
                 let bare = k.replace(['_', '-'], "");
-                let named = CMD_FIELDS
-                    .iter()
-                    .any(|f| &k == f || &bare == f || bare.ends_with(f) || bare.starts_with(f));
-                if !named {
+                if !CMD_FIELDS.iter().any(|f| &k == f || &bare == f) {
                     return false;
                 }
                 match val {
                     serde_json::Value::String(s) => !s.trim().is_empty(),
                     serde_json::Value::Array(a) => !a.is_empty(),
-                    serde_json::Value::Null => false,
-                    _ => true,
+                    /* Bool / Number / Object carry no program: `{"run":false}` is a REFUSAL to run,
+                     * and reading it as a command inverted the judgement. */
+                    _ => false,
                 }
             }),
             _ => false,
@@ -233,6 +254,48 @@ pub enum WaitMode {
     AwaitingHuman,
 }
 
+
+    #[test]
+    fn compound_names_and_generic_fields_are_not_capabilities() {
+        /* §216 channels A and B — every one of these was a measured false positive. */
+        for (tool, args) in [
+            ("code_review", r#"{"repo":"x"}"#),
+            ("process_document", r#"{"doc_id":"d1"}"#),
+            ("invoke_api", r#"{"endpoint":"/v1/ping"}"#),
+            ("script_lint", r#"{"file":"a.py"}"#),
+            ("shell_completion", r#"{"line":"ls"}"#),
+            ("run_query", r#"{"sql":"select 1"}"#),
+            ("service_status", r#"{"name":"nginx"}"#),
+            ("mount_info", r#"{"dev":"/dev/sda"}"#),
+            /* ★ the inverted case: the one tool that does NOT run */
+            ("dry_run", r#"{"enabled":true}"#),
+            /* ★ "do not run" read as "run": Bool must not count as carrying a command */
+            ("background_job", r#"{"run":false}"#),
+            ("build", r#"{"run_id":42}"#),
+            /* generic field names from ordinary schemas */
+            ("translate", r#"{"source":"en"}"#),
+            ("llm_complete", r#"{"input":"write a haiku"}"#),
+            ("embeddings", r#"{"input":["a","b"]}"#),
+            ("form_submit", r#"{"action":"submit"}"#),
+            ("render", r#"{"payload":{"a":1}}"#),
+            ("analyze", r#"{"expression":"a+b"}"#),
+        ] {
+            assert!(!HITLApprover::is_high_risk_call(tool, args),
+                "{tool} + {args}: a compound name or a generic field is not a capability");
+        }
+    }
+
+    #[test]
+    fn the_refusal_reason_must_not_name_its_trigger() {
+        /* §216 criterion ⑤ (work factor applied to the FEEDBACK channel): a refusal that says
+         * "because you used the `code` field" teaches the adversary which name to change next. The
+         * reason must therefore be a capability statement, not a citation of the input. */
+        let reason = HITLApprover::capability_undeclared_reason();
+        assert!(reason.contains("capability-undeclared"), "{reason}");
+        for leak in ["code", "script", "cmd", "run_command", "field", "args"] {
+            assert!(!reason.to_lowercase().contains(leak), "reason leaks {leak}: {reason}");
+        }
+    }
 
     #[test]
     fn data_is_not_a_command_and_a_command_is_not_decided_by_its_text() {
