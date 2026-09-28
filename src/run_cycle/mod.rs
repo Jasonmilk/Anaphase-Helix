@@ -680,6 +680,19 @@ impl AgentLoop {
          * changes meaning. The refusal is NAMED; turning it into "skip and record" is the next node
          * (`gate.refusal_record`). */
         if let Err(reason) = self.gate.check() {
+            /* A REFUSAL IS A DECLARED ROW, NOT A MISSING NODE (ADR-0048 §235 + §210): with the gate
+             * silent, a refused period produced NO cycle event at all, so "the gate refused", "the
+             * period produced nothing" and "it ran empty" looked alike. Emitting the refusal under its
+             * own phase keeps the DAG readable — the panel can show WHY a period has no steps.
+             * Whether one refusal ENDS the caller's loop stays the caller's policy (ADR-0016 D1):
+             * that is `gate.refusal_skip`, a separate node. */
+            self.emit_cycle(
+                "refused",
+                &format!(
+                    "{{\"reason\":{}}}",
+                    serde_json::to_string(&reason).unwrap_or_else(|_| "\"unprintable\"".to_string())
+                ),
+            );
             return Err(format!("TUCK-GATE-REFUSED: {reason}"));
         }
         self.context.user_input = user_input.to_string();
