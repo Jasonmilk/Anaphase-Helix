@@ -32,6 +32,21 @@ impl HITLApprover {
     }
 
     /// 高风险动作判定：写操作 / 网络请求 / 凭证使用
+    /// THE DECISION SURFACE IS THE CALL, NOT THE NAME (ADR-0048 §213).
+    ///
+    /// Measured: judging the tool name alone intervenes on **0/12** realistic dangerous calls —
+    /// the dangerous content lives in the arguments while the name is neutral ("run_command",
+    /// "shell", "terminal", "executor", "dispatch"…). Worse, the name is produced by the party being
+    /// monitored (`contract/mod.rs:332: tool: name.to_string()` parses the LLM's own
+    /// `ReasoningSignal`), so a name list is an adaptive adversary's easiest thing to defeat
+    /// (measured interception for a 110-name list: 11% at 10³ names, 0.11% at 10⁵).
+    ///
+    /// `args_json` is the SAME serialization the `Some(gate)` path already passes as
+    /// `GateCheck::args_json`, so the two paths finally judge the same thing.
+    pub fn is_high_risk_call(tool: &str, args_json: &str) -> bool {
+        Self::is_high_risk(tool) || Self::is_high_risk(args_json)
+    }
+
     pub fn is_high_risk(command: &str) -> bool {
         const WRITE: &[&str] = &[
             "rm", "mv", "cp", "mkdir", "touch", "truncate", "dd", "shred", "write", "delete",
@@ -137,6 +152,30 @@ pub enum WaitMode {
     AwaitingHuman,
 }
 
+
+    #[test]
+    fn the_surface_is_the_call_not_the_name() {
+        /* §213 measured: name-only ⇒ 0/12 realistic dangerous calls intercepted. These are the
+         * shapes that were let through. */
+        let dangerous = [
+            ("run_command", r#"{"cmd":"rm -rf /data"}"#),
+            ("shell", r#"{"script":"docker run --privileged -v /:/host alpine"}"#),
+            ("terminal", r#"{"input":"sudo chmod 777 /etc"}"#),
+            ("executor", r#"{"code":"python3 -c 'import os; os.system(\"rm -rf /\")'"}"#),
+            ("process", r#"{"bin":"kubectl delete ns prod"}"#),
+            ("dispatch", r#"{"action":"terraform destroy -auto-approve"}"#),
+        ];
+        for (tool, args) in dangerous {
+            assert!(!HITLApprover::is_high_risk(tool), "{tool} alone is neutral (the old surface)");
+            assert!(HITLApprover::is_high_risk_call(tool, args), "{tool} + {args} must be high-risk");
+        }
+        /* AND the other side: noise makes the red worthless (§199/§212). A read with no dangerous
+         * content must stay allowed, or the classifier stops meaning anything. */
+        for (tool, args) in [("ls", "{}"), ("read_file", r#"{"path":"/tmp/a.txt"}"#),
+                             ("grep", r#"{"pattern":"fn main"}"#)] {
+            assert!(!HITLApprover::is_high_risk_call(tool, args), "{tool} + {args} must stay allowed");
+        }
+    }
 
     #[test]
     fn capability_axis_is_high_risk_regardless_of_the_name() {

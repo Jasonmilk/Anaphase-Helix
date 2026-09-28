@@ -205,7 +205,12 @@ impl Pipeline {
                 // deliberate: it is the *weakest* judgement available to us (B4 records
                 // how weak), so it under-blocks rather than over-blocks. Low-risk calls
                 // keep the legacy behaviour this ADR promised.
-                None => crate::hitl::HITLApprover::is_high_risk(&call.tool).then(|| {
+                //
+                // THE SURFACE IS THE CALL, NOT THE NAME (ADR-0048 §213): measured, a name-only
+                // judgement intervenes on 0/12 realistic dangerous calls, because the danger is in
+                // `args` while the name is neutral — and the name is chosen by the LLM. `params` is
+                // already serialized above for this very call, so this costs nothing new.
+                None => crate::hitl::HITLApprover::is_high_risk_call(&call.tool, &params).then(|| {
                     format!(
                         "no security gate configured, and {:?} is high-risk: absence is not \
                          approval (B7). Configure PermissiveGate to opt out explicitly.",
