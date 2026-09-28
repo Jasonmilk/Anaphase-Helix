@@ -26,6 +26,11 @@
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+/// The cooldown the breaker waits before allowing a single half-open probe. Declared once, with its
+/// reason: `health::tcp_reachable` budgets 10s for one connect, so a shorter cooldown would re-probe
+/// a dependency that has not had time to answer the previous probe.
+pub const GATE_COOLDOWN: std::time::Duration = std::time::Duration::from_secs(10);
+
 /// Where the guard stands. `Unconfigured` is the DEFAULT and means "ungoverned": it passes, and
 /// `governance::warning` announces that at startup — a deliberate policy (`health.rs:155-160`),
 /// not an oversight, pinned by `gate_unconfigured_passes`.
@@ -42,6 +47,16 @@ impl Default for Gate {
 }
 
 impl Gate {
+    /// Build the judge from CONFIG (ADR-0048 §233). Two-sided by construction and by test:
+    /// a configured endpoint yields a breaker; an ABSENT or EMPTY endpoint yields `Unconfigured`,
+    /// which is the announced-ungoverned policy — not a silent pass and not an accidental breaker.
+    pub fn from_config(tuck_endpoint: Option<&str>, cooldown: std::time::Duration) -> Gate {
+        match tuck_endpoint.map(str::trim).filter(|s| !s.is_empty()) {
+            Some(ep) => Gate::Breaker(std::sync::Arc::new(TuckBreaker::new(ep, cooldown))),
+            None => Gate::Unconfigured,
+        }
+    }
+
     /// Ask the judge. O(1) and IO-free unless the breaker is `HalfOpen` (the one place a probe is
     /// allowed to happen) or `Closed` **and** the caller asked for a verification probe.
     pub fn check(&self) -> Result<(), String> {
@@ -198,6 +213,20 @@ mod tests {
             calls.fetch_add(1, Ordering::SeqCst);
             Ok(())
         })
+    }
+
+    #[test]
+    fn gate_from_config_is_two_sided() {
+        use std::time::Duration;
+        let none = Gate::from_config(None, Duration::from_secs(5));
+        assert!(matches!(none, Gate::Unconfigured), "absent endpoint ⇒ announced-ungoverned");
+        let empty = Gate::from_config(Some("   "), Duration::from_secs(5));
+        assert!(matches!(empty, Gate::Unconfigured), "blank endpoint is NOT a configured one");
+        let some = Gate::from_config(Some("http://127.0.0.1:60052"), Duration::from_secs(5));
+        assert!(matches!(some, Gate::Breaker(_)), "a configured endpoint yields a breaker");
+        /* And the breaker starts CLOSED, so the first ask does not consult anything: the cost of
+         * asking is paid only where it is needed (§210). */
+        if let Gate::Breaker(b) = &some { assert_eq!(b.state(), GateState::Closed); }
     }
 
     #[test]
