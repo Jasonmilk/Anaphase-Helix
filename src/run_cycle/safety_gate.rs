@@ -75,13 +75,22 @@ pub(super) async fn admit(
     on_audit_error: OnAuditError,
 ) -> GateVerdict {
     match hitl.check_approval(tool, actions) {
-        Ok(true) => {}
-        Ok(false) => {
-            warn!("[SafetyGate] HITL rejected {tool:?}: high-risk action blocked");
+        /* THE FOUR ANSWERS KEEP FOUR NAMES (ADR-0048 §226) — in the LOG, because the verdict's
+         * payload type cannot carry them yet: `GateVerdict::Refused(TransitionCondition)` holds a
+         * state-machine condition, not a reason. So the folding is one layer deeper than the
+         * boolean was: the closed set now flows out of the approver, and the next pipe to widen is
+         * this payload (a third `GateVerdict` variant carrying a reason). Recorded, not papered. */
+        crate::hitl::ApprovalOutcome::AllowedOnce => {}
+        crate::hitl::ApprovalOutcome::Rejected => {
+            warn!("[SafetyGate] HITL rejected {tool:?} (hitl-rejected: a human refused)");
             return GateVerdict::Refused(TransitionCondition::Failure);
         }
-        Err(e) => {
-            warn!("[SafetyGate] HITL unavailable for {tool:?}, blocked (fail-closed): {e}");
+        crate::hitl::ApprovalOutcome::Cancelled => {
+            warn!("[SafetyGate] HITL cancelled {tool:?} (hitl-cancelled: withdrawn mid-question)");
+            return GateVerdict::Refused(TransitionCondition::Failure);
+        }
+        crate::hitl::ApprovalOutcome::Unavailable => {
+            warn!("[SafetyGate] HITL unavailable for {tool:?}, blocked (fail-closed) (hitl-unavailable: no channel could answer)");
             return GateVerdict::Refused(TransitionCondition::Failure);
         }
     }

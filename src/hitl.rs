@@ -9,7 +9,20 @@
 use std::sync::Arc;
 
 /// 人类确认回调：`(command, args) -> Ok(true)=确认放行 / Ok(false)=拒绝 / Err=无通道`
-pub type ApproveFn = Arc<dyn Fn(&str, &[String]) -> Result<bool, String> + Send + Sync>;
+pub type ApproveFn = Arc<dyn Fn(&str, &[String]) -> ApprovalOutcome + Send + Sync>;
+
+/// 把**旧布尔合同**装进闭集（ADR-0048 §226）:`Ok(true) ⇒ AllowedOnce` · `Ok(false) ⇒ Rejected` ·
+/// `Err(_) ⇒ Unavailable`。旧批准者不必改写,而**新批准者可以表达 `Cancelled`**
+/// —— 这是"加宽管子",不是"催工人接线"。
+pub fn from_bool(
+    f: Arc<dyn Fn(&str, &[String]) -> Result<bool, String> + Send + Sync>,
+) -> ApproveFn {
+    Arc::new(move |c, a| match f(c, a) {
+        Ok(true) => ApprovalOutcome::AllowedOnce,
+        Ok(false) => ApprovalOutcome::Rejected,
+        Err(_) => ApprovalOutcome::Unavailable,
+    })
+}
 
 pub struct HITLApprover {
     approver: ApproveFn,
@@ -20,7 +33,7 @@ impl Default for HITLApprover {
         // fail-closed：无确认通道时，高风险动作拦截（Err = 通道缺失）
         Self {
             approver: Arc::new(|_cmd, _args| {
-                Err("No HITL confirmation channel configured".to_string())
+                ApprovalOutcome::Unavailable
             }),
         }
     }
@@ -274,7 +287,9 @@ impl HITLApprover {
     }
 
     /// HITL 执行闸：低风险 → 直接放行；高风险 → 请求人类确认
-    pub fn check_approval(&self, command: &str, args: &[String]) -> Result<bool, String> {
+    pub fn check_approval(&self, command: &str, args: &[String]) -> ApprovalOutcome {
+        /* 不变量(§226 ⑤):`args` 恰好携带一个已序列化的 JSON 值;多余者会被静默忽略。 */
+        debug_assert!(args.len() <= 1, "check_approval expects one serialized args value");
         /* THE UNION, NOT THE REPLACEMENT (ADR-0048 §225, corrected). §225 proposed switching this
          * to `is_high_risk_call(tool, args_json)`; measured, that would LOSE the engine's recall,
          * because `is_dangerous_name("rm -rf /")` is `false` (tokens {rm, rf}: `rf` is not in any
@@ -282,7 +297,7 @@ impl HITLApprover {
          * The engine keeps its command judgement AND gains the args-aware one. */
         let args_json = args.first().cloned().unwrap_or_default();
         if !Self::is_high_risk(command) && !Self::is_high_risk_call(command, &args_json) {
-            return Ok(true);
+            return ApprovalOutcome::AllowedOnce;
         }
         (self.approver)(command, args)
     }
@@ -544,22 +559,22 @@ mod tests {
     fn low_risk_passes_without_approver() {
         // 低风险 → 零延迟放行（即使无确认通道）
         let h = HITLApprover::default();
-        assert_eq!(h.check_approval("echo", &[]).unwrap(), true);
+        assert_eq!(h.check_approval("echo", &[]), ApprovalOutcome::AllowedOnce);
     }
 
     #[test]
     fn high_risk_fail_closed_without_channel() {
         // 高风险 + 无确认通道 → fail-closed 拦截（Err）
         let h = HITLApprover::default();
-        assert!(h.check_approval("rm -rf /data", &[]).is_err());
+        assert_eq!(h.check_approval("rm -rf /data", &[]), ApprovalOutcome::Unavailable);
     }
 
     #[test]
     fn high_risk_approve_deny() {
-        let approve = HITLApprover::new(Arc::new(|_c, _a| Ok(true)));
-        assert_eq!(approve.check_approval("curl http://x", &[]).unwrap(), true);
+        let approve = HITLApprover::new(Arc::new(|_c, _a| ApprovalOutcome::AllowedOnce));
+        assert_eq!(approve.check_approval("curl http://x", &[]), ApprovalOutcome::AllowedOnce);
 
-        let deny = HITLApprover::new(Arc::new(|_c, _a| Ok(false)));
-        assert_eq!(deny.check_approval("curl http://x", &[]).unwrap(), false);
+        let deny = HITLApprover::new(Arc::new(|_c, _a| ApprovalOutcome::Rejected));
+        assert_eq!(deny.check_approval("curl http://x", &[]), ApprovalOutcome::Rejected);
     }
 }

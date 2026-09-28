@@ -37,7 +37,11 @@ impl SafetyAdapter for StubSafety {
 /// write/network/credential lists. `"rm"` is used throughout for that reason, and
 /// getting this wrong is silent — the branch simply never runs.
 fn hitl(answer: Result<bool, String>) -> HITLApprover {
-    HITLApprover::new(Arc::new(move |_c: &str, _a: &[String]| answer.clone()))
+    /* The OLD boolean contract, adapted through the closed set (§226) — the adapter exists so an
+     * existing approver does not have to be rewritten to gain `Cancelled`. */
+    HITLApprover::new(crate::hitl::from_bool(Arc::new(move |_c: &str, _a: &[String]| {
+        answer.clone()
+    })))
 }
 
 /// A tool name that is always high-risk, so `check_approval` reaches the stub.
@@ -146,9 +150,9 @@ async fn pc1_a_low_risk_tool_is_not_consulted_and_a_high_risk_one_is() {
     let calls = Arc::new(AtomicUsize::new(0));
     let counting = {
         let calls = calls.clone();
-        HITLApprover::new(Arc::new(move |_c: &str, _a: &[String]| {
+        HITLApprover::new(Arc::new(move |_c: &str, _a: &[String]| -> crate::hitl::ApprovalOutcome {
             calls.fetch_add(1, Ordering::SeqCst);
-            Err("no channel".to_string())
+            crate::hitl::ApprovalOutcome::Unavailable
         }))
     };
 
@@ -195,9 +199,9 @@ fn pc2_pc1_goes_red_when_its_instrument_is_dead() {
     // Drive the real path PC-1 drives, so the scenario is identical.
     let live = Arc::new(AtomicUsize::new(0));
     let live_counter = live.clone();
-    let approver = HITLApprover::new(Arc::new(move |_c: &str, _a: &[String]| {
+    let approver = HITLApprover::new(Arc::new(move |_c: &str, _a: &[String]| -> crate::hitl::ApprovalOutcome {
         live_counter.fetch_add(1, Ordering::SeqCst);
-        Err("no channel".to_string())
+        crate::hitl::ApprovalOutcome::Unavailable
     }));
     let _ = approver.check_approval(HIGH_RISK, &[]);
 
