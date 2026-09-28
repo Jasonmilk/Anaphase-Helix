@@ -10,6 +10,7 @@ pub mod config;
 pub mod hitl;
 pub mod lifecycle;
 pub mod task_dag;
+pub mod capability;
 pub mod gate;
 pub mod gloves;
 pub mod events;
