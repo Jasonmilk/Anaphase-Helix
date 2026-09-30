@@ -263,20 +263,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             "configured": false, "missing": true, "events": []
                         }));
                     };
-                    let job_id = params
-                        .get("job_id")
+                    /* ACCEPTED NAMES, ONE KEY (ADR-0048 §296): the value is a period id OR a job id and
+                     * is classified by SHAPE (`PeriodRef::parse`), so the parameter NAME carried no
+                     * information — it only lied (`?job_id=<period_id>`). `id` is the honest name;
+                     * `job_id` and `period_id` stay accepted so no caller breaks in one step. The error
+                     * names all three: a misspelling must not look like missing data. */
+                    let key = params
+                        .get("id")
+                        .or_else(|| params.get("job_id"))
+                        .or_else(|| params.get("period_id"))
                         .map(|s| s.as_str())
                         .filter(|s| !s.is_empty())
                         .unwrap_or_default();
-                    if job_id.is_empty() {
+                    if key.is_empty() {
                         return Json(serde_json::json!({
                             "configured": true, "missing": true, "events": [],
-                            "error": "job_id required"
+                            "error": "id required (accepted names: id, job_id, period_id)"
                         }));
                     }
                     match anaphase::session_events::read_period(
                         std::path::Path::new(dir),
-                        job_id,
+                        key,
                     ) {
                         Ok(events) => Json(serde_json::json!({
                             "configured": true, "missing": false, "events": events
