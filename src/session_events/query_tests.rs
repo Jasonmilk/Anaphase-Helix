@@ -320,3 +320,81 @@
         assert!(read_period(&dir, "missing").is_err(), "unknown id must error");
         let _ = fs::remove_dir_all(&dir);
     }
+
+/// THE CONVERSATION IS THE LINEAGE ROOT, DECLARED BY THE READER (ADR-0048 §297).
+///
+/// `job_id` is a content digest: two conversations that open with the same words share it, so it can
+/// never name a conversation (measured on the live store: 22 job ids stood in for 79 chains).
+/// NOTE the fixture ids are SHAPE-VALID period ids (`run-<16 hex>-p<16 hex>`) — a `resume_from` that is
+/// not period-shaped is treated as a JOB reference and REFUSED (see `job_id_parent_refused`), which is
+/// exactly how the first version of these tests deceived itself.
+#[test]
+fn conversation_root_names_itself_and_continuations_inherit_it() {
+    let dir = test_support::tmp_dir("conversation_root_names_itself");
+    let root_id = "run-aaaaaaaaaaaaaaaa-p0000000001000001";
+    let child_id = "run-bbbbbbbbbbbbbbbb-p0000000002000002";
+    let mut root = SessionEventStream::open(dir.clone(), root_id, "job-r", Redaction::default()).unwrap();
+    root.emit("2026-09-30T00:00:00Z", EventType::UserMessage, json!({ "text": "hello" })).unwrap();
+    root.emit("2026-09-30T00:00:01Z", EventType::TurnEnd, json!({})).unwrap();
+    let mut child = SessionEventStream::open(dir.clone(), child_id, "job-c", Redaction::default()).unwrap();
+    child.emit("2026-09-30T00:00:05Z", EventType::ContextInject, json!({ "resume_from": root_id })).unwrap();
+    child.emit("2026-09-30T00:00:06Z", EventType::UserMessage, json!({ "text": "again" })).unwrap();
+    child.emit("2026-09-30T00:00:07Z", EventType::TurnEnd, json!({})).unwrap();
+
+    let list = list_periods(&dir, 10).unwrap();
+    let by = |id: &str| list.iter().find(|p| p.period_id == id).cloned().unwrap();
+    assert_eq!(by(root_id).parent, None, "the root has no parent");
+    assert_eq!(by(root_id).conversation_id.as_deref(), Some(root_id), "a root names itself");
+    assert_eq!(by(child_id).parent.as_deref(), Some(root_id), "the continuation points at its root");
+    assert_eq!(by(child_id).conversation_id.as_deref(), Some(root_id), "a continuation inherits its root");
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn two_conversations_sharing_a_job_id_stay_two() {
+    let dir = test_support::tmp_dir("same_job_two_conversations");
+    // SAME job id on both chains: the digest repeats by construction.
+    for (pid, ts) in [("run-cccccccccccccccc-p0000000003000003", "2026-09-30T01:00:00Z"),
+                      ("run-dddddddddddddddd-p0000000004000004", "2026-09-30T02:00:00Z")] {
+        let mut p = SessionEventStream::open(dir.clone(), pid, "run-same-digest", Redaction::default()).unwrap();
+        p.emit(ts, EventType::UserMessage, json!({ "text": "same opening words" })).unwrap();
+        p.emit(ts, EventType::TurnEnd, json!({})).unwrap();
+    }
+    let list = list_periods(&dir, 10).unwrap();
+    let conv: Vec<String> = list.iter().filter_map(|p| p.conversation_id.clone()).collect();
+    assert_eq!(list.len(), 2);
+    assert_eq!(conv.len(), 2, "both roots declare a conversation");
+    assert_ne!(conv[0], conv[1], "sharing a job_id must NOT fuse two conversations");
+    assert_eq!(list[0].job_id, list[1].job_id, "and the digest really does repeat here");
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_root_outside_the_window_is_named_absent() {
+    let dir = test_support::tmp_dir("conversation_root_outside_window");
+    let r1 = "run-1111111111111111-p0000000001000001";
+    let r2 = "run-2222222222222222-p0000000002000002";
+    let r3 = "run-3333333333333333-p0000000003000003";
+    let mut p1 = SessionEventStream::open(dir.clone(), r1, "job-1", Redaction::default()).unwrap();
+    p1.emit("2026-09-30T00:00:00Z", EventType::UserMessage, json!({ "text": "one" })).unwrap();
+    p1.emit("2026-09-30T00:00:01Z", EventType::TurnEnd, json!({})).unwrap();
+    let mut p2 = SessionEventStream::open(dir.clone(), r2, "job-2", Redaction::default()).unwrap();
+    p2.emit("2026-09-30T00:00:10Z", EventType::ContextInject, json!({ "resume_from": r1 })).unwrap();
+    p2.emit("2026-09-30T00:00:11Z", EventType::TurnEnd, json!({})).unwrap();
+    let mut p3 = SessionEventStream::open(dir.clone(), r3, "job-3", Redaction::default()).unwrap();
+    p3.emit("2026-09-30T00:00:20Z", EventType::ContextInject, json!({ "resume_from": r2 })).unwrap();
+    p3.emit("2026-09-30T00:00:21Z", EventType::TurnEnd, json!({})).unwrap();
+
+    let full = list_periods(&dir, 10).unwrap();
+    assert_eq!(full.iter().find(|p| p.period_id == r3).unwrap().conversation_id.as_deref(),
+               Some(r1), "with the root in the window the answer IS the root");
+
+    let cut = list_periods(&dir, 2).unwrap();   /* the root is now OUTSIDE the window */
+    assert_eq!(cut.len(), 2);
+    for p in &cut {
+        assert_eq!(p.conversation_id, None,
+                   "a window-dependent root is not a fact: {} must report ABSENCE, not the oldest visible ancestor",
+                   p.period_id);
+    }
+    let _ = fs::remove_dir_all(&dir);
+}

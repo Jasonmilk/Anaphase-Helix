@@ -124,6 +124,12 @@ pub struct PeriodSummary {
     /// Continuation parent (`context/inject.resume_from`): this period is a
     /// direct continuation of that one. Null = a fresh conversation root.
     pub parent: Option<String>,
+    /// THE CONVERSATION THIS PERIOD BELONGS TO (ADR-0048 §297): the ROOT of its `parent` chain.
+    /// `Some(id)` — the root's own id (a root names itself, a continuation inherits it).
+    /// `None` — the chain is TRUNCATED by the requested window: the root is not in it, so the answer
+    /// would depend on the window rather than on the data. Absence is NAMED, never guessed.
+    /// `job_id` is a content digest and may repeat across rows, so it can never serve as this key.
+    pub conversation_id: Option<String>,
     /// Physical model that served the period (ADR-0036): from the upstream
     /// response, not the config declaration. Null = adapter saw no model.
     pub model: Option<String>,
@@ -221,6 +227,7 @@ pub fn list_periods(dir: &std::path::Path, limit: usize) -> io::Result<Vec<Perio
             continue;
         }
         out.push(PeriodSummary {
+            conversation_id: None,   /* filled after the window is known — see below */
             // Identity first, replay handle second: a client keys on
             // `period_id`, and `job_id` is kept because callers still hold it.
             period_id: if period_id.is_empty() {
@@ -271,5 +278,40 @@ pub fn list_periods(dir: &std::path::Path, limit: usize) -> io::Result<Vec<Perio
             .then_with(|| a.period_id.cmp(&b.period_id))
     });
     out.truncate(limit);
+    /* THE CONVERSATION IS THE LINEAGE ROOT, DECLARED BY THE READER (ADR-0048 §297).
+     * `job_id` is a content digest that legitimately repeats across conversations, so it can never name
+     * one. The root is derived from the IMMUTABLE `parent` links: a root names itself, a continuation
+     * inherits its root's id. TWO ENDINGS ARE NAMED rather than guessed:
+     *   · the walk leaves the returned window ⇒ `None` (a window-dependent root would be a "fact" that
+     *     changes with `limit` — the drift this cell keeps meeting);
+     *   · the walk revisits a node ⇒ `None` (a cycle is not a conversation). */
+    {
+        use std::collections::{HashMap, HashSet};
+        let parent_of: HashMap<String, Option<String>> = out
+            .iter()
+            .map(|s| (s.period_id.clone(), s.parent.clone()))
+            .collect();
+        let mut roots: HashMap<String, Option<String>> = HashMap::new();
+        for s in &out {
+            let mut cur = s.period_id.clone();
+            let mut seen: HashSet<String> = HashSet::new();
+            let root = loop {
+                if !seen.insert(cur.clone()) {
+                    break None; /* cycle */
+                }
+                match parent_of.get(&cur) {
+                    Some(Some(p)) => {
+                        cur = p.clone();
+                    }
+                    Some(None) => break Some(cur.clone()), /* a true root: it names itself */
+                    None => break None,                    /* left the window: truncated */
+                }
+            };
+            roots.insert(s.period_id.clone(), root);
+        }
+        for s in out.iter_mut() {
+            s.conversation_id = roots.get(&s.period_id).cloned().flatten();
+        }
+    }
     Ok(out)
 }
