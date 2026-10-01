@@ -29,7 +29,10 @@ pub use identity::{
 pub use crystallize::{crystallize, CrystalSuggestion};
 pub use naming::{freeze_name, rename_period};
 pub use query::{count_tombstoned, list_periods, read_period, read_summary, PeriodSummary};
-pub use refs::{delete_ref, list_refs, read_ref, read_ref_log, write_ref, RefEntry, RefLogEntry};
+pub use refs::{
+    delete_ref, list_refs, read_ref, read_ref_log, release_stale_writer, write_ref, RefEntry, RefLogEntry,
+    WriterLock,
+};
 pub use types_and_stream::{repair_torn_tail, EventType, SessionEvent, SessionEventStream};
 
 #[cfg(test)]

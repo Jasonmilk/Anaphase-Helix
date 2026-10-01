@@ -191,6 +191,7 @@ pub fn read_ref(events_dir: &Path, name: &str) -> io::Result<Option<String>> {
 /// support must close (or explicitly acknowledge) that window with a CONCURRENCY criterion, not by luck.
 pub fn write_ref(events_dir: &Path, name: &str, period_ref: &str) -> io::Result<String> {
     check_ref_name(name)?;
+    let _writer = WriterLock::acquire(events_dir)?;   /* the check-then-write window, closed by naming */
     let target = period_ref.trim();
     if target.is_empty() {
         return Err(io::Error::new(
@@ -231,6 +232,7 @@ pub fn write_ref(events_dir: &Path, name: &str, period_ref: &str) -> io::Result<
 /// Remove a ref. `Ok(false)` = there was nothing to remove (again a NAMED absence).
 pub fn delete_ref(events_dir: &Path, name: &str) -> io::Result<bool> {
     check_ref_name(name)?;
+    let _writer = WriterLock::acquire(events_dir)?;
     let old = read_ref(events_dir, name)?;
     match fs::remove_file(refs_dir(events_dir).join(name)) {
         Ok(()) => {
@@ -287,4 +289,80 @@ fn collect_refs(root: &Path, dir: &Path, out: &mut Vec<RefEntry>) -> io::Result<
         out.push(RefEntry { name: rel, period_id });
     }
     Ok(())
+}
+
+/* ── THE WRITER LOCK (ADR-0048 §322, ledger P14/P15) ──────────────────────────────────────────────
+ * `write_ref` READS the previous value and then writes: a check-then-write window. A comment cannot
+ * refuse a second writer, and M5 (the Tauri shell) is a KNOWN future second writer — so the window is
+ * closed with a lock that NAMES its holder and can only be broken by an explicit act.
+ *
+ * Advisory by construction: a process that ignores `.refs/.writer` can still write. That limit is DECLARED
+ * here rather than implied, because "we hold a lock" and "nobody else can write" are different claims. */
+const WRITER_STALE_SECS: u64 = 300; /* declared threshold (ADR-0022 §2.5): older locks are named, never stolen */
+
+fn writer_lock_path(events_dir: &Path) -> PathBuf {
+    refs_dir(events_dir).join(".writer")
+}
+
+fn now_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+/// Held for the duration of one write; released on drop (a panic releases it too).
+#[derive(Debug)]
+pub struct WriterLock {
+    path: PathBuf,
+}
+
+impl WriterLock {
+    /// Take the lock, or refuse BY NAME and say who holds it.
+    pub fn acquire(events_dir: &Path) -> io::Result<WriterLock> {
+        let dir = refs_dir(events_dir);
+        fs::create_dir_all(&dir)?;
+        let path = writer_lock_path(events_dir);
+        match fs::OpenOptions::new().create_new(true).write(true).open(&path) {
+            Ok(mut f) => {
+                use std::io::Write;
+                let body = format!("{{\"pid\":{},\"since\":{}}}\n", std::process::id(), now_secs());
+                f.write_all(body.as_bytes())?;
+                Ok(WriterLock { path })
+            }
+            Err(e) if e.kind() == ErrorKind::AlreadyExists => {
+                let held = fs::read_to_string(&path).unwrap_or_default();
+                let since = serde_json::from_str::<serde_json::Value>(held.trim())
+                    .ok()
+                    .and_then(|v| v.get("since").and_then(|x| x.as_u64()))
+                    .unwrap_or(0);
+                let stale = now_secs().saturating_sub(since) > WRITER_STALE_SECS;
+                Err(io::Error::new(
+                    ErrorKind::WouldBlock,
+                    format!(
+                        "another writer holds {} ({}{}). A second writer must be REFUSED, not merged:                          M5 (the shell) is a known future one. If that holder is gone, break the lock                          EXPLICITLY with `release_stale_writer`.",
+                        path.display(),
+                        held.trim(),
+                        if stale { " — STALE according to the declared threshold" } else { "" }
+                    ),
+                ))
+            }
+            Err(e) => Err(e),
+        }
+    }
+}
+
+impl Drop for WriterLock {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.path);
+    }
+}
+
+/// Break a lock **deliberately**. Returns whether there was one to break (a NAMED absence otherwise).
+pub fn release_stale_writer(events_dir: &Path) -> io::Result<bool> {
+    match fs::remove_file(writer_lock_path(events_dir)) {
+        Ok(()) => Ok(true),
+        Err(e) if e.kind() == ErrorKind::NotFound => Ok(false),
+        Err(e) => Err(e),
+    }
 }

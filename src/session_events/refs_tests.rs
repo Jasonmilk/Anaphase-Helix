@@ -282,3 +282,42 @@ fn a_torn_tail_is_refused_by_name_and_can_be_repaired_explicitly() {
     assert_eq!(uniq.len(), seqs.len(), "after the repair, no seq is reused: {seqs:?}");
     let _ = fs::remove_dir_all(&dir);
 }
+
+/// ⑤ THE WRITER LOCK (ADR-0048 §322). "Single writer" as a comment is worth 0 bits, and M5 (the shell) is
+/// a known future second writer: the second writer must be REFUSED BY NAME, and breaking a lock must be a
+/// deliberate act rather than a timeout.
+#[test]
+fn a_second_writer_is_refused_by_name_and_released_on_drop() {
+    let dir = test_support::tmp_dir("writer_lock");
+    let first = WriterLock::acquire(&dir).unwrap();
+    let err = WriterLock::acquire(&dir).unwrap_err();
+    let msg = err.to_string();
+    assert!(msg.contains("another writer holds"), "the refusal NAMES the holder: {msg}");
+    assert!(msg.contains("release_stale_writer"), "and names the deliberate way out: {msg}");
+    drop(first);
+    assert!(WriterLock::acquire(&dir).is_ok(), "dropping the lock releases it");
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_ref_write_takes_and_releases_the_lock() {
+    let dir = test_support::tmp_dir("writer_lock_around_write");
+    let pid = "run-aaaabbbbccccdddd-p0000000022000022";
+    period(&dir, pid, "job-w");
+    write_ref(&dir, "current", pid).unwrap();
+    assert!(!dir.join(".refs").join(".writer").exists(),
+            "the write released the lock (a stale file would block the NEXT writer)");
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_stale_lock_is_named_and_only_broken_explicitly() {
+    let dir = test_support::tmp_dir("writer_lock_stale");
+    fs::create_dir_all(dir.join(".refs")).unwrap();
+    fs::write(dir.join(".refs").join(".writer"), "{\"pid\":1,\"since\":1}\n").unwrap();
+    let err = WriterLock::acquire(&dir).unwrap_err();
+    assert!(err.to_string().contains("STALE"), "an old lock is NAMED stale, not silently stolen: {err}");
+    assert_eq!(release_stale_writer(&dir).unwrap(), true, "the explicit break reports that there was one");
+    assert_eq!(release_stale_writer(&dir).unwrap(), false, "and a second break is a NAMED absence");
+    let _ = fs::remove_dir_all(&dir);
+}
