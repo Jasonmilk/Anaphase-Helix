@@ -30,8 +30,9 @@ pub use crystallize::{crystallize, CrystalSuggestion};
 pub use naming::{freeze_name, rename_period};
 pub use query::{count_tombstoned, list_periods, read_period, read_summary, PeriodSummary};
 pub use refs::{
-    delete_ref, list_refs, read_ref, read_ref_log, release_stale_writer, write_ref, RefEntry, RefLogEntry,
-    WriterLock,
+    check_retention_covers_grace, delete_ref, list_refs, read_ref, read_ref_log, release_stale_writer,
+    retention_covers_grace, write_ref, RefEntry, RefLogEntry, WriterLock, REF_MOVE_GRACE_SECS,
+    REF_MOVE_RETENTION_SECS,
 };
 pub use types_and_stream::{repair_torn_tail, EventType, SessionEvent, SessionEventStream};
 

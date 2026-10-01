@@ -321,3 +321,22 @@ fn a_stale_lock_is_named_and_only_broken_explicitly() {
     assert_eq!(release_stale_writer(&dir).unwrap(), false, "and a second break is a NAMED absence");
     let _ = fs::remove_dir_all(&dir);
 }
+
+/// ⑧ RETENTION ≥ GRACE (ADR-0048 §323). The vacancy fact must outlive the window that depends on it; the
+/// two numbers live in ONE place and their relation is a criterion, not a sentence.
+#[test]
+fn the_declared_retention_covers_the_grace_window() {
+    let (retention, grace) = check_retention_covers_grace()
+        .expect("the declared pair must satisfy retention >= grace");
+    assert!(retention >= grace, "retention {retention}s vs grace {grace}s");
+    assert!(grace > 0 && retention > 0, "both windows are real quantities, not zeros");
+}
+
+#[test]
+fn the_retention_check_can_go_red() {
+    /* MUTATION: the pure comparison must refuse the under-protecting case — otherwise the criterion above
+     * would be a tautology that passes for any pair. */
+    assert_eq!(retention_covers_grace(10, 20), false, "shorter retention ⇒ under-protection");
+    assert_eq!(retention_covers_grace(20, 10), true);
+    assert_eq!(retention_covers_grace(20, 20), true, "equality is enough: the anchor survives the window");
+}

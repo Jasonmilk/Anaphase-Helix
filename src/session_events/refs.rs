@@ -366,3 +366,29 @@ pub fn release_stale_writer(events_dir: &Path) -> io::Result<bool> {
         Err(e) => Err(e),
     }
 }
+
+/* ── RETENTION MUST COVER THE GRACE WINDOW (ADR-0048 §323, ledger P16) ─────────────────────────────
+ * The grace window decides when a vacated position may be recycled; the retention window decides how long
+ * the VACANCY FACT survives. If retention is shorter, the anchor is trimmed BEFORE it is needed and the
+ * protection silently disappears — the reviewer measured 82% under-protection at 50 entries versus 14
+ * days. Both numbers live here, in ONE place, and the relation between them is a criterion rather than a
+ * sentence: `retention >= grace`, checked by a pure function so the check itself can go red. */
+pub const REF_MOVE_GRACE_SECS: u64 = 14 * 24 * 3600;      /* how long a vacancy is protected */
+pub const REF_MOVE_RETENTION_SECS: u64 = 30 * 24 * 3600;  /* how long the FACT that records it survives */
+
+/// Pure, so the criterion can be falsified (`covers(10, 20) == false`).
+pub fn retention_covers_grace(retention: u64, grace: u64) -> bool {
+    retention >= grace
+}
+
+/// The declared pair must satisfy it — and any future trimming site MUST consult this, not its own copy
+/// of the numbers (a second copy of a threshold is how the two windows drift apart).
+pub fn check_retention_covers_grace() -> Result<(u64, u64), String> {
+    if retention_covers_grace(REF_MOVE_RETENTION_SECS, REF_MOVE_GRACE_SECS) {
+        Ok((REF_MOVE_RETENTION_SECS, REF_MOVE_GRACE_SECS))
+    } else {
+        Err(format!(
+            "retention ({REF_MOVE_RETENTION_SECS}s) is SHORTER than the grace window ({REF_MOVE_GRACE_SECS}s):              the vacancy fact would be trimmed before it is needed, and the protection would vanish silently"
+        ))
+    }
+}
