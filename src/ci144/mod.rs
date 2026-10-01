@@ -227,11 +227,9 @@ pub fn project_snapshot(
 ) -> SemanticSnapshot {
     use crate::states::HelixState;
 
-    let mode_str = match snap.mode {
-        crate::config::Mode::Drive => "driving",
-        crate::config::Mode::Partner => "partner",
-        crate::config::Mode::Survive => "survival",
-    };
+    /* ONE MAPPING, NOT TWO (ADR-0048 §340): the strings live in `config::mode_wire`, so the panel and this
+     * envelope can never drift apart again. */
+    let mode_str = crate::config::mode_wire(snap.mode);
     let state_str = match snap.state {
         HelixState::Perception => "Perception",
         HelixState::PreAssessment => "PreAssessment",

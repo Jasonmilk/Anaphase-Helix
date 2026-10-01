@@ -507,3 +507,19 @@ fn a_vacancy_whose_object_is_gone_is_named_object_gone() {
     assert_eq!(v.state, "object-gone", "a vacancy whose subject is gone is NAMED, not called protected");
     let _ = fs::remove_dir_all(&dir);
 }
+
+/// The mode vocabulary (ADR-0048 §340): ONE mapping, and the inverse must round-trip. If the panel keyed on
+/// the enum names while a payload carried these strings, a declared mode would read as "undeclared".
+#[test]
+fn the_mode_wire_vocabulary_is_one_mapping_and_round_trips() {
+    use crate::config::{mode_from_wire, mode_wire, Mode};
+    let all = [Mode::Drive, Mode::Partner, Mode::Survive];
+    let wires: Vec<&str> = all.iter().map(|m| mode_wire(*m)).collect();
+    assert_eq!(wires, vec!["driving", "partner", "survival"], "the protocol values, in one place");
+    for m in all {
+        assert_eq!(mode_from_wire(mode_wire(m)), Some(m), "every value round-trips: {m:?}");
+    }
+    assert_eq!(mode_from_wire("Partner"), None,
+               "the ENUM NAME is not the wire value — accepting it would hide the drift again");
+    assert_eq!(mode_from_wire("partner "), None, "and a near-miss is unknown, not guessed");
+}

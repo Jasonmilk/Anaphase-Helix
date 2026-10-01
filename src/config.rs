@@ -22,6 +22,28 @@ pub enum Mode {
     Survive,
 }
 
+/// THE ONE WIRE VOCABULARY FOR MODES (ADR-0048 §340). It used to exist twice: `ci144` mapped the enum to
+/// `driving`/`partner`/`survival` while the panel's `MODES` table keyed on the ENUM NAMES. A payload written
+/// with one vocabulary and read with the other reports "mode undeclared" for a mode that IS declared — the
+/// exact shape of the wall the reviewer named. One mapping, both ends, and a criterion that compares them.
+pub fn mode_wire(mode: Mode) -> &'static str {
+    match mode {
+        Mode::Drive => "driving",
+        Mode::Partner => "partner",
+        Mode::Survive => "survival",
+    }
+}
+
+/// The inverse, so a reader can name a value it did not write (`None` = an unknown value, NAMED as unknown).
+pub fn mode_from_wire(value: &str) -> Option<Mode> {
+    match value {
+        "driving" => Some(Mode::Drive),
+        "partner" => Some(Mode::Partner),
+        "survival" => Some(Mode::Survive),
+        _ => None,
+    }
+}
+
 impl Default for Mode {
     fn default() -> Self {
         Self::Partner // Helix's native state: a memory-bearing partner
