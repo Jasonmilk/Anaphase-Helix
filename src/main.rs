@@ -316,6 +316,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
              * ref under `<events>/.refs/<name>`), so a restart does not erase it and every reader shares
              * it. Refusals are NAMED: an unsafe name, a target that resolves to nothing, an ambiguous
              * target — none of them stores a pointer. */
+            /* D0 — THE TOMBSTONE (ADR-0048 §326): deletion AS A FACT. A writer that appends (never rewrites),
+             * refuses a torn tail by name, and holds the writer lock. The period is RESOLVED first, so an
+             * unknown or ambiguous key is refused by name. */
+            .route("/v1/periods/tombstone", post({
+                let events_dir = config.anaphase.session_events_path.clone();
+                move |Json(body): Json<serde_json::Value>| async move {
+                    let Some(dir) = events_dir.as_deref() else {
+                        return Json(serde_json::json!({ "ok": false, "error": "session events not configured" }));
+                    };
+                    let period = body.get("period_id").and_then(|v| v.as_str()).unwrap_or("");
+                    let reason = body.get("reason").and_then(|v| v.as_str()).unwrap_or("");
+                    match anaphase::session_events::tombstone_period(std::path::Path::new(dir), period, reason) {
+                        Ok(id) => Json(serde_json::json!({ "ok": true, "period_id": id })),
+                        Err(e) => Json(serde_json::json!({ "ok": false, "error": e.to_string() })),
+                    }
+                }
+            }))
             .route("/v1/refs", get({
                 let events_dir = config.anaphase.session_events_path.clone();
                 move || async move {

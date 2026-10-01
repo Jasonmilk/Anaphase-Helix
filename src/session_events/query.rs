@@ -166,6 +166,32 @@ pub fn count_tombstoned(dir: &std::path::Path) -> io::Result<usize> {
 /// caught by the test "every byte stays on disk". The fix is an append mode that recovers the last `seq`;
 /// until it exists, nothing in this crate writes a tombstone, and the read side below stays inert.
 ///
+
+/// D0 — WRITE A TOMBSTONE, SAFELY (ADR-0048 §326). The first version used `open`, which carries `seq` from 0
+/// and writes at offset 0: it OVERWROTE the period's history (the criterion "every byte stays on disk"
+/// caught it, and the writer was withdrawn). Four guards now make it safe, all of them already criteria:
+/// `open_append` continues from max+1 · a missing trailing newline is repaired before appending · a torn
+/// tail is REFUSED by name (never skipped) · the writer lock names a second writer.
+pub fn tombstone_period(dir: &std::path::Path, key: &str, reason: &str) -> io::Result<String> {
+    let _writer = super::refs::WriterLock::acquire(dir)?;
+    let id = super::identity::resolve_one(dir, key)?;
+    if count_tombstoned_of(dir, &id)? {
+        return Ok(id); /* idempotent: a fact repeated is not a new fact */
+    }
+    let mut stream = super::types_and_stream::SessionEventStream::open_append(
+        dir.to_path_buf(),
+        &id,
+        &id,
+        crate::trace::Redaction::default(),
+    )?;
+    stream.emit(
+        &super::types_and_stream::now_ts(),
+        EventType::Tombstone,
+        serde_json::json!({ "reason": reason }),
+    )?;
+    Ok(id)
+}
+
 /// Is THIS period tombstoned? (the per-period half of `count_tombstoned`).
 pub fn count_tombstoned_of(dir: &std::path::Path, period_id: &str) -> io::Result<bool> {
     let path = dir.join(format!("{period_id}.events.jsonl"));

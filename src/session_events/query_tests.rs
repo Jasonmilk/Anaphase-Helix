@@ -463,3 +463,43 @@ fn an_untombstoned_store_counts_zero() {
     assert_eq!(count_tombstoned(&dir).unwrap(), 0, "a store with nothing deleted says ZERO, not nothing");
     let _ = fs::remove_dir_all(&dir);
 }
+
+/// M2-A — THE TOMBSTONE WRITER (ADR-0048 §326). The first version OVERWROTE the period's history; this one
+/// must ADD a row, and every guard that makes that true is itself a criterion elsewhere.
+#[test]
+fn the_tombstone_writer_appends_without_destroying_history() {
+    let dir = test_support::tmp_dir("tombstone_writer_safe");
+    let pid = "run-abcdabcdabcdabcd-p0000000024000024";
+    {
+        let mut s = SessionEventStream::open(dir.clone(), pid, pid, Redaction::default()).unwrap();
+        s.emit("2026-10-01T00:00:00Z", EventType::UserMessage, json!({ "text": "keep me" })).unwrap();
+        s.emit("2026-10-01T00:00:01Z", EventType::TurnEnd, json!({})).unwrap();
+    }
+    assert_eq!(list_periods(&dir, 10).unwrap().len(), 1, "listed before");
+
+    let id = tombstone_period(&dir, pid, "owner deleted it").unwrap();
+    assert_eq!(id, pid);
+
+    let body = fs::read_to_string(dir.join(format!("{pid}.events.jsonl"))).unwrap();
+    let rows: Vec<serde_json::Value> = body
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| serde_json::from_str(l).unwrap_or_else(|e| panic!("row must parse on its own line: {e}")))
+        .collect();
+    assert!(rows.len() >= 3, "the tombstone is ADDED, not written over the history: {} rows", rows.len());
+    assert!(body.contains("turn/end"), "the earlier rows are still there");
+    assert_eq!(count_tombstoned(&dir).unwrap(), 1, "and the hide is counted");
+    assert_eq!(list_periods(&dir, 10).unwrap().len(), 0, "readers no longer see it");
+
+    let mut seqs: Vec<u64> = rows.iter().filter_map(|r| r.get("seq").and_then(|v| v.as_u64())).collect();
+    let before = seqs.len();
+    seqs.sort_unstable();
+    seqs.dedup();
+    assert_eq!(seqs.len(), before, "no seq is re-used");
+
+    let again = tombstone_period(&dir, pid, "second time").unwrap();
+    assert_eq!(again, pid);
+    let after = fs::read_to_string(dir.join(format!("{pid}.events.jsonl"))).unwrap();
+    assert_eq!(after.matches("period/tombstone").count(), 1, "idempotent: a fact repeated is not a new fact");
+    let _ = fs::remove_dir_all(&dir);
+}
