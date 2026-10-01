@@ -313,3 +313,61 @@ pub fn replay_exists(dir: &std::path::Path) -> std::io::Result<Vec<String>> {
 pub fn replay_exists_ignoring_purge(dir: &std::path::Path) -> std::io::Result<Vec<String>> {
     Ok(scan(dir, true)?.1)
 }
+
+/* ── D2: CONTENT DESTRUCTION (ADR-0048 §332) ──────────────────────────────────────────────────────
+ * The third knob. `D0` hides, `D1` records that the object is gone; `D2` removes the CONTENT of objects
+ * that are staying (or already gone). Two rules decide the shape:
+ *   · **ID AND PARENT SURVIVE** (C7). Deleting whole files breaks the chain — the child's `resume_from`
+ *     would point at an id nothing can resolve any more, and the reader would (correctly) report a
+ *     dangling parent. So the rows stay, with identity, lineage, `seq` and `time` untouched.
+ *   · **DESTRUCTION NAMES ITSELF.** A row whose `text` was destroyed must not look like a row that never
+ *     had text: that is the three-state law this project keeps meeting ("absent" ≠ "empty" ≠ "destroyed").
+ *     Each affected row gains `data.content = "destroyed"`.
+ * Rewriting is the one place this store is not append-only, so it happens under the WRITER LOCK. */
+const CONTENT_KEYS: [&str; 8] = ["text", "reply", "reason", "summary", "args", "result", "preview", "content_body"];
+
+/// Returns how many rows had content destroyed (`0` = a NAMED absence: nothing carried any).
+pub fn purge_content(dir: &std::path::Path, ids: &[String]) -> std::io::Result<usize> {
+    let _writer = super::refs::WriterLock::acquire(dir)?;
+    let mut destroyed_rows = 0usize;
+    for id in ids {
+        let path = dir.join(format!("{id}.events.jsonl"));
+        let body = match std::fs::read_to_string(&path) {
+            Ok(b) => b,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!("cannot destroy content of {id}: no such stream ({})", path.display()),
+                ))
+            }
+            Err(e) => return Err(e),
+        };
+        let mut out = String::new();
+        for line in body.lines() {
+            if line.trim().is_empty() {
+                continue;
+            }
+            let mut v: serde_json::Value = serde_json::from_str(line).map_err(|e| {
+                std::io::Error::new(std::io::ErrorKind::InvalidData, format!("torn row in {id}: {e}"))
+            })?;
+            let mut hit = false;
+            if let Some(data) = v.get_mut("data").and_then(|d| d.as_object_mut()) {
+                for key in CONTENT_KEYS {
+                    if data.remove(key).is_some() {
+                        hit = true;
+                    }
+                }
+                if hit {
+                    data.insert("content".to_string(), serde_json::Value::String("destroyed".to_string()));
+                }
+            }
+            if hit {
+                destroyed_rows += 1;
+            }
+            out.push_str(&serde_json::to_string(&v).unwrap_or_else(|_| line.to_string()));
+            out.push('\n');
+        }
+        std::fs::write(&path, out)?;
+    }
+    Ok(destroyed_rows)
+}

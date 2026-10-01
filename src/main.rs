@@ -337,6 +337,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
             }))
+            /* D2 — CONTENT DESTRUCTION (ADR-0048 §332): the third knob. It rewrites ROWS (keeping identity,
+             * lineage, `seq` and `time`) because deleting files would break the chain; every affected row is
+             * marked `content: destroyed`, so "destroyed" never reads as "there was never any". */
+            .route("/v1/periods/purge-content", post({
+                let events_dir = config.anaphase.session_events_path.clone();
+                move |Json(body): Json<serde_json::Value>| async move {
+                    let Some(dir) = events_dir.as_deref() else {
+                        return Json(serde_json::json!({ "ok": false, "error": "session events not configured" }));
+                    };
+                    let ids: Vec<String> = body
+                        .get("period_ids")
+                        .and_then(|v| v.as_array())
+                        .map(|a| a.iter().filter_map(|x| x.as_str().map(|s| s.to_string())).collect())
+                        .unwrap_or_default();
+                    match anaphase::session_events::purge_content(std::path::Path::new(dir), &ids) {
+                        Ok(n) => Json(serde_json::json!({ "ok": true, "destroyed_rows": n })),
+                        Err(e) => Json(serde_json::json!({ "ok": false, "error": e.to_string() })),
+                    }
+                }
+            }))
             .route("/v1/periods/collect", post({
                 let events_dir = config.anaphase.session_events_path.clone();
                 move |Json(body): Json<serde_json::Value>| async move {

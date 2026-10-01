@@ -268,3 +268,78 @@ fn a_purged_object_is_neither_visible_nor_existing_after_a_replay() {
     assert!(body.contains("user/message") && body.contains("period/purge"));
     let _ = fs::remove_dir_all(&dir);
 }
+
+/// C7 + the three-state law (ADR-0048 §332): destroying content must keep ID and PARENT, must make the text
+/// unrecoverable, and must SAY that it was destroyed — because "destroyed" is not "there was never any".
+#[test]
+fn content_destruction_keeps_identity_and_lineage_and_names_itself() {
+    use crate::trace::Redaction;
+    use serde_json::json;
+    use std::fs;
+    let dir = test_support::tmp_dir("d2_keeps_chain");
+    let parent = "run-1010101010101010-p0000000060000060";
+    let child = "run-2020202020202020-p0000000061000061";
+    {
+        let mut s = super::SessionEventStream::open(dir.clone(), parent, parent, Redaction::default()).unwrap();
+        s.emit("2026-10-01T00:00:00Z", EventType::UserMessage, json!({ "text": "SECRET-PARENT" })).unwrap();
+        s.emit("2026-10-01T00:00:01Z", EventType::AssistantReply, json!({ "text": "SECRET-REPLY" })).unwrap();
+        s.emit("2026-10-01T00:00:02Z", EventType::TurnEnd, json!({ "reply": "SECRET-REPLY" })).unwrap();
+    }
+    {
+        let mut s = super::SessionEventStream::open(dir.clone(), child, child, Redaction::default()).unwrap();
+        s.emit("2026-10-01T00:00:10Z", EventType::ContextInject, json!({ "resume_from": parent })).unwrap();
+    }
+    let before = list_periods(&dir, 10).unwrap();
+    let parent_before = before.iter().find(|p| p.period_id == parent).cloned().expect("parent listed");
+    assert_eq!(parent_before.parent, None, "the parent is a root before D2");
+
+    let destroyed = super::purge_content(&dir, &[parent.to_string()]).unwrap();
+    assert_eq!(destroyed, 3, "three rows carried content");
+
+    let raw = fs::read_to_string(dir.join(format!("{parent}.events.jsonl"))).unwrap();
+    assert!(!raw.contains("SECRET-PARENT") && !raw.contains("SECRET-REPLY"), "the content is GONE: {raw}");
+    assert!(raw.contains(r#""content":"destroyed""#), "and each row SAYS SO (destroyed != never had): {raw}");
+
+    let after = list_periods(&dir, 10).unwrap();
+    let parent_after = after.iter().find(|p| p.period_id == parent).cloned().expect("the parent STILL EXISTS");
+    assert_eq!(parent_after.parent, None, "identity and lineage are untouched (C7)");
+    let child_after = after.iter().find(|p| p.period_id == child).cloned().expect("the child is listed");
+    assert_eq!(child_after.parent.as_deref(), Some(parent), "and the child still resolves its parent");
+    let _ = fs::remove_dir_all(&dir);
+}
+
+/// THE MUTATION for C7: had D2 deleted the FILE instead of its content, the child's `resume_from` would
+/// name an id nothing can resolve — the reader would report a dangling parent, exactly as it should.
+#[test]
+fn deleting_the_file_instead_of_the_content_would_break_the_chain() {
+    use crate::trace::Redaction;
+    use serde_json::json;
+    use std::fs;
+    let dir = test_support::tmp_dir("d2_mutation_file_delete");
+    let parent = "run-3030303030303030-p0000000062000062";
+    let child = "run-4040404040404040-p0000000063000063";
+    for (id, rows) in [(&parent, true), (&child, false)] {
+        let mut s = super::SessionEventStream::open(dir.clone(), id, id, Redaction::default()).unwrap();
+        if rows {
+            s.emit("2026-10-01T00:00:00Z", EventType::UserMessage, json!({ "text": "x" })).unwrap();
+        } else {
+            s.emit("2026-10-01T00:00:10Z", EventType::ContextInject, json!({ "resume_from": parent })).unwrap();
+        }
+    }
+    /* The WRONG implementation: remove the parent's file. */
+    fs::remove_file(dir.join(format!("{parent}.events.jsonl"))).unwrap();
+    let list = list_periods(&dir, 10).unwrap();
+    let child_now = list.iter().find(|p| p.period_id == child).cloned().expect("child listed");
+    assert_eq!(child_now.parent, None,
+               "C7: with the file gone the parent link is UNRESOLVABLE and the reader (correctly) nulls it — \
+                which is why D2 rewrites rows instead of deleting files");
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_missing_object_is_refused_by_name_when_destroying_content() {
+    let dir = test_support::tmp_dir("d2_missing");
+    let err = super::purge_content(&dir, &["run-0000000000000000-p0000000000000000".to_string()]).unwrap_err();
+    assert!(err.to_string().contains("no such stream"), "the refusal names the reason: {err}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
