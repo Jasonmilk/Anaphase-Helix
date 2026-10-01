@@ -352,7 +352,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .map(|a| a.iter().filter_map(|x| x.as_str().map(|s| s.to_string())).collect())
                         .unwrap_or_default();
                     match anaphase::session_events::purge_content(std::path::Path::new(dir), &ids) {
-                        Ok(n) => Json(serde_json::json!({ "ok": true, "destroyed_rows": n })),
+                        Ok(r) => Json(serde_json::json!({
+                            "ok": true, "destroyed_rows": r.destroyed_rows,
+                            "unclassified": r.unclassified, "retained": r.retained, "scope": r.scope
+                        })),
                         Err(e) => Json(serde_json::json!({ "ok": false, "error": e.to_string() })),
                     }
                 }

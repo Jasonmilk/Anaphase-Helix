@@ -324,12 +324,49 @@ pub fn replay_exists_ignoring_purge(dir: &std::path::Path) -> std::io::Result<Ve
  *     had text: that is the three-state law this project keeps meeting ("absent" ≠ "empty" ≠ "destroyed").
  *     Each affected row gains `data.content = "destroyed"`.
  * Rewriting is the one place this store is not append-only, so it happens under the WRITER LOCK. */
-const CONTENT_KEYS: [&str; 8] = ["text", "reply", "reason", "summary", "args", "result", "preview", "content_body"];
+/* P42 (ADR-0048 §333): a CONTENT list is fail-OPEN — a new content key would silently survive while the UI
+ * still said "destroyed". So the list is inverted: what SURVIVES is declared, everything else in `data` is
+ * destroyed, and a key that is neither declared as surviving nor known as content is ALSO NAMED
+ * (`unclassified`) so a new field cannot appear silently in either direction. */
+/// Atomic rewrite (P40): write a temporary sibling, flush it, then rename over the target. A crash before the
+/// rename leaves the PREVIOUS content fully intact, which is the whole point.
+pub fn rewrite_atomically(path: &std::path::Path, body: &str) -> std::io::Result<()> {
+    let tmp = std::path::PathBuf::from(format!("{}.tmp", path.display()));
+    {
+        use std::io::Write;
+        let mut f = std::fs::File::create(&tmp)?;
+        f.write_all(body.as_bytes())?;
+        f.sync_all()?;
+    }
+    std::fs::rename(&tmp, path)?;
+    Ok(())
+}
+
+const SURVIVING_KEYS: [&str; 14] = [
+    "resume_from", "model", "choice", "nodes", "chars", "injected_chars", "done", "success", "verdict",
+    "impasse", "completion_tokens", "cached_tokens", "prompt_tokens", "at",
+];
+const KNOWN_CONTENT_KEYS: [&str; 8] =
+    ["text", "reply", "reason", "summary", "args", "result", "preview", "content_body"];
 
 /// Returns how many rows had content destroyed (`0` = a NAMED absence: nothing carried any).
-pub fn purge_content(dir: &std::path::Path, ids: &[String]) -> std::io::Result<usize> {
+/// What D2 did, and what it DECLARED rather than assumed (P41/P42/P43).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ContentPurgeReport {
+    pub destroyed_rows: usize,
+    /// Keys that were neither declared as surviving nor known as content: destroyed AND named.
+    pub unclassified: Vec<String>,
+    /// What deliberately survived — a fact, so "destroyed" is never read as "everything is gone".
+    pub retained: Vec<String>,
+    /// The SCOPE of this operation (P43): the period streams. Snapshots and the audit chain are NOT covered,
+    /// and saying so is part of the operation rather than a footnote.
+    pub scope: Vec<String>,
+}
+
+pub fn purge_content(dir: &std::path::Path, ids: &[String]) -> std::io::Result<ContentPurgeReport> {
     let _writer = super::refs::WriterLock::acquire(dir)?;
     let mut destroyed_rows = 0usize;
+    let mut unclassified: Vec<String> = Vec::new();
     for id in ids {
         let path = dir.join(format!("{id}.events.jsonl"));
         let body = match std::fs::read_to_string(&path) {
@@ -352,10 +389,16 @@ pub fn purge_content(dir: &std::path::Path, ids: &[String]) -> std::io::Result<u
             })?;
             let mut hit = false;
             if let Some(data) = v.get_mut("data").and_then(|d| d.as_object_mut()) {
-                for key in CONTENT_KEYS {
-                    if data.remove(key).is_some() {
-                        hit = true;
+                let keys: Vec<String> = data.keys().cloned().collect();
+                for key in keys {
+                    if SURVIVING_KEYS.contains(&key.as_str()) {
+                        continue; /* declared to survive: lineage, audit counters, decision facts */
                     }
+                    if !KNOWN_CONTENT_KEYS.contains(&key.as_str()) {
+                        unclassified.push(format!("{id}.{key}"));
+                    }
+                    data.remove(&key); /* everything else is destroyed (fail-CLOSED) */
+                    hit = true;
                 }
                 if hit {
                     data.insert("content".to_string(), serde_json::Value::String("destroyed".to_string()));
@@ -367,7 +410,16 @@ pub fn purge_content(dir: &std::path::Path, ids: &[String]) -> std::io::Result<u
             out.push_str(&serde_json::to_string(&v).unwrap_or_else(|_| line.to_string()));
             out.push('\n');
         }
-        std::fs::write(&path, out)?;
+        /* P40: A REWRITE IS THE ONLY NON-APPEND PATH, so a crash in the middle of one would leave the WHOLE
+         * stream unparsable (measured elsewhere: ONE bad row took three suites down). `fs::write` truncated
+         * the target first — exactly the failure mode this forbids. Temp file, flush, then RENAME. */
+        rewrite_atomically(&path, &out)?;
     }
-    Ok(destroyed_rows)
+    unclassified.sort();
+    Ok(ContentPurgeReport {
+        destroyed_rows,
+        unclassified,
+        retained: SURVIVING_KEYS.iter().map(|k| k.to_string()).collect(),
+        scope: vec!["period streams (<id>.events.jsonl)".to_string()],
+    })
 }

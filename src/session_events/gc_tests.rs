@@ -293,8 +293,10 @@ fn content_destruction_keeps_identity_and_lineage_and_names_itself() {
     let parent_before = before.iter().find(|p| p.period_id == parent).cloned().expect("parent listed");
     assert_eq!(parent_before.parent, None, "the parent is a root before D2");
 
-    let destroyed = super::purge_content(&dir, &[parent.to_string()]).unwrap();
-    assert_eq!(destroyed, 3, "three rows carried content");
+    let report = super::purge_content(&dir, &[parent.to_string()]).unwrap();
+    assert_eq!(report.destroyed_rows, 3, "three rows carried content");
+    assert!(report.retained.contains(&"model".to_string()) && report.scope.len() == 1,
+            "what survived and the SCOPE are declared, not implied (P43): {report:?}");
 
     let raw = fs::read_to_string(dir.join(format!("{parent}.events.jsonl"))).unwrap();
     assert!(!raw.contains("SECRET-PARENT") && !raw.contains("SECRET-REPLY"), "the content is GONE: {raw}");
@@ -342,4 +344,102 @@ fn a_missing_object_is_refused_by_name_when_destroying_content() {
     let err = super::purge_content(&dir, &["run-0000000000000000-p0000000000000000".to_string()]).unwrap_err();
     assert!(err.to_string().contains("no such stream"), "the refusal names the reason: {err}");
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// P40 — A REWRITE MUST BE ATOMIC (ADR-0048 §333). The append path has a tail guard; a REWRITE has no tail:
+/// a crash in the middle of an in-place write leaves the WHOLE stream unparsable, and one bad row already
+/// took three suites down once. So: temp file, flush, rename.
+#[test]
+fn a_rewrite_leaves_no_temporary_file_and_the_stream_still_parses() {
+    use crate::trace::Redaction;
+    use serde_json::json;
+    use std::fs;
+    let dir = test_support::tmp_dir("p40_atomic_ok");
+    let pid = "run-5050505050505050-p0000000070000070";
+    {
+        let mut s = super::SessionEventStream::open(dir.clone(), pid, pid, Redaction::default()).unwrap();
+        s.emit("2026-10-01T00:00:00Z", EventType::UserMessage, json!({ "text": "secret" })).unwrap();
+    }
+    super::purge_content(&dir, &[pid.to_string()]).unwrap();
+    let leftovers: Vec<String> = fs::read_dir(&dir)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name().to_string_lossy().to_string())
+        .filter(|n| n.ends_with(".tmp"))
+        .collect();
+    assert!(leftovers.is_empty(), "the temporary file is renamed away, never left behind: {leftovers:?}");
+    let body = fs::read_to_string(dir.join(format!("{pid}.events.jsonl"))).unwrap();
+    for line in body.lines().filter(|l| !l.trim().is_empty()) {
+        serde_json::from_str::<serde_json::Value>(line).expect("every row still parses after the rewrite");
+    }
+    let _ = fs::remove_dir_all(&dir);
+}
+
+/// FAULT INJECTION: a partial write to the TEMPORARY path must leave the TARGET untouched. This is the
+/// property that makes the crash window survivable — and it is asserted directly, not inferred.
+#[test]
+fn a_partial_temporary_write_does_not_touch_the_target() {
+    use crate::trace::Redaction;
+    use serde_json::json;
+    use std::fs;
+    let dir = test_support::tmp_dir("p40_fault_injection");
+    let pid = "run-6060606060606060-p0000000071000071";
+    {
+        let mut s = super::SessionEventStream::open(dir.clone(), pid, pid, Redaction::default()).unwrap();
+        s.emit("2026-10-01T00:00:00Z", EventType::UserMessage, json!({ "text": "intact" })).unwrap();
+    }
+    let target = dir.join(format!("{pid}.events.jsonl"));
+    let before = fs::read_to_string(&target).unwrap();
+    /* The "crash": half a row lands in the temp sibling and the process dies before the rename. */
+    fs::write(format!("{}.tmp", target.display()), "{\"type\":\"user/message\",\"per").unwrap();
+    let after = fs::read_to_string(&target).unwrap();
+    assert_eq!(before, after, "a half-written TEMP file cannot damage the target");
+    assert!(after.contains("intact"), "and the old content is still fully readable");
+    let _ = fs::remove_dir_all(&dir);
+}
+
+/// THE MUTATION for P40: the OLD implementation truncated in place. Reproduce that and the stream is gone.
+#[test]
+fn an_in_place_truncating_rewrite_would_corrupt_the_stream() {
+    use crate::trace::Redaction;
+    use serde_json::json;
+    use std::fs;
+    let dir = test_support::tmp_dir("p40_mutation_in_place");
+    let pid = "run-7070707070707070-p0000000072000072";
+    {
+        let mut s = super::SessionEventStream::open(dir.clone(), pid, pid, Redaction::default()).unwrap();
+        s.emit("2026-10-01T00:00:00Z", EventType::UserMessage, json!({ "text": "one" })).unwrap();
+        s.emit("2026-10-01T00:00:01Z", EventType::TurnEnd, json!({})).unwrap();
+    }
+    let target = dir.join(format!("{pid}.events.jsonl"));
+    /* in-place truncating write, killed halfway */
+    fs::write(&target, "{\"type\":\"us").unwrap();
+    let body = fs::read_to_string(&target).unwrap();
+    let bad = body.lines().filter(|l| !l.trim().is_empty()).any(|l| serde_json::from_str::<serde_json::Value>(l).is_err());
+    assert!(bad, "this is the failure P40 forbids: an interrupted in-place rewrite loses the whole stream");
+    let _ = fs::remove_dir_all(&dir);
+}
+
+/// P42 — the list is INVERTED (fail-CLOSED): a key that is neither declared as surviving nor known as content
+/// is destroyed AND named, so a new field cannot slip through in either direction.
+#[test]
+fn an_unknown_key_is_destroyed_and_named_as_unclassified() {
+    use crate::trace::Redaction;
+    use serde_json::json;
+    use std::fs;
+    let dir = test_support::tmp_dir("p42_fail_closed");
+    let pid = "run-8080808080808080-p0000000073000073";
+    {
+        let mut s = super::SessionEventStream::open(dir.clone(), pid, pid, Redaction::default()).unwrap();
+        s.emit("2026-10-01T00:00:00Z", EventType::UserMessage,
+               json!({ "text": "content", "body": "NEW-KEY-SECRET", "resume_from": "run-x" })).unwrap();
+    }
+    let report = super::purge_content(&dir, &[pid.to_string()]).unwrap();
+    let raw = fs::read_to_string(dir.join(format!("{pid}.events.jsonl"))).unwrap();
+    assert!(!raw.contains("NEW-KEY-SECRET") && !raw.contains("\"body\""),
+            "a previously unknown content key is DESTROYED (fail-closed): {raw}");
+    assert!(report.unclassified.contains(&format!("{}.body", pid)),
+            "and it is NAMED as unclassified rather than removed in silence: {report:?}");
+    assert!(raw.contains("resume_from"), "declared surviving fields are untouched");
+    let _ = fs::remove_dir_all(&dir);
 }
