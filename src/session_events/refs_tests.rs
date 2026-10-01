@@ -67,7 +67,10 @@ fn an_ambiguous_target_is_refused_by_name() {
 #[test]
 fn unsafe_names_are_refused() {
     let dir = test_support::tmp_dir("ref_unsafe_names");
-    for bad in ["", ".", "..", "../escape", "a/b", "a\\b", ".hidden"] {
+    /* A SEGMENT-BASED RULE (M1d): `a/b` is now a LEGITIMATE nested name, so the list that must be refused
+     * is the one whose SEGMENTS are unsafe — the earlier list encoded the one-segment design and became a
+     * false red the moment nesting landed (the test was right for its time, wrong for this one). */
+    for bad in ["", ".", "..", "../escape", "a//b", "a/./b", "a\\b", ".hidden", "a/.hidden"] {
         assert!(check_ref_name(bad).is_err(), "name {bad:?} must be refused (traversal guard)");
         assert!(write_ref(&dir, bad, "run-aaaaaaaaaaaaaaaa-p0000000001000001").is_err(),
                 "and the write path must refuse it too: {bad:?}");
@@ -159,5 +162,56 @@ fn an_unknown_ref_has_an_empty_history() {
     let dir = test_support::tmp_dir("reflog_unknown");
     assert!(read_ref_log(&dir, "never-written").unwrap().is_empty(),
             "no history is an EMPTY history, not an error");
+    let _ = fs::remove_dir_all(&dir);
+}
+
+/// M1d — MULTIPLE REFS (ADR-0048 §317, ledger P2). Git keeps ONE ref per branch; a single fixed name
+/// cannot express "which conversation", so the conversation set was unaddressable. Nesting is the shape
+/// Git uses (`refs/heads/<name>`), and every SEGMENT is still guarded.
+#[test]
+fn nested_ref_names_are_addressable() {
+    let dir = test_support::tmp_dir("refs_nested");
+    let a = "run-1111111111111111-p0000000013000013";
+    let b = "run-2222222222222222-p0000000014000014";
+    period(&dir, a, "job-na");
+    period(&dir, b, "job-nb");
+    write_ref(&dir, "current", a).unwrap();
+    write_ref(&dir, &format!("conversations/{a}"), a).unwrap();
+    write_ref(&dir, &format!("conversations/{b}"), b).unwrap();
+
+    let names: Vec<String> = list_refs(&dir).unwrap().into_iter().map(|r| r.name).collect();
+    assert_eq!(names, vec![
+        "conversations/run-1111111111111111-p0000000013000013".to_string(),
+        "conversations/run-2222222222222222-p0000000014000014".to_string(),
+        "current".to_string(),
+    ], "each conversation is separately addressable, in a deterministic order");
+    assert_eq!(read_ref(&dir, &format!("conversations/{b}")).unwrap().as_deref(), Some(b),
+               "and each one is readable by its own name");
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_traversing_segment_is_still_refused() {
+    let dir = test_support::tmp_dir("refs_nested_guard");
+    for bad in ["conversations/../escape", "conversations//x", "conversations/.hidden", "a/./b"] {
+        assert!(check_ref_name(bad).is_err(), "segment guard must refuse {bad:?}");
+    }
+    assert!(check_ref_name("conversations/run-abc").is_ok(), "and must ACCEPT a nested name");
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_nested_ref_keeps_its_own_history() {
+    let dir = test_support::tmp_dir("refs_nested_reflog");
+    let a = "run-3333333333333333-p0000000015000015";
+    let b = "run-4444444444444444-p0000000016000016";
+    period(&dir, a, "job-ha");
+    period(&dir, b, "job-hb");
+    let name = "conversations/c1";
+    write_ref(&dir, name, a).unwrap();
+    write_ref(&dir, name, b).unwrap();
+    let log = read_ref_log(&dir, name).unwrap();
+    assert_eq!(log.len(), 2, "the history belongs to the NAMED ref, not to a global log");
+    assert_eq!(log[1].old.as_deref(), Some(a));
     let _ = fs::remove_dir_all(&dir);
 }

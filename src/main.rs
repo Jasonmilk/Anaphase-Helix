@@ -333,7 +333,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
             }))
-            .route("/v1/refs/:name", axum::routing::put({
+            .route("/v1/refs/*name", axum::routing::put({
                 let events_dir = config.anaphase.session_events_path.clone();
                 move |axum::extract::Path(name): axum::extract::Path<String>,
                       Json(body): Json<serde_json::Value>| async move {

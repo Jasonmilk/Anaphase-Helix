@@ -31,20 +31,21 @@ fn refs_dir(events_dir: &Path) -> PathBuf {
     events_dir.join(".refs")
 }
 
-/// A ref name must be ONE safe path segment: no separators, no traversal, no leading dot, no empty.
+/// A ref name is a PATH of safe segments (`conversations/<root>`), the shape Git uses for
+/// `refs/heads/<name>`. EVERY segment is checked: nesting is allowed and traversal is not — the earlier
+/// one-segment guard would have refused the very shape this layer needs.
 pub fn check_ref_name(name: &str) -> io::Result<()> {
-    let bad = name.is_empty()
-        || name == "."
-        || name == ".."
-        || name.contains('/')
-        || name.contains('\\')
-        || name.contains('\0')
-        || name.starts_with('.');
-    if bad {
-        return Err(io::Error::new(
-            ErrorKind::InvalidInput,
-            format!("invalid ref name {name:?}: a ref is ONE path segment, with no separator and no leading dot"),
-        ));
+    let refusal = |why: &str| io::Error::new(ErrorKind::InvalidInput, format!("invalid ref name {name:?}: {why}"));
+    if name.is_empty() {
+        return Err(refusal("a ref must have a name"));
+    }
+    if name.contains('\\') || name.contains('\u{0}') {
+        return Err(refusal("backslashes and NUL are not part of a ref name"));
+    }
+    for seg in name.split('/') {
+        if seg.is_empty() || seg == "." || seg == ".." || seg.starts_with('.') {
+            return Err(refusal("every segment must be a plain name (no empty, no dot-prefixed, no traversal)"));
+        }
     }
     Ok(())
 }
@@ -73,8 +74,10 @@ fn now_rfc3339() -> String {
 
 /// Append ONE history line. Never rewrites: a log that can be edited is not a log.
 fn append_ref_log(events_dir: &Path, name: &str, old: Option<&str>, new: Option<&str>) -> io::Result<()> {
-    let dir = refs_dir(events_dir).join(".log");
-    fs::create_dir_all(&dir)?;
+    let path = ref_log_path(events_dir, name);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
     let line = format!(
         "{{\"ts\":{},\"old\":{},\"new\":{}}}\n",
         serde_json::to_string(&now_rfc3339()).unwrap_or_else(|_| "\"\"".to_string()),
@@ -82,7 +85,7 @@ fn append_ref_log(events_dir: &Path, name: &str, old: Option<&str>, new: Option<
         serde_json::to_string(&new).unwrap_or_else(|_| "null".to_string())
     );
     use std::io::Write;
-    let mut f = fs::OpenOptions::new().create(true).append(true).open(ref_log_path(events_dir, name))?;
+    let mut f = fs::OpenOptions::new().create(true).append(true).open(&path)?;
     f.write_all(line.as_bytes())?;
     Ok(())
 }
@@ -149,8 +152,12 @@ pub fn write_ref(events_dir: &Path, name: &str, period_ref: &str) -> io::Result<
     };
     let dir = refs_dir(events_dir);
     fs::create_dir_all(&dir)?;
+    let path = dir.join(name);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
     let old = read_ref(events_dir, name)?;
-    fs::write(dir.join(name), format!("{id}\n"))?;
+    fs::write(&path, format!("{id}\n"))?;
     /* THE OLD VALUE IS RECORDED AT THE MOMENT IT IS REPLACED (ADR-0048 §315): it is the only source for
      * the vacancy fact `M2` derives its grace anchor from. */
     append_ref_log(events_dir, name, old.as_deref(), Some(&id))?;
@@ -174,9 +181,18 @@ pub fn delete_ref(events_dir: &Path, name: &str) -> io::Result<bool> {
 /// Every ref, sorted by name. Deterministic on purpose: a listing that shuffles is not auditable.
 pub fn list_refs(events_dir: &Path) -> io::Result<Vec<RefEntry>> {
     let mut out = Vec::new();
-    let entries = match fs::read_dir(refs_dir(events_dir)) {
+    let root = refs_dir(events_dir);
+    collect_refs(&root, &root, &mut out)?;
+    out.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(out)
+}
+
+/// Walk the ref tree. A directory starting with `.` holds HISTORY (`.log`), never a ref — the same
+/// distinction Git makes between `refs/` and `logs/`.
+fn collect_refs(root: &Path, dir: &Path, out: &mut Vec<RefEntry>) -> io::Result<()> {
+    let entries = match fs::read_dir(dir) {
         Ok(e) => e,
-        Err(e) if e.kind() == ErrorKind::NotFound => return Ok(out),
+        Err(e) if e.kind() == ErrorKind::NotFound => return Ok(()),
         Err(e) => return Err(e),
     };
     for entry in entries {
@@ -185,15 +201,23 @@ pub fn list_refs(events_dir: &Path) -> io::Result<Vec<RefEntry>> {
         if name.starts_with('.') {
             continue;
         }
-        let period_id = match fs::read_to_string(entry.path()) {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_refs(root, &path, out)?;
+            continue;
+        }
+        let period_id = match fs::read_to_string(&path) {
             Ok(s) => s.trim().to_string(),
             Err(_) => continue,
         };
         if period_id.is_empty() {
             continue;
         }
-        out.push(RefEntry { name, period_id });
+        let rel = path
+            .strip_prefix(root)
+            .map(|p| p.to_string_lossy().replace('\\', "/"))
+            .unwrap_or_else(|_| name.clone());
+        out.push(RefEntry { name: rel, period_id });
     }
-    out.sort_by(|a, b| a.name.cmp(&b.name));
-    Ok(out)
+    Ok(())
 }
