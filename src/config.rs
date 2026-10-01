@@ -9,16 +9,24 @@ use serde::{Deserialize, Serialize};
 /// Interaction mode of the cognitive loop (ADR-0006): the same Helix with
 /// different Mind participation — not three separate minds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
+/// ONE VOCABULARY FOR THE CONFIG AND THE WIRE (ADR-0048 §349). The variant names and the wire values had
+/// DRIFTED: `rename_all = "snake_case"` gave `drive`/`partner`/`survive` while `mode_wire` gives
+/// `driving`/`partner`/`survival` — two of three disagreed, and a config written one way would be read the
+/// other. The renames are therefore EXPLICIT, so the config vocabulary and the protocol vocabulary are the
+/// same three words by construction. MEASURED SAFE: no shipped config declares a mode today.
+#[serde(rename_all = "lowercase")]
 pub enum Mode {
     /// Human drives Anaphase directly; Mind absent (Noop assembly, no
     /// experience written). Harness-style usage.
+    #[serde(rename = "driving")]
     Drive,
     /// Helix works with the human as a memory-bearing partner; every turn is
     /// written as an L3 experience (default — Helix's native state).
+    #[serde(rename = "partner")]
     Partner,
     /// Mind lives autonomously (sleep/metabolism/recap); Anaphase is its
     /// executor. Reverse drive lands with Mind P10a; enum reserved here.
+    #[serde(rename = "survival")]
     Survive,
 }
 

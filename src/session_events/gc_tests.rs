@@ -588,3 +588,24 @@ fn the_declared_mode_is_carried_separately_from_the_effective_one() {
     assert_eq!(crate::session_events::mode_wire_opt(declared.declared_mode), Some("partner"),
                "a declared mode reaches the payload as its wire value");
 }
+
+/// M3④ ② (ADR-0048 §349): the CONFIG speaks the WIRE vocabulary, and the enum name is REFUSED.
+/// The mutation is the attribute itself: without `rename_all = "lowercase"` the two assertions below swap
+/// (the enum name would parse and the wire value would not), so this criterion moves with the drift.
+#[test]
+fn the_config_speaks_the_wire_vocabulary_for_modes() {
+    use crate::config::Mode;
+    assert_eq!(serde_json::from_str::<Mode>("\"partner\"").ok(), Some(Mode::Partner),
+               "the config value IS the wire value");
+    assert_eq!(serde_json::from_str::<Mode>("\"driving\"").ok(), Some(Mode::Drive));
+    assert_eq!(serde_json::from_str::<Mode>("\"survival\"").ok(), Some(Mode::Survive));
+    assert!(serde_json::from_str::<Mode>("\"Partner\"").is_err(),
+            "the ENUM NAME is refused: one fact, one spelling (measured: no shipped config uses it)");
+    assert!(serde_json::from_str::<Mode>("\"SURVIVE\"").is_err(), "and no case-insensitive guessing");
+    /* Round-trip: what the config accepts is what the envelope emits (they must be the same words). */
+    for m in [Mode::Drive, Mode::Partner, Mode::Survive] {
+        let wire = crate::config::mode_wire(m);
+        assert_eq!(serde_json::from_str::<Mode>(&format!("\"{wire}\"")).ok(), Some(m),
+                   "config ⇄ wire round-trip for {wire}");
+    }
+}
