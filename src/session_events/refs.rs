@@ -126,6 +126,10 @@ pub fn read_ref(events_dir: &Path, name: &str) -> io::Result<Option<String>> {
 
 /// Point `name` at `period_ref`, REFUSING a target that does not name exactly one existing period.
 /// Returns the RESOLVED period id (so the caller learns which period the pointer actually names).
+/// SINGLE-WRITER ASSUMPTION (ADR-0048 §318): this reads the previous value and then writes the new one —
+/// a check-then-write window. Today exactly ONE process writes `.refs` (the panel), and the reflog records
+/// what that process replaced. A second concurrent writer could record a stale `old`, so multi-writer
+/// support must close (or explicitly acknowledge) that window with a CONCURRENCY criterion, not by luck.
 pub fn write_ref(events_dir: &Path, name: &str, period_ref: &str) -> io::Result<String> {
     check_ref_name(name)?;
     let target = period_ref.trim();
