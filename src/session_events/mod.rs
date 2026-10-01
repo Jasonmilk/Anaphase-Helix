@@ -25,8 +25,9 @@ pub mod refs;
 pub mod types_and_stream;
 
 pub use gc::{
-    collect_garbage, plan as gc_plan, purge_content, rewrite_atomically, replay_exists, replay_exists_ignoring_purge,
-    replay_live, rfc3339_to_secs, ContentPurgeReport, GcInput, GcOutcome, GcPlan, Object as GcObject,
+    collect_garbage, plan as gc_plan, purge_content, read_vacancies, rewrite_atomically, replay_exists, replay_exists_ignoring_purge,
+    replay_live, rfc3339_to_secs, vacancies, ContentPurgeReport, GcInput, GcOutcome, GcPlan, Object as GcObject,
+    VacancyView,
     Vacancy as GcVacancy,
 };
 pub use identity::{

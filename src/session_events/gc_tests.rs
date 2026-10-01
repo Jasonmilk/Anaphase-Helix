@@ -443,3 +443,67 @@ fn an_unknown_key_is_destroyed_and_named_as_unclassified() {
     assert!(raw.contains("resume_from"), "declared surviving fields are untouched");
     let _ = fs::remove_dir_all(&dir);
 }
+
+/// M2-D (ADR-0048 §334): a vacancy is READABLE — the fact, the deadline it implies, and a NAMED state.
+#[test]
+fn a_vacancy_is_readable_with_its_deadline_and_a_named_state() {
+    use crate::trace::Redaction;
+    use serde_json::json;
+    use std::fs;
+    let dir = test_support::tmp_dir("m2d_vacancy_view");
+    let pid = "run-9090909090909090-p0000000080000080";
+    {
+        let mut s = super::SessionEventStream::open(dir.clone(), pid, pid, Redaction::default()).unwrap();
+        s.emit("2026-10-01T00:00:00Z", EventType::TurnEnd, json!({})).unwrap();
+    }
+    super::write_ref(&dir, "current", pid).unwrap();
+    super::delete_ref(&dir, "current").unwrap();
+
+    let views = super::vacancies(&dir, 60, 0).unwrap();
+    let v = views.iter().find(|v| v.object == pid).expect("the vacancy is readable");
+    assert!(v.at > 0, "the FACT carries its time");
+    assert_eq!(v.protected_until, v.at + 60, "and the deadline it implies");
+    assert_eq!(v.state, "protected", "with a named state, not a bare timestamp");
+
+    let later = super::vacancies(&dir, 60, v.protected_until + 1).unwrap();
+    let v2 = later.iter().find(|v| v.object == pid).unwrap();
+    assert_eq!(v2.state, "expired", "the state changes WITH the clock, in one place");
+    let _ = fs::remove_dir_all(&dir);
+}
+
+/// The reading surface may not promise more than the store can keep: a grace beyond the declared retention is
+/// REFUSED BY NAME (this is how `check_retention_covers_grace` reaches the surface).
+#[test]
+fn asking_for_more_grace_than_the_declared_retention_is_refused_by_name() {
+    let dir = test_support::tmp_dir("m2d_grace_refused");
+    let too_long = crate::session_events::REF_MOVE_RETENTION_SECS + 1;
+    let err = super::vacancies(&dir, too_long, 0).unwrap_err();
+    let msg = err.to_string();
+    assert!(msg.contains("exceeds the declared retention"), "the refusal names the reason: {msg}");
+    assert!(msg.contains("cannot keep"), "and what it refuses to do: {msg}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A vacancy whose subject no longer exists is a vacancy without a promise: named `object-gone`, not silently
+/// reported as `protected`.
+#[test]
+fn a_vacancy_whose_object_is_gone_is_named_object_gone() {
+    use crate::trace::Redaction;
+    use serde_json::json;
+    use std::fs;
+    let dir = test_support::tmp_dir("m2d_object_gone");
+    let pid = "run-a0a0a0a0a0a0a0a0-p0000000081000081";
+    {
+        let mut s = super::SessionEventStream::open(dir.clone(), pid, pid, Redaction::default()).unwrap();
+        s.emit("2026-10-01T00:00:00Z", EventType::TurnEnd, json!({})).unwrap();
+    }
+    super::tombstone_period(&dir, pid, "gone").unwrap();
+    super::write_ref(&dir, "current", pid).unwrap();
+    super::delete_ref(&dir, "current").unwrap();
+    super::collect_garbage(&dir, 4_000_000_000, 0).unwrap();   /* D1 ⇒ the object stops existing */
+
+    let views = super::vacancies(&dir, 60, 4_000_000_000).unwrap();
+    let v = views.iter().find(|v| v.object == pid).expect("the vacancy fact is still readable");
+    assert_eq!(v.state, "object-gone", "a vacancy whose subject is gone is NAMED, not called protected");
+    let _ = fs::remove_dir_all(&dir);
+}

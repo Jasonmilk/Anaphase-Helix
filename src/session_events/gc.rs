@@ -163,6 +163,77 @@ pub fn plan(input: &GcInput, now: u64) -> GcPlan {
  * destroyed (that is `D2`). The state is read INSIDE the lock (P15): a dangling check that happens outside
  * it is a TOCTOU window where someone can attach between the check and the collection. */
 
+
+/// THE ONE PLACE VACANCIES ARE READ (ADR-0048 §334). The collector and the reading surface both call this —
+/// a second implementation would be a second answer to "when was this position vacated", which is exactly
+/// the drift this project keeps catching.
+pub fn read_vacancies(dir: &std::path::Path) -> std::io::Result<Vec<Vacancy>> {
+    let mut out = Vec::new();
+    for entry in std::fs::read_dir(dir)? {
+        let entry = entry?;
+        let fname = entry.file_name().to_string_lossy().to_string();
+        if !fname.ends_with(".events.jsonl") {
+            continue;
+        }
+        let Ok(body) = std::fs::read_to_string(entry.path()) else { continue };
+        for line in body.lines() {
+            let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else { continue };
+            if v.get("type").and_then(|t| t.as_str()) != Some("ref/move") {
+                continue;
+            }
+            let d = v.get("data").cloned().unwrap_or(serde_json::Value::Null);
+            if d.get("new").map(|n| n.is_null()).unwrap_or(false) {
+                if let Some(old) = d.get("old").and_then(|o| o.as_str()) {
+                    let at = v.get("time").and_then(|t| t.as_str()).and_then(rfc3339_to_secs).unwrap_or(0);
+                    out.push(Vacancy { id: old.to_string(), at });
+                }
+            }
+        }
+    }
+    out.sort_by(|a, b| (a.id.clone(), a.at).cmp(&(b.id.clone(), b.at)));
+    Ok(out)
+}
+
+/// A vacancy AS A READER SEES IT (ADR-0048 §334): the fact, the deadline it implies, and a NAME for its
+/// state — never a bare timestamp the caller has to interpret.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VacancyView {
+    pub object: String,
+    pub at: u64,
+    pub protected_until: u64,
+    /// `protected` | `expired` | `object-gone` (the object no longer exists: a vacancy without a subject).
+    pub state: String,
+}
+
+/// Read the vacancies with the grace window applied. The window is CHECKED, not assumed: a caller asking for
+/// more than the declared retention would be reading a guarantee the store cannot keep.
+pub fn vacancies(dir: &std::path::Path, grace_secs: u64, now: u64) -> std::io::Result<Vec<VacancyView>> {
+    let declared = super::refs::REF_MOVE_RETENTION_SECS;
+    if grace_secs > declared {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!(
+                "grace {grace_secs}s exceeds the declared retention {declared}s: the vacancy fact could be \
+                 trimmed before the window it promises — refusing to report a deadline the store cannot keep"
+            ),
+        ));
+    }
+    let existing: std::collections::HashSet<String> = replay_exists(dir)?.into_iter().collect();
+    let mut out = Vec::new();
+    for v in read_vacancies(dir)? {
+        let protected_until = v.at.saturating_add(grace_secs);
+        let state = if !existing.contains(&v.id) {
+            "object-gone" /* named: a vacancy whose subject is gone is not a live promise */
+        } else if now < protected_until {
+            "protected"
+        } else {
+            "expired"
+        };
+        out.push(VacancyView { object: v.id, at: v.at, protected_until, state: state.to_string() });
+    }
+    Ok(out)
+}
+
 /// RFC3339 (`…Z`) to epoch seconds. Pure, and tested against the inverse the ledger already owns.
 pub fn rfc3339_to_secs(ts: &str) -> Option<u64> {
     let b = ts.as_bytes();
@@ -219,16 +290,6 @@ pub fn collect_garbage(dir: &std::path::Path, now: u64, grace_secs: u64) -> std:
                         }
                     }
                 }
-                Some("ref/move") => {
-                    let d = v.get("data").cloned().unwrap_or(serde_json::Value::Null);
-                    let gone = d.get("new").map(|n| n.is_null()).unwrap_or(false);
-                    if gone {
-                        if let Some(old) = d.get("old").and_then(|o| o.as_str()) {
-                            let at = v.get("time").and_then(|t| t.as_str()).and_then(rfc3339_to_secs).unwrap_or(0);
-                            vacancies.push(Vacancy { id: old.to_string(), at });
-                        }
-                    }
-                }
                 _ => {}
             }
         }
@@ -237,6 +298,7 @@ pub fn collect_garbage(dir: &std::path::Path, now: u64, grace_secs: u64) -> std:
     let refs: Vec<String> = super::refs::list_refs(dir)?.into_iter().map(|r| r.period_id).collect();
     /* C14b (ADR-0048 §330): holders come from the pin WAL, replayed — a restart cannot lose them, and an
      * owner that is no longer declared is NAMED below rather than silently protecting forever. */
+    let vacancies = read_vacancies(dir)?;   /* the SAME reader the surface uses (§334) */
     let (by_object, _) = super::pins::replay(dir)?;
     let pins: Vec<(String, u32)> = by_object.into_iter().collect();
     let orphans = super::pins::orphan_pins(dir)?;

@@ -340,6 +340,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             /* D2 — CONTENT DESTRUCTION (ADR-0048 §332): the third knob. It rewrites ROWS (keeping identity,
              * lineage, `seq` and `time`) because deleting files would break the chain; every affected row is
              * marked `content: destroyed`, so "destroyed" never reads as "there was never any". */
+            /* M2-D — THE VACANCIES, AS A READER SEES THEM (ADR-0048 §334): the fact, the deadline it implies,
+             * and a NAMED state. The grace window is checked against the declared retention here, so the
+             * surface cannot promise a deadline the store is unable to keep. */
+            .route("/v1/periods/vacancies", get({
+                let events_dir = config.anaphase.session_events_path.clone();
+                move |Query(params): Query<HashMap<String, String>>| async move {
+                    let Some(dir) = events_dir.as_deref() else {
+                        return Json(serde_json::json!({ "ok": false, "error": "session events not configured" }));
+                    };
+                    let grace = params
+                        .get("grace_secs")
+                        .and_then(|v| v.parse::<u64>().ok())
+                        .unwrap_or(anaphase::session_events::REF_MOVE_GRACE_SECS);
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_secs())
+                        .unwrap_or(0);
+                    match anaphase::session_events::vacancies(std::path::Path::new(dir), grace, now) {
+                        Ok(vs) => Json(serde_json::json!({
+                            "ok": true, "grace_secs": grace,
+                            "vacancies": vs.iter().map(|v| serde_json::json!({
+                                "object": v.object, "at": v.at,
+                                "protected_until": v.protected_until, "state": v.state
+                            })).collect::<Vec<_>>()
+                        })),
+                        Err(e) => Json(serde_json::json!({ "ok": false, "error": e.to_string() })),
+                    }
+                }
+            }))
             .route("/v1/periods/purge-content", post({
                 let events_dir = config.anaphase.session_events_path.clone();
                 move |Json(body): Json<serde_json::Value>| async move {
