@@ -277,7 +277,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // 7. Probe the snapshot endpoint (physical fact: HTTP is listening).
     wait_for_port(snapshot_port, "anaphase snapshot")?;
-    println!("  [ok] Anaphase 就绪: snapshot :{snapshot_port}（模式: {}）", mode_label(anaphase_cfg.run_cycle.mode));
+    println!("  [ok] Anaphase 就绪: snapshot :{snapshot_port}（模式: {}）", anaphase::session_events::mode_wire_opt(anaphase_cfg.run_cycle.mode).unwrap_or("undeclared"));
 
     // 7b. Web panel (cellrix-web, fail-open: missing binary or busy port ->
     //      warn, the stack still runs — the web is a window, not a wall).
@@ -311,7 +311,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             grpc_port,
             snapshot_port,
             web_port,
-            mode_label(anaphase_cfg.run_cycle.mode),
+            anaphase::session_events::mode_wire_opt(anaphase_cfg.run_cycle.mode).unwrap_or("undeclared"),
         )?;
     } else {
         println!("\n== stack up — Ctrl+C 退出（非交互模式）==");

@@ -241,7 +241,10 @@ pub struct RunCycleConfig {
     /// Interaction mode (ADR-0006): Drive (no Mind) / Partner (default,
     /// with Mind + episode lifecycle) / Survive (Mind autonomous, reserved).
     #[serde(default)]
-    pub mode: Mode,
+    /// `None` = the run DECLARED no mode. It must stay `None` all the way into the payload: substituting
+    /// `Mode::default()` here is the defect the reviewer named (a default claiming to be declared), and the
+    /// panel's `undeclared` state exists for this value (ADR-0048 §345/§343).
+    pub mode: Option<Mode>,
     /// P10d (ADR-0032): wake-up check on each interaction cycle. Mind never
     /// self-wakes; Anaphase looks at the agenda per cycle (elastic window
     /// limits frequency — no daemon yet, honest).
@@ -306,7 +309,7 @@ impl Default for RunCycleConfig {
             soft_reflex_threshold: 0.7,
             execution_placeholder: "echo".to_string(),
             cycle_cap: 7,
-            mode: Mode::Partner, // Helix's native state: memory-bearing partner
+            mode: None, // undeclared until a config says otherwise: no default may pose as a choice
             wakeup_enabled: true,
             wakeup_jitter_minutes: 60,
             wakeup_actions: vec!["hibernate".into()],
@@ -463,7 +466,7 @@ mod tests {
                     soft_reflex_threshold: 0.7,
                     execution_placeholder: "echo".into(),
                     cycle_cap: 7,
-                    mode: Mode::Partner,
+                    mode: None,
                     wakeup_enabled: true,
                     wakeup_jitter_minutes: 60,
                     empty_reply_retries: 1,

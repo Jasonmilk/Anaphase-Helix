@@ -1029,7 +1029,13 @@ async fn build_agent(config: &config::Config) -> BuiltAgent {
         // the loop; physical Mind participation is decided by resolve_memory_adapter
         // (Noop vs gRPC) — Drive auto-achieves "no experience written" through
         // the Noop adapter without any runtime branch.
-        agent.mode = config.anaphase.run_cycle.mode;
+        /* THE AGENT KEEPS ITS OWN RUNNING STATE, THE PAYLOAD KEEPS THE DECLARATION (ADR-0048 §345): the
+         * agent must hold SOME value to run, but a missing config must NOT become a claim. Only an explicit
+         * `Some` is copied, and the payload reads the config's `Option` directly — so "undeclared" stays
+         * undeclared all the way into the event. */
+        if let Some(m) = config.anaphase.run_cycle.mode {
+            agent.mode = m;
+        }
 
         // ADR-0007 D'-3: wire the deterministic execution channel at startup.
         // `tentacle_endpoint` configured -> the six-stage pipeline replaces the
