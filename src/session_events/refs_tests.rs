@@ -340,3 +340,29 @@ fn the_retention_check_can_go_red() {
     assert_eq!(retention_covers_grace(20, 10), true);
     assert_eq!(retention_covers_grace(20, 20), true, "equality is enough: the anchor survives the window");
 }
+
+/// A MISSING TRAILING NEWLINE MUST NOT CONCATENATE TWO ROWS (ADR-0048 §325). Measured the hard way: the
+/// ref writer appended to a file whose last row had no `\n`, two objects landed on one line, and three
+/// unrelated suites crashed parsing that line — reds that looked like someone else's bug.
+#[test]
+fn appending_to_a_file_without_a_trailing_newline_does_not_concatenate_rows() {
+    let dir = test_support::tmp_dir("append_newline_guard");
+    let pid = "run-9999888877776666-p0000000023000023";
+    let path = dir.join(format!("{pid}.events.jsonl"));
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(&path, "{\"type\":\"turn/end\",\"period_id\":\"x\",\"job_id\":\"x\",\"seq\":1,\"time\":\"t\",\"data\":{}}").unwrap();
+    {
+        let mut s = SessionEventStream::open_append(dir.clone(), pid, pid, Redaction::default()).unwrap();
+        s.emit("2026-10-01T00:00:03Z", EventType::Check, json!({ "after": true })).unwrap();
+    }
+    let body = fs::read_to_string(&path).unwrap();
+    for line in body.lines() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        serde_json::from_str::<serde_json::Value>(line)
+            .unwrap_or_else(|e| panic!("every row must parse on its own line: {e} — body: {body}"));
+    }
+    assert_eq!(body.lines().count(), 2, "one row per line, never concatenated");
+    let _ = fs::remove_dir_all(&dir);
+}

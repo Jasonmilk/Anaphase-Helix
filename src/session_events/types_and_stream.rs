@@ -179,6 +179,19 @@ impl SessionEventStream {
         fs::create_dir_all(&dir)?;
         let path = dir.join(format!("{period_id}.events.jsonl"));
         let last = last_seq_or_refuse(&path)?;
+        /* A MISSING TRAILING NEWLINE CONCATENATES TWO ROWS (ADR-0048 §325, measured). Appending to a file
+         * whose last row has no `\n` put the new object on the SAME line as the old one, and every reader
+         * that parses JSONL line by line then crashed — three suites went red, and the cause was this
+         * writer, not their invocation. The guard is here, at the only place that appends. */
+        if last > 0 {
+            if let Ok(existing) = fs::read(&path) {
+                if existing.last().map(|b| *b != b'\n').unwrap_or(false) {
+                    let mut f = fs::OpenOptions::new().append(true).open(&path)?;
+                    use std::io::Write;
+                    f.write_all(b"\n")?;
+                }
+            }
+        }
         let file = fs::OpenOptions::new().create(true).append(true).open(&path)?;
         Ok(SessionEventStream {
             seq: last + 1,
