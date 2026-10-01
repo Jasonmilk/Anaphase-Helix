@@ -244,3 +244,41 @@ fn appending_continues_the_numbering_and_never_repeats_a_seq() {
     assert_eq!(sorted.len(), after.len(), "no duplicate seq ⇒ order stays distinguishable");
     let _ = fs::remove_dir_all(&dir);
 }
+
+/// P13 — A TORN TAIL MUST BE NAMED, NOT SKIPPED (ADR-0048 §320).
+/// Skipping a half-written last line makes `max+1` collide with the number that row already claimed:
+/// two events, one `seq`, order indistinguishable. The reader refuses by name, and the explicit repair
+/// is a separate, deliberate act.
+#[test]
+fn a_torn_tail_is_refused_by_name_and_can_be_repaired_explicitly() {
+    use std::io::Write;
+    let dir = test_support::tmp_dir("torn_tail");
+    let pid = "run-5678567856785678-p0000000021000021";
+    {
+        let mut s = SessionEventStream::open(dir.clone(), pid, pid, Redaction::default()).unwrap();
+        s.emit("2026-10-01T00:00:00Z", EventType::UserMessage, json!({ "text": "a" })).unwrap();
+    }
+    let path = dir.join(format!("{pid}.events.jsonl"));
+    {
+        /* A process killed mid-write: half a line, no newline. */
+        let mut f = fs::OpenOptions::new().append(true).open(&path).unwrap();
+        write!(f, "{{\"type\":\"assistant/reply\",\"seq\":1,\"da").unwrap();
+    }
+    let err = match SessionEventStream::open_append(dir.clone(), pid, pid, Redaction::default()) {
+        Ok(_) => panic!("a torn tail must be REFUSED by name, not opened silently"),
+        Err(e) => e,
+    };
+    assert!(err.to_string().contains("torn"), "the refusal NAMES the corruption: {err}");
+    assert!(err.to_string().contains("RE-USE"), "and names the danger it avoids: {err}");
+
+    let dropped = repair_torn_tail(&path).unwrap();
+    assert!(dropped > 0, "the explicit repair reports how many bytes it removed");
+    let mut s = SessionEventStream::open_append(dir.clone(), pid, pid, Redaction::default()).unwrap();
+    s.emit("2026-10-01T00:00:02Z", EventType::TurnEnd, json!({})).unwrap();
+    let seqs: Vec<u64> = read_period(&dir, pid).unwrap().iter().map(|e| e.seq).collect();
+    let mut uniq = seqs.clone();
+    uniq.sort_unstable();
+    uniq.dedup();
+    assert_eq!(uniq.len(), seqs.len(), "after the repair, no seq is reused: {seqs:?}");
+    let _ = fs::remove_dir_all(&dir);
+}

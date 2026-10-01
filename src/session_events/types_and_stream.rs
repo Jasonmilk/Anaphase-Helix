@@ -173,19 +173,7 @@ impl SessionEventStream {
     ) -> io::Result<Self> {
         fs::create_dir_all(&dir)?;
         let path = dir.join(format!("{period_id}.events.jsonl"));
-        let last = fs::read_to_string(&path)
-            .ok()
-            .map(|body| {
-                body.lines()
-                    .rev()
-                    .find_map(|l| {
-                        serde_json::from_str::<serde_json::Value>(l)
-                            .ok()
-                            .and_then(|v| v.get("seq").and_then(|s| s.as_u64()))
-                    })
-                    .unwrap_or(0)
-            })
-            .unwrap_or(0);
+        let last = last_seq_or_refuse(&path)?;
         let file = fs::OpenOptions::new().create(true).append(true).open(&path)?;
         Ok(SessionEventStream {
             seq: last + 1,
@@ -315,4 +303,68 @@ pub fn now_ts() -> String {
             .map(|d| d.as_secs())
             .unwrap_or(0),
     )
+}
+
+/// The last `seq` in a stream, read WITHOUT silently skipping corruption (ADR-0048 §320, ledger P13).
+///
+/// A half-written last line means the NEXT number is **unknown**: `max+1` computed from the previous line
+/// would RE-USE the number the torn row already claimed, and two events sharing a `seq` are
+/// indistinguishable in order. So the two honest endings are: refuse BY NAME, or truncate the torn tail
+/// explicitly (`repair_torn_tail`). Skipping is not one of them — it is exactly how the duplicate appears.
+fn last_seq_or_refuse(path: &std::path::Path) -> io::Result<u64> {
+    let body = match fs::read_to_string(path) {
+        Ok(b) => b,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(0),
+        Err(e) => return Err(e),
+    };
+    let mut last = 0u64;
+    for (i, line) in body.lines().enumerate() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        match serde_json::from_str::<serde_json::Value>(line) {
+            Ok(v) => {
+                if let Some(n) = v.get("seq").and_then(|s| s.as_u64()) {
+                    last = n;
+                }
+            }
+            Err(e) => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!(
+                        "torn event at line {} of {}: {e}. Refusing to append — continuing would RE-USE a seq.                          Repair the tail explicitly with `repair_torn_tail` (this is a named ending, not a skip).",
+                        i + 1,
+                        path.display()
+                    ),
+                ))
+            }
+        }
+    }
+    Ok(last)
+}
+
+/// Drop a torn tail **explicitly**, returning how many BYTES were removed (0 = nothing to repair).
+/// The caller decides; the reader never silently skips (ADR-0048 §320).
+pub fn repair_torn_tail(path: &std::path::Path) -> io::Result<usize> {
+    let body = match fs::read_to_string(path) {
+        Ok(b) => b,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(0),
+        Err(e) => return Err(e),
+    };
+    let mut good = String::new();
+    for line in body.lines() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        if serde_json::from_str::<serde_json::Value>(line).is_err() {
+            break; /* stop at the FIRST torn line: history after corruption is not trustworthy */
+        }
+        good.push_str(line);
+        good.push('\n');
+    }
+    let dropped = body.len().saturating_sub(good.len());
+    if dropped > 0 {
+        fs::write(path, good)?;
+    }
+    Ok(dropped)
 }
