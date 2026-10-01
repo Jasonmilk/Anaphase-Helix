@@ -1036,6 +1036,9 @@ async fn build_agent(config: &config::Config) -> BuiltAgent {
         if let Some(m) = config.anaphase.run_cycle.mode {
             agent.mode = m;
         }
+        /* THE DECLARATION TRAVELS SEPARATELY (ADR-0048 §346.3 ③): the effective value above and the declared
+         * one here are two facts — the payload reports the second, so "undeclared" can reach the event. */
+        agent.context.declared_mode = config.anaphase.run_cycle.mode;
 
         // ADR-0007 D'-3: wire the deterministic execution channel at startup.
         // `tentacle_endpoint` configured -> the six-stage pipeline replaces the

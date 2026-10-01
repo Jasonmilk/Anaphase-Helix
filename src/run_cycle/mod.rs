@@ -276,6 +276,11 @@ fn remember_parents(context: &AgentContext) -> Vec<String> {
 #[derive(Debug, Clone, Default)]
 pub struct AgentContext {
     pub user_input: String,
+    /// THE DECLARATION, BESIDE THE EFFECTIVE VALUE (ADR-0048 §346.3 ③). `AgentLoop.mode` is what the cycle
+    /// RUNS with (it must hold some value to run); this is what the config DECLARED — and it stays `None`
+    /// when the config said nothing, so the event payload can carry an ABSENCE instead of a default posing as
+    /// a choice. `#[derive(Default)]` gives `None`, which is exactly "undeclared".
+    pub declared_mode: Option<Mode>,
     /// Why the reflex gate last blocked, if it did (B22). `None` means it did not.
     ///
     /// This exists so a block is observable WITHOUT the panel. Before it, a blocked

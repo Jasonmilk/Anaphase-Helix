@@ -572,3 +572,19 @@ fn period_start_carries_the_mode_only_when_declared() {
             "an explicit null IS a key: the assertion above is therefore about ABSENCE");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// M3④ ③ (ADR-0048 §346.3): the DECLARATION is a separate fact from the effective value, and only an
+/// explicit one reaches the payload. This pins the wiring, not just the leaf.
+#[test]
+fn the_declared_mode_is_carried_separately_from_the_effective_one() {
+    use crate::config::Mode;
+    use crate::run_cycle::AgentContext;
+    let undeclared = AgentContext::default();
+    assert_eq!(undeclared.declared_mode, None, "Default ⇒ undeclared (never Mode::default())");
+    assert_eq!(crate::session_events::mode_wire_opt(undeclared.declared_mode), None,
+               "and it reaches the payload as an ABSENCE");
+
+    let declared = AgentContext { declared_mode: Some(Mode::Partner), ..Default::default() };
+    assert_eq!(crate::session_events::mode_wire_opt(declared.declared_mode), Some("partner"),
+               "a declared mode reaches the payload as its wire value");
+}

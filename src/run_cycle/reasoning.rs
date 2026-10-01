@@ -207,10 +207,9 @@ impl AgentLoop {
                     resume_from,
                     detail.as_ref(),
                     Some(injected_chars),
-                    // NOT THREADED YET (ADR-0048 §346.3 ②): the run cycle carries `mode: Mode` (its
-                    // effective value) but not the DECLARATION, so the payload says nothing rather than
-                    // repeating the default — absence is honest, a default posing as a choice is not.
-                    None,
+                    /* THE DECLARATION, NOT THE EFFECTIVE VALUE (ADR-0048 §346.3 ③): when the config declared
+                     * a mode it is written; when it declared nothing, the payload carries an ABSENCE. */
+                    crate::session_events::mode_wire_opt(self.context.declared_mode),
                 );
             }
             // Streaming when a delta sink is attached (SSE chat); the
