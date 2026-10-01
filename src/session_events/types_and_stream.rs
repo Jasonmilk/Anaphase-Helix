@@ -266,3 +266,13 @@ impl SessionEventStream {
     }
 }
 
+/// The wall-clock instant as RFC3339. Informational: the GRACE anchor (C12) needs a MONOTONIC clock,
+/// which is a different quantity and belongs to the GC's own declaration.
+pub fn now_ts() -> String {
+    crate::ledger::unix_secs_to_rfc3339(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0),
+    )
+}

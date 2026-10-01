@@ -93,3 +93,71 @@ fn an_empty_target_is_refused() {
     assert!(write_ref(&dir, "main", "   ").is_err(), "a ref must point at something");
     let _ = fs::remove_dir_all(&dir);
 }
+
+/// THE REFLOG (ADR-0048 §315): the value that was REPLACED, recorded at the moment it is replaced.
+/// `M2`'s grace anchor is derived from this fact, and a back-filled record has fidelity q<1 per write
+/// (`q^n` ≈ 0.37) — so the cheap moment to write it is the only moment worth writing it in.
+#[test]
+fn the_first_write_records_no_previous_value() {
+    let dir = test_support::tmp_dir("reflog_first");
+    let pid = "run-8888888888888888-p0000000008000008";
+    period(&dir, pid, "job-l");
+    write_ref(&dir, "current", pid).unwrap();
+    let log = read_ref_log(&dir, "current").unwrap();
+    assert_eq!(log.len(), 1);
+    assert_eq!(log[0].old, None, "nothing was there before: absence, not a made-up value");
+    assert_eq!(log[0].new.as_deref(), Some(pid));
+    assert!(!log[0].ts.is_empty(), "and WHEN it happened is part of the fact");
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_second_write_records_the_value_it_replaced() {
+    let dir = test_support::tmp_dir("reflog_second");
+    let a = "run-9999999999999999-p0000000009000009";
+    let b = "run-aaaaaaaaaaaaaaaa-p0000000010000010";
+    period(&dir, a, "job-a");
+    period(&dir, b, "job-b");
+    write_ref(&dir, "current", a).unwrap();
+    write_ref(&dir, "current", b).unwrap();
+    let log = read_ref_log(&dir, "current").unwrap();
+    assert_eq!(log.len(), 2, "one line per change, never a rewrite");
+    /* MUTATION: a PUT that recorded only the NEW value would leave `old = None` here — this assertion is
+     * the one that fails, which is what makes the debt visible instead of silent. */
+    assert_eq!(log[1].old.as_deref(), Some(a), "the replaced value is preserved");
+    assert_eq!(log[1].new.as_deref(), Some(b));
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn clearing_a_ref_is_recorded_as_a_vacancy() {
+    let dir = test_support::tmp_dir("reflog_vacancy");
+    let pid = "run-bbbbbbbbbbbbbbbb-p0000000011000011";
+    period(&dir, pid, "job-v");
+    write_ref(&dir, "current", pid).unwrap();
+    assert_eq!(delete_ref(&dir, "current").unwrap(), true);
+    let log = read_ref_log(&dir, "current").unwrap();
+    assert_eq!(log.len(), 2);
+    assert_eq!(log[1].old.as_deref(), Some(pid), "the vacated pointer is named");
+    assert_eq!(log[1].new, None, "and the vacancy is a VALUE (null), not a missing line");
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn the_history_is_not_mistaken_for_a_ref() {
+    let dir = test_support::tmp_dir("reflog_not_a_ref");
+    let pid = "run-cccccccccccccccc-p0000000012000012";
+    period(&dir, pid, "job-n");
+    write_ref(&dir, "current", pid).unwrap();
+    let names: Vec<String> = list_refs(&dir).unwrap().into_iter().map(|r| r.name).collect();
+    assert_eq!(names, vec!["current".to_string()], "the reflog lives in a subdirectory and is not a ref");
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn an_unknown_ref_has_an_empty_history() {
+    let dir = test_support::tmp_dir("reflog_unknown");
+    assert!(read_ref_log(&dir, "never-written").unwrap().is_empty(),
+            "no history is an EMPTY history, not an error");
+    let _ = fs::remove_dir_all(&dir);
+}

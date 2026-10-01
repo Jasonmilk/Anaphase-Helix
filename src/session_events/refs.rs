@@ -49,6 +49,65 @@ pub fn check_ref_name(name: &str) -> io::Result<()> {
     Ok(())
 }
 
+/// One line of a ref's HISTORY: which value was replaced, and when (a Git-style reflog).
+///
+/// WHY THIS EXISTS BEFORE ANYONE NEEDS IT (ADR-0048 §315): `PUT` overwrites, so the OLD value is gone
+/// the moment it is replaced — and the deletion subsystem (`M2`) derives its grace anchor from exactly
+/// that fact: `(time, vacated position)`. A record written AFTERWARDS has fidelity q<1 per write, and
+/// `q^n` decays to ~0.37 for any n — that is, a back-filled stub is worth about as much as no stub. The
+/// only cheap moment to record it is the moment it happens. A SHAPE debt, not a feature debt.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RefLogEntry {
+    pub ts: String,
+    pub old: Option<String>,
+    pub new: Option<String>,
+}
+
+fn ref_log_path(events_dir: &Path, name: &str) -> PathBuf {
+    refs_dir(events_dir).join(".log").join(name)
+}
+
+fn now_rfc3339() -> String {
+    super::types_and_stream::now_ts()
+}
+
+/// Append ONE history line. Never rewrites: a log that can be edited is not a log.
+fn append_ref_log(events_dir: &Path, name: &str, old: Option<&str>, new: Option<&str>) -> io::Result<()> {
+    let dir = refs_dir(events_dir).join(".log");
+    fs::create_dir_all(&dir)?;
+    let line = format!(
+        "{{\"ts\":{},\"old\":{},\"new\":{}}}\n",
+        serde_json::to_string(&now_rfc3339()).unwrap_or_else(|_| "\"\"".to_string()),
+        serde_json::to_string(&old).unwrap_or_else(|_| "null".to_string()),
+        serde_json::to_string(&new).unwrap_or_else(|_| "null".to_string())
+    );
+    use std::io::Write;
+    let mut f = fs::OpenOptions::new().create(true).append(true).open(ref_log_path(events_dir, name))?;
+    f.write_all(line.as_bytes())?;
+    Ok(())
+}
+
+/// Read a ref's history, oldest first. An unreadable line is SKIPPED rather than fatal: a log with one
+/// torn line still answers "what was here before", which is the question it exists to answer.
+pub fn read_ref_log(events_dir: &Path, name: &str) -> io::Result<Vec<RefLogEntry>> {
+    check_ref_name(name)?;
+    let body = match fs::read_to_string(ref_log_path(events_dir, name)) {
+        Ok(b) => b,
+        Err(e) if e.kind() == ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(e),
+    };
+    let mut out = Vec::new();
+    for line in body.lines() {
+        let v: serde_json::Value = match serde_json::from_str(line) { Ok(v) => v, Err(_) => continue };
+        out.push(RefLogEntry {
+            ts: v.get("ts").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+            old: v.get("old").and_then(|x| x.as_str()).map(|s| s.to_string()),
+            new: v.get("new").and_then(|x| x.as_str()).map(|s| s.to_string()),
+        });
+    }
+    Ok(out)
+}
+
 /// Read one ref. `Ok(None)` means "there is no such ref" — an absence, not a failure.
 pub fn read_ref(events_dir: &Path, name: &str) -> io::Result<Option<String>> {
     check_ref_name(name)?;
@@ -90,15 +149,23 @@ pub fn write_ref(events_dir: &Path, name: &str, period_ref: &str) -> io::Result<
     };
     let dir = refs_dir(events_dir);
     fs::create_dir_all(&dir)?;
+    let old = read_ref(events_dir, name)?;
     fs::write(dir.join(name), format!("{id}\n"))?;
+    /* THE OLD VALUE IS RECORDED AT THE MOMENT IT IS REPLACED (ADR-0048 §315): it is the only source for
+     * the vacancy fact `M2` derives its grace anchor from. */
+    append_ref_log(events_dir, name, old.as_deref(), Some(&id))?;
     Ok(id)
 }
 
 /// Remove a ref. `Ok(false)` = there was nothing to remove (again a NAMED absence).
 pub fn delete_ref(events_dir: &Path, name: &str) -> io::Result<bool> {
     check_ref_name(name)?;
+    let old = read_ref(events_dir, name)?;
     match fs::remove_file(refs_dir(events_dir).join(name)) {
-        Ok(()) => Ok(true),
+        Ok(()) => {
+            append_ref_log(events_dir, name, old.as_deref(), None)?;
+            Ok(true)
+        }
         Err(e) if e.kind() == ErrorKind::NotFound => Ok(false),
         Err(e) => Err(e),
     }
