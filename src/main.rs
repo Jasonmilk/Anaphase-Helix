@@ -311,6 +311,53 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
             }))
+            /* REFS: THE THIRD LAYER (ADR-0048 §307/§309). Objects and edges existed; this is the pointer
+             * that says which period the NEXT message continues. It lives in the REPOSITORY (one file per
+             * ref under `<events>/.refs/<name>`), so a restart does not erase it and every reader shares
+             * it. Refusals are NAMED: an unsafe name, a target that resolves to nothing, an ambiguous
+             * target — none of them stores a pointer. */
+            .route("/v1/refs", get({
+                let events_dir = config.anaphase.session_events_path.clone();
+                move || async move {
+                    let Some(dir) = events_dir.as_deref() else {
+                        return Json(serde_json::json!({ "ok": false, "error": "session events not configured" }));
+                    };
+                    match anaphase::session_events::list_refs(std::path::Path::new(dir)) {
+                        Ok(refs) => Json(serde_json::json!({
+                            "ok": true,
+                            "refs": refs.iter()
+                                .map(|r| serde_json::json!({ "name": r.name, "period_id": r.period_id }))
+                                .collect::<Vec<_>>()
+                        })),
+                        Err(e) => Json(serde_json::json!({ "ok": false, "error": e.to_string() })),
+                    }
+                }
+            }))
+            .route("/v1/refs/:name", axum::routing::put({
+                let events_dir = config.anaphase.session_events_path.clone();
+                move |axum::extract::Path(name): axum::extract::Path<String>,
+                      Json(body): Json<serde_json::Value>| async move {
+                    let Some(dir) = events_dir.as_deref() else {
+                        return Json(serde_json::json!({ "ok": false, "error": "session events not configured" }));
+                    };
+                    let target = body.get("period_id").and_then(|v| v.as_str()).unwrap_or("");
+                    match anaphase::session_events::write_ref(std::path::Path::new(dir), &name, target) {
+                        Ok(period_id) => Json(serde_json::json!({ "ok": true, "name": name, "period_id": period_id })),
+                        Err(e) => Json(serde_json::json!({ "ok": false, "error": e.to_string() })),
+                    }
+                }
+            }).delete({
+                let events_dir = config.anaphase.session_events_path.clone();
+                move |axum::extract::Path(name): axum::extract::Path<String>| async move {
+                    let Some(dir) = events_dir.as_deref() else {
+                        return Json(serde_json::json!({ "ok": false, "error": "session events not configured" }));
+                    };
+                    match anaphase::session_events::delete_ref(std::path::Path::new(dir), &name) {
+                        Ok(existed) => Json(serde_json::json!({ "ok": true, "removed": existed })),
+                        Err(e) => Json(serde_json::json!({ "ok": false, "error": e.to_string() })),
+                    }
+                }
+            }))
             .route("/v1/health", get({
                 // Self-check (2026-09-07): Anaphase reports the physical
                 // readiness of its own organs — config-derived, probed, never

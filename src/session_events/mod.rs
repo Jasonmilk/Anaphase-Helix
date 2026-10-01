@@ -19,6 +19,7 @@ pub mod crystallize;
 pub mod identity;
 pub mod naming;
 pub mod query;
+pub mod refs;
 pub mod types_and_stream;
 
 pub use identity::{
@@ -28,6 +29,7 @@ pub use identity::{
 pub use crystallize::{crystallize, CrystalSuggestion};
 pub use naming::{freeze_name, rename_period};
 pub use query::{list_periods, read_period, read_summary, PeriodSummary};
+pub use refs::{delete_ref, list_refs, read_ref, write_ref, RefEntry};
 pub use types_and_stream::{EventType, SessionEvent, SessionEventStream};
 
 #[cfg(test)]
@@ -38,3 +40,4 @@ mod tests;
 
 #[cfg(test)]
 mod query_tests;
+mod refs_tests;
