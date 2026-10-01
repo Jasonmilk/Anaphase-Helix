@@ -215,3 +215,32 @@ fn a_nested_ref_keeps_its_own_history() {
     assert_eq!(log[1].old.as_deref(), Some(a));
     let _ = fs::remove_dir_all(&dir);
 }
+
+/// The numbering wall (ADR-0048 §319): appending to an existing stream must CONTINUE the numbering.
+/// Reusing the last `seq` would make two events indistinguishable in order — deterministically, not
+/// probabilistically. This is the criterion the reviewer asked for, stated as the failure it forbids.
+#[test]
+fn appending_continues_the_numbering_and_never_repeats_a_seq() {
+    let dir = test_support::tmp_dir("append_seq_continues");
+    let pid = "run-1234123412341234-p0000000020000020";
+    {
+        let mut s = SessionEventStream::open(dir.clone(), pid, pid, Redaction::default()).unwrap();
+        s.emit("2026-10-01T00:00:00Z", EventType::UserMessage, json!({ "text": "a" })).unwrap();
+        s.emit("2026-10-01T00:00:01Z", EventType::TurnEnd, json!({})).unwrap();
+    }
+    let before: Vec<u64> = read_period(&dir, pid).unwrap().iter().map(|e| e.seq).collect();
+    let max_before = *before.iter().max().unwrap();
+    {
+        /* THE SECOND HANDLE APPENDS — the case that used to overwrite from offset 0. */
+        let mut s = SessionEventStream::open_append(dir.clone(), pid, pid, Redaction::default()).unwrap();
+        s.emit("2026-10-01T00:00:02Z", EventType::Check, json!({ "after": true })).unwrap();
+    }
+    let after: Vec<u64> = read_period(&dir, pid).unwrap().iter().map(|e| e.seq).collect();
+    assert_eq!(after.len(), 3, "nothing was overwritten (append, not rewrite)");
+    assert_eq!(after[2], max_before + 1, "the new event continues from max+1, never reusing a number");
+    let mut sorted = after.clone();
+    sorted.sort_unstable();
+    sorted.dedup();
+    assert_eq!(sorted.len(), after.len(), "no duplicate seq ⇒ order stays distinguishable");
+    let _ = fs::remove_dir_all(&dir);
+}

@@ -158,6 +158,46 @@ impl SessionEventStream {
         })
     }
 
+    /// Append-mode open for a stream that ALREADY EXISTS (ADR-0048 §319).
+    ///
+    /// `open` carries `seq` from 0 and writes at offset 0, so a second handle OVERWROTE a period's
+    /// history (caught by the criterion "every byte stays on disk"). This opens with `append` and
+    /// continues the numbering **from max+1** — never by reusing the last number: two events sharing a
+    /// `seq` are indistinguishable in order (0.0000 bits), which is exactly what a deletion's grace anchor
+    /// must not be.
+    pub fn open_append(
+        dir: PathBuf,
+        period_id: &str,
+        job_id: &str,
+        redact: Redaction,
+    ) -> io::Result<Self> {
+        fs::create_dir_all(&dir)?;
+        let path = dir.join(format!("{period_id}.events.jsonl"));
+        let last = fs::read_to_string(&path)
+            .ok()
+            .map(|body| {
+                body.lines()
+                    .rev()
+                    .find_map(|l| {
+                        serde_json::from_str::<serde_json::Value>(l)
+                            .ok()
+                            .and_then(|v| v.get("seq").and_then(|s| s.as_u64()))
+                    })
+                    .unwrap_or(0)
+            })
+            .unwrap_or(0);
+        let file = fs::OpenOptions::new().create(true).append(true).open(&path)?;
+        Ok(SessionEventStream {
+            seq: last + 1,
+            path,
+            file,
+            redact,
+            dir,
+            period_id: period_id.to_string(),
+            job_id: job_id.to_string(),
+        })
+    }
+
     /// Append one event. `time` comes from the caller (injected clock).
     /// The data payload is redacted recursively before it touches disk.
     pub fn emit(&mut self, time: &str, event_type: EventType, data: Value) -> io::Result<()> {
