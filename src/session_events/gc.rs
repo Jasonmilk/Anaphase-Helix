@@ -260,3 +260,56 @@ pub fn collect_garbage(dir: &std::path::Path, now: u64, grace_secs: u64) -> std:
         orphan_pins: orphans,
     })
 }
+
+/* ── REPLAY: TWO PREDICATES, NEVER ONE (ADR-0048 §331) ────────────────────────────────────────────
+ * `D0` HIDES an object; `D1` makes it STOP EXISTING. Collapsing those into one predicate is how "the
+ * reader does not show it" and "it is gone" become the same sentence — and then a replay that ignores the
+ * tombstone silently revives something that was purged. So there are two, and the end-to-end criterion
+ * checks both: a purged object is neither visible NOR existing, and removing the purge fact (the mutation)
+ * brings it back — which is the reviewer's C8, measured in their sandbox and pinned here. */
+fn scan(dir: &std::path::Path, ignore_purge: bool) -> std::io::Result<(Vec<String>, Vec<String>)> {
+    let mut visible = Vec::new();
+    let mut existing = Vec::new();
+    for entry in std::fs::read_dir(dir)? {
+        let entry = entry?;
+        let fname = entry.file_name().to_string_lossy().to_string();
+        let Some(stem) = fname.strip_suffix(".events.jsonl") else { continue };
+        if !super::identity::is_period_id(stem) { continue; }
+        let Ok(body) = std::fs::read_to_string(entry.path()) else { continue };
+        let mut purged = false;
+        let mut hidden = false;
+        let mut rows = 0usize;
+        for line in body.lines() {
+            if line.trim().is_empty() { continue; }
+            rows += 1;
+            let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else { continue };
+            match v.get("type").and_then(|t| t.as_str()) {
+                Some("period/purge") => purged = true,
+                Some("period/tombstone") => hidden = true,
+                _ => {}
+            }
+        }
+        if rows == 0 { continue; }
+        let gone = purged && !ignore_purge;
+        if !gone { existing.push(stem.to_string()); }
+        if !gone && !hidden { visible.push(stem.to_string()); }
+    }
+    visible.sort();
+    existing.sort();
+    Ok((visible, existing))
+}
+
+/// What a READER sees: rows, no tombstone, no purge.
+pub fn replay_live(dir: &std::path::Path) -> std::io::Result<Vec<String>> {
+    Ok(scan(dir, false)?.0)
+}
+
+/// What still EXISTS on disk: rows and no purge (a tombstoned object still exists — D0 destroys nothing).
+pub fn replay_exists(dir: &std::path::Path) -> std::io::Result<Vec<String>> {
+    Ok(scan(dir, false)?.1)
+}
+
+/// THE MUTATION, available to the criterion only: pretend the purge facts were never written.
+pub fn replay_exists_ignoring_purge(dir: &std::path::Path) -> std::io::Result<Vec<String>> {
+    Ok(scan(dir, true)?.1)
+}

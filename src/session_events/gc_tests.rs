@@ -227,3 +227,44 @@ fn a_stamped_object_without_a_vacancy_fact_is_named_and_not_purged() {
     assert_eq!(out.no_anchor, vec![pid.to_string()], "the absent anchor is NAMED");
     let _ = fs::remove_dir_all(&dir);
 }
+
+/// ④ THE END-TO-END (ADR-0048 §331): delete ⇒ replay ⇒ NO REVIVAL. And the MUTATION that proves the
+/// criterion is about the purge FACT rather than about the test: drop that one fact and the object returns.
+#[test]
+fn a_purged_object_is_neither_visible_nor_existing_after_a_replay() {
+    use crate::trace::Redaction;
+    use serde_json::json;
+    use std::fs;
+    let dir = test_support::tmp_dir("gc_e2e_no_revival");
+    let pid = "run-deadbeefdeadbeef-p0000000050000050";
+    {
+        let mut s = super::SessionEventStream::open(dir.clone(), pid, pid, Redaction::default()).unwrap();
+        s.emit("2026-10-01T00:00:00Z", EventType::UserMessage, json!({ "text": "keep?" })).unwrap();
+        s.emit("2026-10-01T00:00:01Z", EventType::TurnEnd, json!({})).unwrap();
+    }
+    /* D0 first (hide), then a vacancy fact, then D1 (collect). */
+    super::tombstone_period(&dir, pid, "deleted").unwrap();
+    super::write_ref(&dir, "current", pid).unwrap();
+    super::delete_ref(&dir, "current").unwrap();
+
+    /* D0 alone: hidden from readers, still EXISTING (nothing destroyed yet). */
+    assert!(!super::replay_live(&dir).unwrap().contains(&pid.to_string()), "D0 hides it");
+    assert!(super::replay_exists(&dir).unwrap().contains(&pid.to_string()), "but its bytes are still there");
+
+    let out = super::collect_garbage(&dir, 4_000_000_000, 0).unwrap();
+    assert_eq!(out.collected, vec![pid.to_string()], "D1 collects it");
+
+    /* D1: neither visible NOR existing — and no resurrection on a fresh replay. */
+    assert!(!super::replay_live(&dir).unwrap().contains(&pid.to_string()), "not visible after the purge");
+    assert!(!super::replay_exists(&dir).unwrap().contains(&pid.to_string()), "and it no longer EXISTS");
+
+    /* MUTATION: ignore the purge fact ⇒ the object comes back. That is exactly the revival C8 forbids,
+     * and this assertion is what makes the criterion falsifiable rather than decorative. */
+    assert!(super::replay_exists_ignoring_purge(&dir).unwrap().contains(&pid.to_string()),
+            "without the purge fact a replay WOULD revive it — so the fact is load-bearing");
+
+    /* And the history it never destroyed is still on disk: D1 records, D2 destroys. */
+    let body = fs::read_to_string(dir.join(format!("{pid}.events.jsonl"))).unwrap();
+    assert!(body.contains("user/message") && body.contains("period/purge"));
+    let _ = fs::remove_dir_all(&dir);
+}
