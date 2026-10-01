@@ -34,6 +34,7 @@ pub fn mode_wire(mode: Mode) -> &'static str {
     }
 }
 
+
 /// The inverse, so a reader can name a value it did not write (`None` = an unknown value, NAMED as unknown).
 pub fn mode_from_wire(value: &str) -> Option<Mode> {
     match value {

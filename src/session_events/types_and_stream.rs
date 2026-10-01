@@ -391,3 +391,13 @@ pub fn repair_torn_tail(path: &std::path::Path) -> io::Result<usize> {
     }
     Ok(dropped)
 }
+
+/// THE OPTIONAL MODE, AND IT DOES NOT FALL BACK (ADR-0048 §345). This lives beside the WRITER of the event
+/// payload, not with the config struct: the config field is what a run is configured with, while this is what
+/// the payload may carry — and `None` must stay `None`, because substituting `Mode::default()` here is exactly
+/// the defect the reviewer named (a default that then claims to be declared). The panel's `undeclared` state
+/// exists for this value. (It is also the reason it is not in `config.rs`: the governance scan there reads any
+/// `Option<…>` in that file as a config field, and a function parameter is not a field.)
+pub fn mode_wire_opt(mode: Option<crate::config::Mode>) -> Option<&'static str> {
+    mode.map(crate::config::mode_wire)
+}

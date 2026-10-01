@@ -523,3 +523,19 @@ fn the_mode_wire_vocabulary_is_one_mapping_and_round_trips() {
                "the ENUM NAME is not the wire value — accepting it would hide the drift again");
     assert_eq!(mode_from_wire("partner "), None, "and a near-miss is unknown, not guessed");
 }
+
+/// M3④ (ADR-0048 §345): the OPTIONAL mode must not fall back. A criterion that cannot tell `None` from
+/// `Some(Partner)` would let the very defect it guards ("a default claiming to be declared") pass.
+#[test]
+fn an_undeclared_mode_stays_undeclared_and_never_falls_back() {
+    use crate::config::Mode;
+    use crate::session_events::mode_wire_opt;
+    assert_eq!(mode_wire_opt(None), None, "no declaration ⇒ no value (never Mode::default())");
+    assert_eq!(mode_wire_opt(Some(Mode::Partner)), Some("partner"));
+    assert_eq!(mode_wire_opt(Some(Mode::Drive)), Some("driving"));
+    assert_eq!(mode_wire_opt(Some(Mode::Survive)), Some("survival"));
+    /* MUTATION: the fallback implementation would return `Some("partner")` for `None` — the assertion above
+     * is what makes that difference observable instead of a silent lie. */
+    let fallback = |m: Option<Mode>| Some(crate::config::mode_wire(m.unwrap_or_default()));
+    assert_ne!(fallback(None), mode_wire_opt(None), "the fallback IS distinguishable from the honest one");
+}

@@ -47,7 +47,9 @@ pub use refs::{
     retention_covers_grace, write_ref, RefEntry, RefLogEntry, WriterLock, REF_MOVE_GRACE_SECS,
     REF_MOVE_RETENTION_SECS,
 };
-pub use types_and_stream::{repair_torn_tail, EventType, SessionEvent, SessionEventStream};
+pub use types_and_stream::{
+    mode_wire_opt, repair_torn_tail, EventType, SessionEvent, SessionEventStream,
+};
 
 #[cfg(test)]
 pub mod test_support;
