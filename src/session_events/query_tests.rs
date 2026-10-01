@@ -398,3 +398,68 @@ fn a_root_outside_the_window_is_named_absent() {
     }
     let _ = fs::remove_dir_all(&dir);
 }
+
+/// D0 — THE TOMBSTONE, READ SIDE (ADR-0048 §311). The WRITER is not landed (see `query.rs`: a second
+/// stream handle starts at offset 0 and overwrote history — caught by the "bytes stay" criterion), so
+/// these fixtures append a tombstone ROW by hand. What they pin is the read side and its preconditions.
+fn append_tombstone(dir: &std::path::Path, pid: &str, seq: u64) {
+    use std::io::Write;
+    let path = dir.join(format!("{pid}.events.jsonl"));
+    let mut f = fs::OpenOptions::new().append(true).open(&path).unwrap();
+    writeln!(f, "{}", json!({
+        "type": "period/tombstone", "period_id": pid, "job_id": pid, "seq": seq,
+        "time": "2026-10-01T00:00:00Z", "data": { "reason": "fixture" }
+    })).unwrap();
+}
+
+#[test]
+fn a_tombstoned_period_disappears_from_the_list_but_its_bytes_stay() {
+    let dir = test_support::tmp_dir("tombstone_hides_not_deletes");
+    let pid = "run-1111111111111111-p0000000001000001";
+    let mut s = SessionEventStream::open(dir.clone(), pid, pid, Redaction::default()).unwrap();
+    s.emit("2026-09-30T00:00:00Z", EventType::UserMessage, json!({ "text": "hi" })).unwrap();
+    s.emit("2026-09-30T00:00:01Z", EventType::TurnEnd, json!({})).unwrap();
+    drop(s);
+    assert_eq!(list_periods(&dir, 10).unwrap().len(), 1, "listed before the tombstone");
+
+    append_tombstone(&dir, pid, 2);
+    assert_eq!(list_periods(&dir, 10).unwrap().len(), 0, "readers no longer see it");
+    assert_eq!(count_tombstoned(&dir).unwrap(), 1, "and the hide is COUNTED, not silent");
+    let raw = fs::read_to_string(dir.join(format!("{pid}.events.jsonl"))).unwrap();
+    assert!(raw.lines().count() >= 3 && raw.contains("turn/end") && raw.contains("period/tombstone"),
+            "every byte stays on disk — D0 destroys nothing (that is D2): {raw}");
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_child_of_a_tombstoned_period_is_still_listed() {
+    let dir = test_support::tmp_dir("tombstone_keeps_the_chain");
+    let root = "run-3333333333333333-p0000000003000003";
+    let child = "run-4444444444444444-p0000000004000004";
+    let mut r = SessionEventStream::open(dir.clone(), root, root, Redaction::default()).unwrap();
+    r.emit("2026-09-30T00:00:00Z", EventType::TurnEnd, json!({})).unwrap();
+    drop(r);
+    let mut c = SessionEventStream::open(dir.clone(), child, child, Redaction::default()).unwrap();
+    c.emit("2026-09-30T00:00:10Z", EventType::ContextInject, json!({ "resume_from": root })).unwrap();
+    c.emit("2026-09-30T00:00:11Z", EventType::TurnEnd, json!({})).unwrap();
+    drop(c);
+
+    append_tombstone(&dir, root, 1);
+    let list = list_periods(&dir, 10).unwrap();
+    assert_eq!(list.len(), 1, "the child survives its tombstoned parent");
+    assert_eq!(list[0].period_id, child);
+    assert_eq!(list[0].parent.as_deref(), Some(root),
+               "C7: a tombstoned period still EXISTS, so the chain it never touched is not broken");
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn an_untombstoned_store_counts_zero() {
+    let dir = test_support::tmp_dir("tombstone_count_zero");
+    let pid = "run-7777777777777777-p0000000007000007";
+    let mut s = SessionEventStream::open(dir.clone(), pid, pid, Redaction::default()).unwrap();
+    s.emit("2026-09-30T00:00:00Z", EventType::TurnEnd, json!({})).unwrap();
+    drop(s);
+    assert_eq!(count_tombstoned(&dir).unwrap(), 0, "a store with nothing deleted says ZERO, not nothing");
+    let _ = fs::remove_dir_all(&dir);
+}

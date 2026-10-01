@@ -51,6 +51,11 @@ pub enum EventType {
     Usage,
     /// The period ended and returned to Perception.
     TurnEnd,
+    /// D0 — THE TOMBSTONE (ADR-0048 §311): the period is deleted AS A FACT, and the readers hide it,
+    /// while every byte stays on disk. Deletion is three knobs, not one button: this is the first
+    /// (`D1` GC and `D2` content destruction are separate and later). A tombstone is an EVENT because
+    /// the WAL is the single source of truth — a sidecar flag would be a second one.
+    Tombstone,
 }
 
 impl EventType {
@@ -68,6 +73,7 @@ impl EventType {
             EventType::AssistantReply => "assistant/reply",
             EventType::Usage => "assistant/usage",
             EventType::TurnEnd => "turn/end",
+            EventType::Tombstone => "period/tombstone",
         }
     }
 }

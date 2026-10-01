@@ -137,10 +137,57 @@ pub struct PeriodSummary {
     pub name: Option<String>,
 }
 
+/// How many periods are TOMBSTONED (D0) in this store. A named count, because "the list is shorter"
+/// and "the list is hiding something" must not be the same reading (ADR-0048 §311).
+pub fn count_tombstoned(dir: &std::path::Path) -> io::Result<usize> {
+    let mut n = 0usize;
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        let name = entry.file_name().to_string_lossy().to_string();
+        if !name.ends_with(".events.jsonl") {
+            continue;
+        }
+        if let Ok(body) = fs::read_to_string(entry.path()) {
+            if body.lines().any(|l| {
+                serde_json::from_str::<SessionEvent>(l)
+                    .map(|r| r.event_type == EventType::Tombstone.as_str())
+                    .unwrap_or(false)
+            }) {
+                n += 1;
+            }
+        }
+    }
+    Ok(n)
+}
+
+/// D0's WRITE side is NOT landed yet, and the reason is a criterion, not an opinion (ADR-0048 §311):
+/// writing a tombstone through a SECOND `SessionEventStream::open` handle starts at offset 0 (the stream
+/// carries its own `seq` and does not append), so the first attempt OVERWROTE the period's history —
+/// caught by the test "every byte stays on disk". The fix is an append mode that recovers the last `seq`;
+/// until it exists, nothing in this crate writes a tombstone, and the read side below stays inert.
+///
+/// Is THIS period tombstoned? (the per-period half of `count_tombstoned`).
+pub fn count_tombstoned_of(dir: &std::path::Path, period_id: &str) -> io::Result<bool> {
+    let path = dir.join(format!("{period_id}.events.jsonl"));
+    let body = match fs::read_to_string(&path) {
+        Ok(b) => b,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(e) => return Err(e),
+    };
+    Ok(body.lines().any(|l| {
+        serde_json::from_str::<SessionEvent>(l)
+            .map(|r| r.event_type == EventType::Tombstone.as_str())
+            .unwrap_or(false)
+    }))
+}
+
 /// List periods from the event directory, newest first. `limit` bounds the
 /// returned window (protocol default lives at the caller, not here).
 pub fn list_periods(dir: &std::path::Path, limit: usize) -> io::Result<Vec<PeriodSummary>> {
     let mut out = Vec::new();
+    /* C7 — A TOMBSTONED PERIOD STILL *EXISTS* (ADR-0048 §311): hiding it from the listing must not
+     * null its children's `parent`, or deletion would break the chain it never touched. */
+    let mut existing_ids: Vec<String> = Vec::new();
     let entries = fs::read_dir(dir)?;
     for entry in entries {
         let entry = entry?;
@@ -161,6 +208,7 @@ pub fn list_periods(dir: &std::path::Path, limit: usize) -> io::Result<Vec<Perio
         let mut parent = None;
         let mut model = None;
         let mut count: u64 = 0;
+        let mut tombstone_seen = false;
         // Identity from the data. Legacy rows carry no `period_id`, so the file
         // stem stands in for them — the one place a name is allowed to speak,
         // and only because those rows predate the field.
@@ -221,9 +269,19 @@ pub fn list_periods(dir: &std::path::Path, limit: usize) -> io::Result<Vec<Perio
                     }
                 }
             }
+            if row.event_type == EventType::Tombstone.as_str() {
+                tombstone_seen = true;
+            }
             last_ts = row.time;
         }
         if count == 0 {
+            continue;
+        }
+        /* D0 — A TOMBSTONE HIDES THE PERIOD FROM READERS, NOT FROM DISK (ADR-0048 §311). The bytes stay:
+         * `D1` (GC) and `D2` (content destruction) are separate knobs with their own preconditions, and a
+         * tombstoned period that something still points at is a GHOST — counted, never collected here. */
+        if tombstone_seen {
+            existing_ids.push(period_id.clone());
             continue;
         }
         out.push(PeriodSummary {
@@ -259,7 +317,11 @@ pub fn list_periods(dir: &std::path::Path, limit: usize) -> io::Result<Vec<Perio
     // Membership is checked against PERIOD IDS, because that is what a parent
     // now points at. Checking `job_id` here would let a digest satisfy the
     // lookup and quietly accept the wrong lineage.
-    let known: Vec<String> = out.iter().map(|p| p.period_id.clone()).collect();
+    let known: Vec<String> = out
+        .iter()
+        .map(|p| p.period_id.clone())
+        .chain(existing_ids.into_iter())
+        .collect();
     for p in out.iter_mut() {
         if let Some(par) = p.parent.as_ref() {
             if !known.iter().any(|k| k == par) {
