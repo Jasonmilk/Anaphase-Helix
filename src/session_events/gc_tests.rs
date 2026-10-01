@@ -539,3 +539,36 @@ fn an_undeclared_mode_stays_undeclared_and_never_falls_back() {
     let fallback = |m: Option<Mode>| Some(crate::config::mode_wire(m.unwrap_or_default()));
     assert_ne!(fallback(None), mode_wire_opt(None), "the fallback IS distinguishable from the honest one");
 }
+
+/// M3④ ② (ADR-0048 §346): the payload carries the mode ONLY when it was declared — the key is ABSENT
+/// otherwise. Both branches are exercised directly on the emitter, so the rule is proven before the
+/// declaration is threaded through the run cycle.
+#[test]
+fn period_start_carries_the_mode_only_when_declared() {
+    use crate::trace::Redaction;
+    let dir = test_support::tmp_dir("mode_payload_states");
+    let pid = "run-b1b1b1b1b1b1b1b1-p0000000090000090";
+    let mut s = SessionEventStream::open(dir.clone(), pid, pid, Redaction::default()).unwrap();
+    s.emit_period_start("2026-10-01T00:00:00Z", "hi", 0, 0, None, None, Some(0), Some("partner")).unwrap();
+    drop(s);
+    let rows = read_period(&dir, pid).unwrap();
+    let start = rows.iter().find(|r| r.event_type == "turn/start").expect("turn/start row");
+    assert_eq!(start.data.get("mode").and_then(|m| m.as_str()), Some("partner"), "declared ⇒ written");
+
+    let pid2 = "run-c2c2c2c2c2c2c2c2-p0000000091000091";
+    let mut s2 = SessionEventStream::open(dir.clone(), pid2, pid2, Redaction::default()).unwrap();
+    s2.emit_period_start("2026-10-01T00:00:00Z", "hi", 0, 0, None, None, Some(0), None).unwrap();
+    drop(s2);
+    let rows2 = read_period(&dir, pid2).unwrap();
+    let start2 = rows2.iter().find(|r| r.event_type == "turn/start").expect("turn/start row");
+    /* `data` is a `Value`, and `get(..).is_none()` is MEASURED to catch an explicit null as PRESENT
+     * (`{\"mode\": null}` ⇒ `get` returns `Some(Null)`), so this asserts ABSENCE in the strict sense. */
+    assert!(start2.data.get("mode").is_none(),
+            "undeclared ⇒ the KEY IS ABSENT (not null, not a default): {:?}", start2.data);
+    /* MUTATION: a `{\"mode\": null}` implementation would be caught by the same test — `contains_key` is
+     * true for an explicit null, so the assertion above distinguishes the three states. */
+    let mutated = serde_json::json!({ "mode": null });
+    assert!(mutated.as_object().unwrap().contains_key("mode"),
+            "an explicit null IS a key: the assertion above is therefore about ABSENCE");
+    let _ = std::fs::remove_dir_all(&dir);
+}

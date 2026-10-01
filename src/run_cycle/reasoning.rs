@@ -207,6 +207,10 @@ impl AgentLoop {
                     resume_from,
                     detail.as_ref(),
                     Some(injected_chars),
+                    // NOT THREADED YET (ADR-0048 §346.3 ②): the run cycle carries `mode: Mode` (its
+                    // effective value) but not the DECLARATION, so the payload says nothing rather than
+                    // repeating the default — absence is honest, a default posing as a choice is not.
+                    None,
                 );
             }
             // Streaming when a delta sink is attached (SSE chat); the

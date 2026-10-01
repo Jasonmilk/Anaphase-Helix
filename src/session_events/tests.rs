@@ -126,7 +126,7 @@
         let t = ts();
         let parent = "run-abc-p0000000000000001";
         assert!(crate::session_events::is_period_id(parent), "the fixture must be a period id");
-        stream.emit_period_start(&t, "hello", 1, 10, Some(parent), None, Some(0)).unwrap();
+        stream.emit_period_start(&t, "hello", 1, 10, Some(parent), None, Some(0), None).unwrap();   /* the declaration is not threaded yet: ABSENT, never a default */
         let rows: Vec<SessionEvent> = fs::read_to_string(stream.path())
             .unwrap().lines().map(|l| serde_json::from_str(l).unwrap()).collect();
         let ctx = rows.iter().find(|r| r.event_type == "context/inject").unwrap();
@@ -140,7 +140,7 @@
 
         let dir2 = tmp_dir();
         let mut s2 = SessionEventStream::open(dir2.clone(), "run-c5", "run-c5", Redaction::default()).unwrap();
-        s2.emit_period_start(&t, "hello", 1, 10, None, None, Some(0)).unwrap();
+        s2.emit_period_start(&t, "hello", 1, 10, None, None, Some(0), None).unwrap();   /* the declaration is not threaded yet: ABSENT, never a default */
         let rows2: Vec<SessionEvent> = fs::read_to_string(s2.path())
             .unwrap().lines().map(|l| serde_json::from_str(l).unwrap()).collect();
         let ctx2 = rows2.iter().find(|r| r.event_type == "context/inject").unwrap();
@@ -160,7 +160,7 @@
             "top": [{ "id": "n-1", "tier": "L3", "heat": 0.82, "phase": "liquid" }]
         });
         stream
-            .emit_period_start(&t, "hello", 8, 800, Some("run-abc"), Some(&detail), Some(412))
+            .emit_period_start(&t, "hello", 8, 800, Some("run-abc"), Some(&detail), Some(412), None)
             .unwrap();
         let rows: Vec<SessionEvent> = fs::read_to_string(stream.path())
             .unwrap()

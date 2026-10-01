@@ -271,8 +271,17 @@ impl SessionEventStream {
         // The FACT beside `chars` (the configured budget): what injection actually
         // contributed. `Option`, so "no measurement" stays distinct from zero.
         injected_chars: Option<usize>,
+        /* THE MODE, ONLY WHEN IT WAS DECLARED (ADR-0048 §346/§343). `None` leaves the key **ABSENT** — not
+         * null, not `Mode::default()` — because "undeclared" must travel as an absence the reader can name
+         * (`event_family`/`modeFacts` return `undeclared` for exactly this), never as a value that poses as a
+         * choice. The two payloads are built explicitly so the absence is visible in the code. */
+        mode: Option<&str>,
     ) -> io::Result<()> {
-        self.emit(time, EventType::TurnStart, json!({}))?;
+        let start_payload = match mode {
+            Some(m) => json!({ "mode": m }),
+            None => json!({}),
+        };
+        self.emit(time, EventType::TurnStart, start_payload)?;
         self.emit(
             time,
             EventType::UserMessage,
