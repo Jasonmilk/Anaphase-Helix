@@ -16,12 +16,14 @@
 //! stream never becomes a sensitive data lake.
 
 pub mod crystallize;
+pub mod gc;
 pub mod identity;
 pub mod naming;
 pub mod query;
 pub mod refs;
 pub mod types_and_stream;
 
+pub use gc::{plan as gc_plan, GcInput, GcPlan, Object as GcObject, Vacancy as GcVacancy};
 pub use identity::{
     allocate_period_id, ambiguous_error, is_job_id, is_period_id, not_found_error, resolve_one,
     resolve_period, try_allocate_period_id, PeriodRef, Resolved,
@@ -46,4 +48,5 @@ mod tests;
 
 #[cfg(test)]
 mod query_tests;
+mod gc_tests;
 mod refs_tests;
