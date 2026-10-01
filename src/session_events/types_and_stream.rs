@@ -56,6 +56,10 @@ pub enum EventType {
     /// (`D1` GC and `D2` content destruction are separate and later). A tombstone is an EVENT because
     /// the WAL is the single source of truth — a sidecar flag would be a second one.
     Tombstone,
+    /// The third layer's own act (ADR-0048 §321): a ref was set, moved or cleared. It is written INTO THE
+    /// TARGET PERIOD'S STREAM so that the grace anchor and the object it protects share ONE stream — cross-
+    /// stream timestamps are not comparable, and a second book would be exactly that mistake.
+    RefMove,
 }
 
 impl EventType {
@@ -74,6 +78,7 @@ impl EventType {
             EventType::Usage => "assistant/usage",
             EventType::TurnEnd => "turn/end",
             EventType::Tombstone => "period/tombstone",
+            EventType::RefMove => "ref/move",
         }
     }
 }

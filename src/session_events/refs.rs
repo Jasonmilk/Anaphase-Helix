@@ -64,51 +64,110 @@ pub struct RefLogEntry {
     pub new: Option<String>,
 }
 
-fn ref_log_path(events_dir: &Path, name: &str) -> PathBuf {
-    refs_dir(events_dir).join(".log").join(name)
-}
 
 fn now_rfc3339() -> String {
     super::types_and_stream::now_ts()
 }
 
-/// Append ONE history line. Never rewrites: a log that can be edited is not a log.
-fn append_ref_log(events_dir: &Path, name: &str, old: Option<&str>, new: Option<&str>) -> io::Result<()> {
-    let path = ref_log_path(events_dir, name);
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    let line = format!(
-        "{{\"ts\":{},\"old\":{},\"new\":{}}}\n",
-        serde_json::to_string(&now_rfc3339()).unwrap_or_else(|_| "\"\"".to_string()),
-        serde_json::to_string(&old).unwrap_or_else(|_| "null".to_string()),
-        serde_json::to_string(&new).unwrap_or_else(|_| "null".to_string())
-    );
-    use std::io::Write;
-    let mut f = fs::OpenOptions::new().create(true).append(true).open(&path)?;
-    f.write_all(line.as_bytes())?;
-    Ok(())
-}
 
 /// Read a ref's history, oldest first. An unreadable line is SKIPPED rather than fatal: a log with one
 /// torn line still answers "what was here before", which is the question it exists to answer.
+/// The ref's history — DERIVED from the period streams, never a second book (ADR-0048 §321).
+///
+/// A `ref/move` row lives in the stream of the period the ref pointed at, so the anchor and the object
+/// share one stream. Reading the history is therefore a **projection** over the streams; deleting the
+/// projection loses nothing.
 pub fn read_ref_log(events_dir: &Path, name: &str) -> io::Result<Vec<RefLogEntry>> {
     check_ref_name(name)?;
-    let body = match fs::read_to_string(ref_log_path(events_dir, name)) {
-        Ok(b) => b,
-        Err(e) if e.kind() == ErrorKind::NotFound => return Ok(Vec::new()),
+    let mut out = Vec::new();
+    let entries = match fs::read_dir(events_dir) {
+        Ok(e) => e,
+        Err(e) if e.kind() == ErrorKind::NotFound => return Ok(out),
         Err(e) => return Err(e),
     };
-    let mut out = Vec::new();
-    for line in body.lines() {
-        let v: serde_json::Value = match serde_json::from_str(line) { Ok(v) => v, Err(_) => continue };
-        out.push(RefLogEntry {
-            ts: v.get("ts").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-            old: v.get("old").and_then(|x| x.as_str()).map(|s| s.to_string()),
-            new: v.get("new").and_then(|x| x.as_str()).map(|s| s.to_string()),
-        });
+    for entry in entries {
+        let entry = entry?;
+        let fname = entry.file_name().to_string_lossy().to_string();
+        if !fname.ends_with(".events.jsonl") {
+            continue;
+        }
+        let body = match fs::read_to_string(entry.path()) {
+            Ok(b) => b,
+            Err(_) => continue,
+        };
+        for line in body.lines() {
+            let v: serde_json::Value = match serde_json::from_str(line) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            if v.get("type").and_then(|t| t.as_str()) != Some("ref/move") {
+                continue;
+            }
+            let d = v.get("data").cloned().unwrap_or(serde_json::Value::Null);
+            if d.get("name").and_then(|n| n.as_str()) != Some(name) {
+                continue;
+            }
+            out.push(RefLogEntry {
+                ts: v.get("time").and_then(|t| t.as_str()).unwrap_or("").to_string(),
+                old: d.get("old").and_then(|o| o.as_str()).map(|x| x.to_string()),
+                new: d.get("new").and_then(|o| o.as_str()).map(|x| x.to_string()),
+            });
+        }
     }
-    Ok(out)
+    /* ORDERED BY THE POINTER CHAIN, NOT BY STREAM ORDER (ADR-0048 §321 + §320 P12). The entries live in
+     * different streams, and cross-stream timestamps are NOT comparable — so the only honest order is the
+     * one the pointers themselves define: `old -> new`. An entry the chain cannot reach keeps its scan
+     * position (named as a partial reconstruction rather than silently reordered). */
+    let mut chained: Vec<RefLogEntry> = Vec::new();
+    let mut cursor: Option<String> = None;
+    let mut remaining = out;
+    loop {
+        let next = remaining
+            .iter()
+            .position(|e| e.old == cursor && e.new.is_some())
+            .or_else(|| {
+                if cursor.is_none() {
+                    remaining.iter().position(|e| e.old.is_none())
+                } else {
+                    None
+                }
+            });
+        match next {
+            Some(idx) => {
+                let e = remaining.remove(idx);
+                cursor = e.new.clone();
+                chained.push(e);
+            }
+            None => break,
+        }
+    }
+    chained.extend(remaining); /* unreachable entries stay, in scan order */
+    Ok(chained)
+}
+
+/// Write the ref act INTO the target period's stream (ADR-0048 §321).
+///
+/// Uses `open_append`, so numbering continues from that stream's last `seq` (never re-used) and nothing
+/// is overwritten. If the stream is torn, this FAILS BY NAME rather than guessing a number.
+fn record_ref_move(
+    events_dir: &Path,
+    target_period: &str,
+    name: &str,
+    old: Option<&str>,
+    new: Option<&str>,
+) -> io::Result<()> {
+    let mut stream = super::types_and_stream::SessionEventStream::open_append(
+        events_dir.to_path_buf(),
+        target_period,
+        target_period,
+        crate::trace::Redaction::default(),
+    )?;
+    stream.emit(
+        &super::types_and_stream::now_ts(),
+        super::types_and_stream::EventType::RefMove,
+        serde_json::json!({ "name": name, "old": old, "new": new }),
+    )?;
+    Ok(())
 }
 
 /// Read one ref. `Ok(None)` means "there is no such ref" — an absence, not a failure.
@@ -162,9 +221,10 @@ pub fn write_ref(events_dir: &Path, name: &str, period_ref: &str) -> io::Result<
     }
     let old = read_ref(events_dir, name)?;
     fs::write(&path, format!("{id}\n"))?;
-    /* THE OLD VALUE IS RECORDED AT THE MOMENT IT IS REPLACED (ADR-0048 §315): it is the only source for
-     * the vacancy fact `M2` derives its grace anchor from. */
-    append_ref_log(events_dir, name, old.as_deref(), Some(&id))?;
+    /* THE OLD VALUE IS RECORDED AT THE MOMENT IT IS REPLACED, IN THE TARGET'S OWN STREAM
+     * (ADR-0048 §321): a second book beside the streams would leave cross-stream order
+     * undefined, and the grace anchor compares against the object's history. */
+    record_ref_move(events_dir, &id, name, old.as_deref(), Some(&id))?;
     Ok(id)
 }
 
@@ -174,7 +234,10 @@ pub fn delete_ref(events_dir: &Path, name: &str) -> io::Result<bool> {
     let old = read_ref(events_dir, name)?;
     match fs::remove_file(refs_dir(events_dir).join(name)) {
         Ok(()) => {
-            append_ref_log(events_dir, name, old.as_deref(), None)?;
+            /* A VACANCY is recorded in the stream of the period that was vacated (ADR-0048 §321). */
+            if let Some(prev) = old.as_deref() {
+                record_ref_move(events_dir, prev, name, old.as_deref(), None)?;
+            }
             Ok(true)
         }
         Err(e) if e.kind() == ErrorKind::NotFound => Ok(false),
