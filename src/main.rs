@@ -319,6 +319,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             /* D0 — THE TOMBSTONE (ADR-0048 §326): deletion AS A FACT. A writer that appends (never rewrites),
              * refuses a torn tail by name, and holds the writer lock. The period is RESOLVED first, so an
              * unknown or ambiguous key is refused by name. */
+            /* D1 — COLLECT (ADR-0048 §329): decide with the PURE planner and RECORD the decision as
+             * `period/purge` facts. The grace window defaults to the DECLARED constant, and the retention
+             * relation that protects it is checked rather than assumed. */
+            .route("/v1/periods/collect", post({
+                let events_dir = config.anaphase.session_events_path.clone();
+                move |Json(body): Json<serde_json::Value>| async move {
+                    let Some(dir) = events_dir.as_deref() else {
+                        return Json(serde_json::json!({ "ok": false, "error": "session events not configured" }));
+                    };
+                    let grace = body
+                        .get("grace_secs")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(anaphase::session_events::REF_MOVE_GRACE_SECS);
+                    if let Err(e) = anaphase::session_events::check_retention_covers_grace() {
+                        return Json(serde_json::json!({ "ok": false, "error": e }));
+                    }
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_secs())
+                        .unwrap_or(0);
+                    match anaphase::session_events::collect_garbage(std::path::Path::new(dir), now, grace) {
+                        Ok(o) => Json(serde_json::json!({
+                            "ok": true, "grace_secs": grace,
+                            "collected": o.collected, "ghosts": o.ghosts,
+                            "no_anchor": o.no_anchor, "protected_by_descendant": o.protected_by_descendant
+                        })),
+                        Err(e) => Json(serde_json::json!({ "ok": false, "error": e.to_string() })),
+                    }
+                }
+            }))
             .route("/v1/periods/tombstone", post({
                 let events_dir = config.anaphase.session_events_path.clone();
                 move |Json(body): Json<serde_json::Value>| async move {

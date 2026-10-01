@@ -2,6 +2,7 @@
 //! names the RULE, not the environment. Each test states the rule and, where the rule is a guard, the
 //! mutation that would slip past if the guard were removed.
 
+use super::*;   /* `test_support` and the re-exports, exactly like the sibling test modules */
 use super::gc::{plan, GcInput, Object, Vacancy};
 
 fn obj(id: &str, parent: Option<&str>, stamped: bool) -> Object {
@@ -144,4 +145,85 @@ fn an_unstamped_object_is_never_collected() {
     let p = plan(&input, 10_000);
     assert!(p.collected.is_empty() && p.ghosts.is_empty() && p.no_anchor.is_empty(), "no stamp, no case");
     assert_eq!(p.kept, vec!["a".to_string()]);
+}
+
+/* ── THE STORE-FACING CRITERIA (ADR-0048 §329) ─────────────────────────────────────────────────── */
+
+#[test]
+fn the_rfc3339_reader_agrees_with_the_writer_the_ledger_owns() {
+    for secs in [0u64, 1_000, 1_788_393_600, 1_800_000_000] {
+        let s = crate::ledger::unix_secs_to_rfc3339(secs);
+        assert_eq!(super::gc::rfc3339_to_secs(&s), Some(secs), "round-trip of {s}");
+    }
+    assert_eq!(super::gc::rfc3339_to_secs("not-a-time"), None, "and a malformed stamp is REFUSED");
+}
+
+#[test]
+fn collecting_records_a_purge_fact_in_the_objects_own_stream_without_destroying_bytes() {
+    use crate::trace::Redaction;
+    use serde_json::json;
+    use std::fs;
+    let dir = test_support::tmp_dir("gc_purge_fact");
+    let pid = "run-aaaabbbbccccdddd-p0000000030000030";
+    {
+        let mut s = super::SessionEventStream::open(dir.clone(), pid, pid, Redaction::default()).unwrap();
+        s.emit("2026-10-01T00:00:00Z", super::EventType::UserMessage, json!({ "text": "x" })).unwrap();
+    }
+    super::tombstone_period(&dir, pid, "gone").unwrap();
+    /* A vacancy fact, written by the ref layer, exactly as the collector will read it. */
+    super::write_ref(&dir, "current", pid).unwrap();
+    super::delete_ref(&dir, "current").unwrap();
+
+    let out = super::collect_garbage(&dir, 4_000_000_000, 10).unwrap();
+    assert_eq!(out.collected, vec![pid.to_string()], "stamped, unheld, vacated long ago ⇒ collected");
+    let body = fs::read_to_string(dir.join(format!("{pid}.events.jsonl"))).unwrap();
+    assert!(body.contains("period/purge"), "the decision is RECORDED as a fact: {body}");
+    assert!(body.contains("user/message"), "and D1 destroys NOTHING (that is D2)");
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_stamped_object_with_a_kept_child_is_protected_and_not_purged() {
+    use crate::trace::Redaction;
+    use serde_json::json;
+    use std::fs;
+    let dir = test_support::tmp_dir("gc_protects_parent");
+    let parent = "run-1111222233334444-p0000000031000031";
+    let child = "run-5555666677778888-p0000000032000032";
+    {
+        let mut s = super::SessionEventStream::open(dir.clone(), parent, parent, Redaction::default()).unwrap();
+        s.emit("2026-10-01T00:00:00Z", super::EventType::TurnEnd, json!({})).unwrap();
+    }
+    {
+        let mut s = super::SessionEventStream::open(dir.clone(), child, child, Redaction::default()).unwrap();
+        s.emit("2026-10-01T00:00:10Z", super::EventType::ContextInject, json!({ "resume_from": parent })).unwrap();
+    }
+    super::tombstone_period(&dir, parent, "stamped").unwrap();
+    super::write_ref(&dir, "current", parent).unwrap();
+    super::delete_ref(&dir, "current").unwrap();
+
+    let out = super::collect_garbage(&dir, 4_000_000_000, 10).unwrap();
+    assert!(out.collected.is_empty(), "the child still needs it: no dangling may be created");
+    assert_eq!(out.protected_by_descendant, vec![parent.to_string()], "and the reason is NAMED");
+    let body = fs::read_to_string(dir.join(format!("{parent}.events.jsonl"))).unwrap();
+    assert!(!body.contains("period/purge"), "no purge fact for an object that was kept");
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_stamped_object_without_a_vacancy_fact_is_named_and_not_purged() {
+    use crate::trace::Redaction;
+    use serde_json::json;
+    use std::fs;
+    let dir = test_support::tmp_dir("gc_no_anchor");
+    let pid = "run-9999000011112222-p0000000033000033";
+    {
+        let mut s = super::SessionEventStream::open(dir.clone(), pid, pid, Redaction::default()).unwrap();
+        s.emit("2026-10-01T00:00:00Z", super::EventType::TurnEnd, json!({})).unwrap();
+    }
+    super::tombstone_period(&dir, pid, "stamped").unwrap();
+    let out = super::collect_garbage(&dir, 4_000_000_000, 0).unwrap();
+    assert!(out.collected.is_empty(), "without a fact there is nothing to measure the grace against");
+    assert_eq!(out.no_anchor, vec![pid.to_string()], "the absent anchor is NAMED");
+    let _ = fs::remove_dir_all(&dir);
 }

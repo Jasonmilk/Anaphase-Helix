@@ -45,6 +45,7 @@ Anaphase run_cycle 每轮（一个认知周期）向 `session_events_path` 目�
 | `turn/end` | `{done, success, impasse, reply, model}` | 周期结束，回 Perception；`reply` = 最终回答冗余字段（消费端可直接取）；`model` 同 `assistant/reply` |
 | `period/tombstone` | D0 — the period is deleted AS A FACT; readers hide it, every byte stays (ADR-0048 §311). |
 | `ref/move` | `{name, old, new}` | 第三层自身的动作:某个 ref 被设置/移动/清空(**写进目标 period 的流**) |
+| `period/purge` | `{at}` | D1 — 物理删**已发生**（不写它 ⇒ 重放会**复活**）(ADR-0048 §329) |
 
 每行 `{type, seq, time, data}`：`seq` 周期内单调（确定性重放），`time` 注入时钟的 RFC3339（可重放）。
 

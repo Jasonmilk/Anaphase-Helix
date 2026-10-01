@@ -23,7 +23,10 @@ pub mod query;
 pub mod refs;
 pub mod types_and_stream;
 
-pub use gc::{plan as gc_plan, GcInput, GcPlan, Object as GcObject, Vacancy as GcVacancy};
+pub use gc::{
+    collect_garbage, plan as gc_plan, rfc3339_to_secs, GcInput, GcOutcome, GcPlan, Object as GcObject,
+    Vacancy as GcVacancy,
+};
 pub use identity::{
     allocate_period_id, ambiguous_error, is_job_id, is_period_id, not_found_error, resolve_one,
     resolve_period, try_allocate_period_id, PeriodRef, Resolved,

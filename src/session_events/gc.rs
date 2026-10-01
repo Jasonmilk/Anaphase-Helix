@@ -156,3 +156,106 @@ pub fn plan(input: &GcInput, now: u64) -> GcPlan {
 
     GcPlan { kept, collected, ghosts, no_anchor, protected_by_descendant }
 }
+
+/* ── THE STORE-FACING HALF (ADR-0048 §329) ─────────────────────────────────────────────────────────
+ * The collector reads a REPLAYED state from the streams, decides with the pure `plan`, and records the
+ * decision as a `period/purge` row in the object's OWN stream — one book, same writer lock, and no bytes
+ * destroyed (that is `D2`). The state is read INSIDE the lock (P15): a dangling check that happens outside
+ * it is a TOCTOU window where someone can attach between the check and the collection. */
+
+/// RFC3339 (`…Z`) to epoch seconds. Pure, and tested against the inverse the ledger already owns.
+pub fn rfc3339_to_secs(ts: &str) -> Option<u64> {
+    let b = ts.as_bytes();
+    if b.len() < 19 { return None; }
+    let num = |a: usize, z: usize| -> Option<i64> { ts.get(a..z)?.parse::<i64>().ok() };
+    let (y, mo, d) = (num(0, 4)?, num(5, 7)?, num(8, 10)?);
+    let (h, mi, sec) = (num(11, 13)?, num(14, 16)?, num(17, 19)?);
+    if !(1..=12).contains(&mo) || !(1..=31).contains(&d) || h > 23 || mi > 59 || sec > 60 { return None; }
+    /* days_from_civil (Hinnant): civil date -> days since 1970-01-01, no lookup tables. */
+    let y2 = if mo <= 2 { y - 1 } else { y };
+    let era = if y2 >= 0 { y2 } else { y2 - 399 } / 400;
+    let yoe = y2 - era * 400;
+    let mp = (mo + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146097 + doe - 719468;
+    let secs = days * 86400 + h * 3600 + mi * 60 + sec;
+    if secs < 0 { None } else { Some(secs as u64) }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct GcOutcome {
+    pub collected: Vec<String>,
+    pub ghosts: Vec<String>,
+    pub no_anchor: Vec<String>,
+    pub protected_by_descendant: Vec<String>,
+}
+
+/// Read the replayed state, decide, and RECORD the decision as `period/purge` facts.
+pub fn collect_garbage(dir: &std::path::Path, now: u64, grace_secs: u64) -> std::io::Result<GcOutcome> {
+    let _writer = super::refs::WriterLock::acquire(dir)?; /* P15: one critical section for check + act */
+    let mut objects: Vec<Object> = Vec::new();
+    let mut vacancies: Vec<Vacancy> = Vec::new();
+    let entries = std::fs::read_dir(dir)?;
+    for entry in entries {
+        let entry = entry?;
+        let fname = entry.file_name().to_string_lossy().to_string();
+        let Some(stem) = fname.strip_suffix(".events.jsonl") else { continue };
+        if !super::identity::is_period_id(stem) { continue; }
+        let body = match std::fs::read_to_string(entry.path()) { Ok(b) => b, Err(_) => continue };
+        let mut parent: Option<String> = None;
+        let mut stamped = false;
+        for line in body.lines() {
+            let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else { continue };
+            match v.get("type").and_then(|t| t.as_str()) {
+                Some("period/tombstone") => stamped = true,
+                Some("context/inject") => {
+                    if parent.is_none() {
+                        if let Some(p) = v.get("data").and_then(|d| d.get("resume_from")).and_then(|r| r.as_str()) {
+                            if super::identity::is_period_id(p) { parent = Some(p.to_string()); }
+                        }
+                    }
+                }
+                Some("ref/move") => {
+                    let d = v.get("data").cloned().unwrap_or(serde_json::Value::Null);
+                    let gone = d.get("new").map(|n| n.is_null()).unwrap_or(false);
+                    if gone {
+                        if let Some(old) = d.get("old").and_then(|o| o.as_str()) {
+                            let at = v.get("time").and_then(|t| t.as_str()).and_then(rfc3339_to_secs).unwrap_or(0);
+                            vacancies.push(Vacancy { id: old.to_string(), at });
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        objects.push(Object { id: stem.to_string(), parent, stamped });
+    }
+    let refs: Vec<String> = super::refs::list_refs(dir)?.into_iter().map(|r| r.period_id).collect();
+    let input = GcInput {
+        objects,
+        refs,
+        /* C14b IS NOT LANDED: there is no pin store yet, so the collector sees ZERO holders. That is a
+         * NAMED absence (§327.4), not a claim that nothing is pinned. */
+        pins: vec![],
+        vacancies,
+        grace_secs,
+    };
+    let decided = plan(&input, now);
+    for id in &decided.collected {
+        let mut stream = super::types_and_stream::SessionEventStream::open_append(
+            dir.to_path_buf(), id, id, crate::trace::Redaction::default(),
+        )?;
+        stream.emit(
+            &super::types_and_stream::now_ts(),
+            super::types_and_stream::EventType::Purge,
+            serde_json::json!({ "at": now }),
+        )?;
+    }
+    Ok(GcOutcome {
+        collected: decided.collected,
+        ghosts: decided.ghosts,
+        no_anchor: decided.no_anchor,
+        protected_by_descendant: decided.protected_by_descendant,
+    })
+}

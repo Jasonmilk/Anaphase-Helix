@@ -60,6 +60,10 @@ pub enum EventType {
     /// TARGET PERIOD'S STREAM so that the grace anchor and the object it protects share ONE stream — cross-
     /// stream timestamps are not comparable, and a second book would be exactly that mistake.
     RefMove,
+    /// D1 — THE PURGE FACT (ADR-0048 §329): a physical delete HAPPENED. Without this row a replay would
+    /// revive the object (measured in the reviewer's sandbox: [4,5,6] came back), so the fact is an event in
+    /// the SAME stream as the object, under the same writer lock as every other append.
+    Purge,
 }
 
 impl EventType {
@@ -79,6 +83,7 @@ impl EventType {
             EventType::TurnEnd => "turn/end",
             EventType::Tombstone => "period/tombstone",
             EventType::RefMove => "ref/move",
+            EventType::Purge => "period/purge",
         }
     }
 }
