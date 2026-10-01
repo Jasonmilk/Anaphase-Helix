@@ -19,6 +19,7 @@ pub mod crystallize;
 pub mod gc;
 pub mod identity;
 pub mod naming;
+pub mod pins;
 pub mod query;
 pub mod refs;
 pub mod types_and_stream;
@@ -33,6 +34,9 @@ pub use identity::{
 };
 pub use crystallize::{crystallize, CrystalSuggestion};
 pub use naming::{freeze_name, rename_period};
+pub use pins::{
+    check_owner, declared_owners, orphan_pins, pin, release_orphan_owner, replay as replay_pins, unpin,
+};
 pub use query::{
     count_tombstoned, list_periods, read_period, read_summary, tombstone_period, PeriodSummary,
 };
@@ -50,6 +54,7 @@ pub mod test_support;
 mod tests;
 
 #[cfg(test)]
+mod pins_tests;
 mod query_tests;
 mod gc_tests;
 mod refs_tests;

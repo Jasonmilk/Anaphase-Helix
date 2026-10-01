@@ -322,6 +322,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             /* D1 — COLLECT (ADR-0048 §329): decide with the PURE planner and RECORD the decision as
              * `period/purge` facts. The grace window defaults to the DECLARED constant, and the retention
              * relation that protects it is checked rather than assumed. */
+            /* C14b — RELEASING AN ORPHAN IS AN EXPLICIT ACT (ADR-0048 §330): the collector NAMES holders whose
+             * owner is no longer declared, and this route is how an operator lets them go. */
+            .route("/v1/pins/release", post({
+                let events_dir = config.anaphase.session_events_path.clone();
+                move |Json(body): Json<serde_json::Value>| async move {
+                    let Some(dir) = events_dir.as_deref() else {
+                        return Json(serde_json::json!({ "ok": false, "error": "session events not configured" }));
+                    };
+                    let owner = body.get("owner").and_then(|v| v.as_str()).unwrap_or("");
+                    match anaphase::session_events::release_orphan_owner(std::path::Path::new(dir), owner) {
+                        Ok(n) => Json(serde_json::json!({ "ok": true, "released": n })),
+                        Err(e) => Json(serde_json::json!({ "ok": false, "error": e.to_string() })),
+                    }
+                }
+            }))
             .route("/v1/periods/collect", post({
                 let events_dir = config.anaphase.session_events_path.clone();
                 move |Json(body): Json<serde_json::Value>| async move {
@@ -343,7 +358,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         Ok(o) => Json(serde_json::json!({
                             "ok": true, "grace_secs": grace,
                             "collected": o.collected, "ghosts": o.ghosts,
-                            "no_anchor": o.no_anchor, "protected_by_descendant": o.protected_by_descendant
+                            "no_anchor": o.no_anchor, "protected_by_descendant": o.protected_by_descendant,
+                            "orphan_pins": o.orphan_pins.iter()
+                                .map(|(obj, own)| serde_json::json!({ "object": obj, "owner": own }))
+                                .collect::<Vec<_>>()
                         })),
                         Err(e) => Json(serde_json::json!({ "ok": false, "error": e.to_string() })),
                     }

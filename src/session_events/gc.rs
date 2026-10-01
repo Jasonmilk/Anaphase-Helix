@@ -189,6 +189,9 @@ pub struct GcOutcome {
     pub ghosts: Vec<String>,
     pub no_anchor: Vec<String>,
     pub protected_by_descendant: Vec<String>,
+    /// C14b: holdings whose owner is not declared alive. They still PROTECT (conservatively) and are NAMED,
+    /// because a silently collected object is worse than a named leak. Releasing them is an explicit act.
+    pub orphan_pins: Vec<(String, String)>,
 }
 
 /// Read the replayed state, decide, and RECORD the decision as `period/purge` facts.
@@ -232,15 +235,12 @@ pub fn collect_garbage(dir: &std::path::Path, now: u64, grace_secs: u64) -> std:
         objects.push(Object { id: stem.to_string(), parent, stamped });
     }
     let refs: Vec<String> = super::refs::list_refs(dir)?.into_iter().map(|r| r.period_id).collect();
-    let input = GcInput {
-        objects,
-        refs,
-        /* C14b IS NOT LANDED: there is no pin store yet, so the collector sees ZERO holders. That is a
-         * NAMED absence (§327.4), not a claim that nothing is pinned. */
-        pins: vec![],
-        vacancies,
-        grace_secs,
-    };
+    /* C14b (ADR-0048 §330): holders come from the pin WAL, replayed — a restart cannot lose them, and an
+     * owner that is no longer declared is NAMED below rather than silently protecting forever. */
+    let (by_object, _) = super::pins::replay(dir)?;
+    let pins: Vec<(String, u32)> = by_object.into_iter().collect();
+    let orphans = super::pins::orphan_pins(dir)?;
+    let input = GcInput { objects, refs, pins, vacancies, grace_secs };
     let decided = plan(&input, now);
     for id in &decided.collected {
         let mut stream = super::types_and_stream::SessionEventStream::open_append(
@@ -257,5 +257,6 @@ pub fn collect_garbage(dir: &std::path::Path, now: u64, grace_secs: u64) -> std:
         ghosts: decided.ghosts,
         no_anchor: decided.no_anchor,
         protected_by_descendant: decided.protected_by_descendant,
+        orphan_pins: orphans,
     })
 }
