@@ -534,3 +534,38 @@ target    = "ci/allowances.py"
 allowance = 5
 reason    = "two fix windows for one target were silently replacing each other (measured: a 104-line allowance became 69 when a second entry was added, and `src/adapters/mod.rs` had carried a hidden `1 -> 14` replacement). The loader now refuses. Measured 2026-09-24: 377 -> 382."
 due       = "2026-10-16"
+
+[[seed]]
+target  = "src/capability.rs"
+ncloc   = 75
+counter = 2
+k_id    = "K-122"
+reason  = "M4 capability sources named, new interface layer; ledger lagged engineering line, first-sign per K-122"
+
+[[seed]]
+target  = "src/gate.rs"
+ncloc   = 267
+counter = 2
+k_id    = "K-122"
+reason  = "gate/admission logic (est. M0-M1, per git first-introduce commit); ledger lagged, first-sign per K-122"
+
+[[seed]]
+target  = "src/session_events/gc.rs"
+ncloc   = 376
+counter = 2
+k_id    = "K-122"
+reason  = "M2 GC plan + grace, changed this session; first-sign per K-122"
+
+[[seed]]
+target  = "src/session_events/pins.rs"
+ncloc   = 127
+counter = 2
+k_id    = "K-122"
+reason  = "M2 C14b pins WAL, new this session; first-sign per K-122"
+
+[[seed]]
+target  = "src/session_events/refs.rs"
+ncloc   = 293
+counter = 2
+k_id    = "K-122"
+reason  = "M1 refs three-tier, new/heavily changed this session; first-sign per K-122"
