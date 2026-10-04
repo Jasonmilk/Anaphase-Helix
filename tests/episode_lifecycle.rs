@@ -183,13 +183,16 @@ fn mode_serde_roundtrip_and_default() {
     assert_eq!(serde_json::to_string(&Mode::Partner).unwrap(), "\"partner\"");
     // Helix's native state is the memory-bearing partner (ADR-0006 D3).
     assert_eq!(Mode::default(), Mode::Partner);
-    assert_eq!(RunCycleConfig::default().mode, Mode::Partner);
+    /* THE FIELD IS AN OPTION NOW (ADR-0048 §346): a default config DECLARES NOTHING — it must not pose as a
+     * choice. `Mode::default()` above still names the enum's own default, which is a different fact. */
+    assert_eq!(RunCycleConfig::default().mode, None);
 }
 
 #[test]
 fn config_loads_mode_from_toml() {
-    // The mode field parses through the real config stack (snake_case
-    // serde rename); the other constants keep their documented values.
+    // The mode field parses through the real config stack, and THE CONFIG SPEAKS THE WIRE VOCABULARY
+    // (ADR-0048 §349): `driving` / `partner` / `survival` — the enum names are NOT accepted (the criterion
+    // `the_config_speaks_the_wire_vocabulary_for_modes` pins that). The other constants keep their values.
     let rc: RunCycleConfig = toml::from_str(
         "amygdala_default_vector = [0.7, 0.3, 0.2]\n\
          reasoning_mode = \"left_brain\"\n\
@@ -199,7 +202,7 @@ fn config_loads_mode_from_toml() {
          mode = \"drive\"\n",
     )
     .unwrap();
-    assert_eq!(rc.mode, Mode::Drive);
-    // Missing section = documented protocol defaults (mode = partner).
-    assert_eq!(RunCycleConfig::default().mode, Mode::Partner);
+    assert_eq!(rc.mode, Some(Mode::Drive));
+    // Missing section = NO declaration (it used to claim the partner default; §346 removed that lie).
+    assert_eq!(RunCycleConfig::default().mode, None);
 }

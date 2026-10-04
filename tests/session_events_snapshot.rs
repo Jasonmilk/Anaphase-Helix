@@ -58,6 +58,10 @@ fn write_fixed_period(dir: &Path) -> Vec<u8> {
         // None, not 0: this fixture does not measure injection, and absent must
         // stay distinct from measured-zero.
         None,
+        // THE 8th ARGUMENT IS THE DECLARED MODE (ADR-0048 §346/§303): the emitter gained it when the payload
+        // started carrying the run's declaration. This fixture says "partner" explicitly — a signature sync,
+        // not a semantic change: `None` would mean the run declared nothing.
+        Some("partner"),
     )
     .unwrap();
     stream
