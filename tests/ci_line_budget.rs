@@ -202,6 +202,19 @@ fn scratch(name: &str, files: &[(&str, usize)], base: &[(&str, usize)], allowanc
         "[[pit]]\nid = \"K-999\"\nrecorded = \"2026-01-01\"\nsummary = \"scratch\"\n",
     )
     .expect("scratch pits");
+    /* CANARY: EVERY FIXTURE NEEDS IT (owner ruling 2026-10-04; measured: 6 of 10 ci failures were
+     * `UNCALIBRATED … ncloc_known.py: unreadable` in scratches from THIS helper — the earlier fix fed only
+     * `scratch_with_pits`, so those six never ate it). The checker refuses to judge without calibration data
+     * (defence working) ⇒ feed the fixture, never weaken the checker. Inserted BY HAND **before the tail
+     * expression** (attempt#1 repeated the signature; attempt#2 landed after `root`; both caught by --no-run). */
+    {
+        let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        for f in ["ci/canary/ncloc_known.rs", "ci/canary/ncloc_known.py"] {
+            let dst = root.join(f);
+            if let Some(parent) = dst.parent() { std::fs::create_dir_all(parent).expect("canary dir"); }
+            std::fs::copy(repo.join(f), &dst).unwrap_or_else(|e| panic!("cannot place canary {f}: {e}"));
+        }
+    }
     root
 }
 
