@@ -291,6 +291,18 @@ fn a_fix_window_without_a_pit_id_is_refused_as_a_disguised_waiver() {
 fn scratch_with_pits(name: &str, files: &[(&str, usize)], base: &[(&str, usize)], allowance: &str, pits: &str) -> std::path::PathBuf {
     let root = scratch(name, files, base, allowance);
     std::fs::write(root.join("ci/pits.toml"), pits).expect("scratch pits");
+    /* THE CANARY TRAVELS WITH THE FIXTURE (owner ruling 2026-10-04). The checker refuses to judge when it
+     * cannot read `ci/canary/ncloc_known.{py,rs}` **inside the root it was given** — measured verbatim:
+     * `UNCALIBRATED — refusing to judge: ci/canary/ncloc_known.py: unreadable …`. That refusal is the
+     * defence working ("no calibration data ⇒ no verdict", the same discipline as `exit 3`), so the fix is
+     * to FEED the fixture, never to weaken the checker. The values are the repo's own canary, whose NCLOC is
+     * known by construction (52) and asserted by `the_counter_reports_a_known_value_for_the_canary`. */
+    let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    for f in ["ci/canary/ncloc_known.rs", "ci/canary/ncloc_known.py"] {
+        let dst = root.join(f);
+        if let Some(parent) = dst.parent() { std::fs::create_dir_all(parent).expect("canary dir"); }
+        std::fs::copy(repo.join(f), &dst).unwrap_or_else(|e| panic!("cannot place canary {f}: {e}"));
+    }
     root
 }
 
