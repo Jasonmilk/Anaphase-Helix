@@ -515,3 +515,50 @@ fn the_data_only_marker_requires_a_declaration_not_a_mention() {
          Rust string that merely MENTIONS the marker must not (False)"
     );
 }
+
+// ------------------------------------------------------- emit-ratchet (K-124)
+//
+// The flag exists so that tightening the ratchet is a deliberate act with a
+// person on the other end. Measured 2026-10-04: it performed NO write at all —
+// it printed the measurement and returned 0 before any verdict, because the
+// write path was guarded by `not emit` (`ci/check_line_budget.py:781`), so the
+// flag suppressed the very write it exists to perform (K-124). The mutation is
+// the `after != before` assertion: a no-op emit cannot satisfy it, and neither
+// can a min() merge, which leaves every failing row failing.
+
+#[test]
+fn emit_ratchet_writes_the_measurement_and_the_tree_passes_afterwards() {
+    let files = [("src/a.rs", 130)];
+    let base = [("src/a.rs", 100)];
+    let root = scratch("emit-ratchet", &files, &base, "");
+    let ledger = root.join("ci/ratchet.gen.toml");
+
+    // Control: a plain check is red AND read-only — it restores what it wrote.
+    let before = std::fs::read_to_string(&ledger).expect("ratchet before");
+    let (code, out, err) = run_checker_at(&root, &[]);
+    assert_eq!(code, 1, "30 lines over the recorded ratchet must be red:\n{out}{err}");
+    assert_eq!(
+        std::fs::read_to_string(&ledger).expect("ratchet mid"),
+        before,
+        "a plain check must not leave a tightened ledger behind:\n{out}{err}"
+    );
+
+    // The emit must persist the measurement it has just taken.
+    let (code, out, err) = run_checker_at(&root, &["--emit-ratchet"]);
+    assert_eq!(code, 0, "--emit-ratchet judges nothing, so it cannot fail:\n{out}{err}");
+    let after = std::fs::read_to_string(&ledger).expect("ratchet after");
+    assert_ne!(
+        after, before,
+        "--emit-ratchet wrote nothing. It printed the measurement and returned before the \
+         verdict, so the one documented way to tighten the ratchet does nothing (K-124).\n{out}{err}"
+    );
+    assert!(
+        after.contains("ncloc  = 130"),
+        "the emitted baseline must be the MEASUREMENT (130), not the old 100: a min() merge \
+         cannot absorb a growth the pit ledger has already attributed.\n{after}"
+    );
+
+    // And the point of emitting: the tree passes afterwards.
+    let (code, out, err) = run_checker_at(&root, &[]);
+    assert_eq!(code, 0, "after a deliberate re-base the tree is clean:\n{out}{err}");
+}
