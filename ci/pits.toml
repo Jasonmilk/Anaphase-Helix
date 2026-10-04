@@ -126,3 +126,8 @@ summary  = "The gRPC reasoning adapter never overrode `last_meta()`, so the two 
 id       = "K-122"
 recorded = "2026-10-04"
 summary  = "The seed ledger lagged the M1-M4 engineering line: five files were added/changed without first-signing, so four ci tests refuse to judge. The pit is the gap, not the files."
+
+[[pit]]
+id       = "K-123"
+recorded = "2026-10-04"
+summary  = "The ratchet ledger lagged the engineering line: fourteen targets (11 files, 3 directories) measure above a baseline that was never re-measured, and every one of them is attributable to commits dated before the current session. The baseline is not wrong about the code; it is a measurement that stopped being taken."
