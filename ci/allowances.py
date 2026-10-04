@@ -423,8 +423,8 @@ def load_waivers(path, check, today):
     of the vector check.
     """
     if not os.path.exists(path):
-        return set(), []
-    active, expired = set(), []
+        return set(), set()
+    active, expired = set(), set()
     check_field = target = due = owner = None
     in_other_table = False
 
