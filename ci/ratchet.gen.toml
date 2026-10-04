@@ -3,53 +3,57 @@
 # The ratchet is a derived measurement, not an exemption, which is why the
 # checker writes it while waivers (ci/baseline.toml) stay human-signed.
 #
-# Each value is min(previous, current): a file may shrink and its ceiling
-# follows it down, and it can never grow back. Directory entries end in `/` and
-# bound the sum, which is what stops a large file being split into several small
-# ones to reset the per-file number.
+# Each value is min(previous, current) on an ordinary run: a file may shrink and
+# its ceiling follows it down, and it can never grow back BY CHECKING. A
+# deliberate `--emit-ratchet` re-measures every target instead, so a growth the
+# pit ledger has already attributed can be absorbed once, in a named commit — the
+# emit is the only path that moves a ceiling up, and it announces itself when it
+# runs (K-124). Directory entries end in `/` and bound the sum, which is what
+# stops a large file being split into several small ones to reset the per-file
+# number.
 counter = 2
 [[ratchet]]
 target = "ci/"
-ncloc  = 1266
+ncloc  = 1787
 [[ratchet]]
 target = "ci/allowances.py"
-ncloc  = 377
+ncloc  = 382
 [[ratchet]]
 target = "ci/check_guards.py"
-ncloc  = 316
+ncloc  = 386
 [[ratchet]]
 target = "ci/check_line_budget.py"
-ncloc  = 645
+ncloc  = 704
 [[ratchet]]
 target = "ci/n_runs.sh"
 ncloc  = 49
 [[ratchet]]
 target = "ci/scan_mutants.py"
-ncloc  = 189
+ncloc  = 266
 [[ratchet]]
 target = "src/"
-ncloc  = 3621
+ncloc  = 4493
 [[ratchet]]
 target = "src/adapters/"
-ncloc  = 1246
+ncloc  = 1419
 [[ratchet]]
 target = "src/adapters/flowmodus.rs"
-ncloc  = 52
+ncloc  = 78
 [[ratchet]]
 target = "src/adapters/http_reasoning.rs"
 ncloc  = 449
 [[ratchet]]
 target = "src/adapters/mind.rs"
-ncloc  = 363
+ncloc  = 395
 [[ratchet]]
 target = "src/adapters/mod.rs"
-ncloc  = 183
+ncloc  = 196
 [[ratchet]]
 target = "src/adapters/security_gate.rs"
 ncloc  = 103
 [[ratchet]]
 target = "src/adapters/tentacle.rs"
-ncloc  = 80
+ncloc  = 79
 [[ratchet]]
 target = "src/adapters/usage.rs"
 ncloc  = 119
@@ -63,17 +67,20 @@ ncloc  = 545
 target = "src/bind.rs"
 ncloc  = 302
 [[ratchet]]
+target = "src/capability.rs"
+ncloc  = 75
+[[ratchet]]
 target = "src/ci144/"
-ncloc  = 387
+ncloc  = 383
 [[ratchet]]
 target = "src/ci144/mod.rs"
-ncloc  = 258
+ncloc  = 254
 [[ratchet]]
 target = "src/ci144/server.rs"
 ncloc  = 129
 [[ratchet]]
 target = "src/config.rs"
-ncloc  = 350
+ncloc  = 367
 [[ratchet]]
 target = "src/contract/"
 ncloc  = 502
@@ -96,65 +103,68 @@ ncloc  = 93
 target = "src/evidence/mod.rs"
 ncloc  = 93
 [[ratchet]]
+target = "src/gate.rs"
+ncloc  = 267
+[[ratchet]]
 target = "src/gloves.rs"
-ncloc  = 246
+ncloc  = 242
 [[ratchet]]
 target = "src/governance.rs"
 ncloc  = 88
 [[ratchet]]
 target = "src/health.rs"
-ncloc  = 199
+ncloc  = 200
 [[ratchet]]
 target = "src/hitl.rs"
-ncloc  = 86
+ncloc  = 505
 [[ratchet]]
 target = "src/judge.rs"
 ncloc  = 185
 [[ratchet]]
 target = "src/ledger/"
-ncloc  = 219
+ncloc  = 237
 [[ratchet]]
 target = "src/ledger/mod.rs"
-ncloc  = 219
+ncloc  = 237
 [[ratchet]]
 target = "src/lib.rs"
-ncloc  = 35
+ncloc  = 39
 [[ratchet]]
 target = "src/lifecycle.rs"
 ncloc  = 148
 [[ratchet]]
 target = "src/main.rs"
-ncloc  = 941
+ncloc  = 1020
 [[ratchet]]
 target = "src/pipeline/"
-ncloc  = 269
+ncloc  = 287
 [[ratchet]]
 target = "src/pipeline/mod.rs"
-ncloc  = 269
+ncloc  = 287
 [[ratchet]]
 target = "src/rails.rs"
 ncloc  = 370
 [[ratchet]]
 target = "src/reflex.rs"
-ncloc  = 12
+ncloc  = 22
 [[ratchet]]
 target = "src/run_cycle/"
-ncloc  = 1319
+ncloc  = 1407
 [[ratchet]]
 target = "src/run_cycle/memory_retrieval.rs"
 ncloc  = 81
 [[ratchet]]
 target = "src/run_cycle/mod.rs"
-ncloc  = 645
+ncloc  = 678
 [[ratchet]]
 target = "src/run_cycle/reasoning.rs"
-ncloc  = 229
+ncloc  = 256
 [[ratchet]]
 target = "src/run_cycle/reflection.rs"
 ncloc  = 215
 [[ratchet]]
 target = "src/run_cycle/safety_gate.rs"
-ncloc  = 53
+ncloc  = 57
 [[ratchet]]
 target = "src/run_cycle/usage.rs"
 ncloc  = 18
@@ -163,31 +173,40 @@ target = "src/run_cycle/verdict.rs"
 ncloc  = 102
 [[ratchet]]
 target = "src/security.rs"
-ncloc  = 62
+ncloc  = 68
 [[ratchet]]
 target = "src/session_events/"
-ncloc  = 690
+ncloc  = 1714
 [[ratchet]]
 target = "src/session_events/crystallize.rs"
 ncloc  = 107
+[[ratchet]]
+target = "src/session_events/gc.rs"
+ncloc  = 376
 [[ratchet]]
 target = "src/session_events/identity.rs"
 ncloc  = 168
 [[ratchet]]
 target = "src/session_events/mod.rs"
-ncloc  = 19
+ncloc  = 43
 [[ratchet]]
 target = "src/session_events/naming.rs"
 ncloc  = 47
 [[ratchet]]
+target = "src/session_events/pins.rs"
+ncloc  = 127
+[[ratchet]]
 target = "src/session_events/query.rs"
-ncloc  = 181
+ncloc  = 276
+[[ratchet]]
+target = "src/session_events/refs.rs"
+ncloc  = 293
 [[ratchet]]
 target = "src/session_events/test_support.rs"
 ncloc  = 14
 [[ratchet]]
 target = "src/session_events/types_and_stream.rs"
-ncloc  = 154
+ncloc  = 263
 [[ratchet]]
 target = "src/states.rs"
 ncloc  = 26
