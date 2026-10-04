@@ -317,8 +317,8 @@ fn a_fix_window_cap_may_not_exceed_a_tenth_of_the_baseline() {
     let large = "[[waiver]]\ncheck=\"CI-6\"\ntarget=\"src/a.rs\"\nreason=\"fixture over the module budget\"\nowner=\"t\"\ndue=\"2099-01-01\"\n\n";
     let ok = &format!("{large}[[fix_window]]\ntarget=\"src/a.rs\"\ncap=100\nk_id=\"K-999\"\nreason=\"x\"\n");
     let root = scratch_with_pits("fixcap-ok", &[("src/a.rs", 1100)], &[("src/a.rs", 1000)], ok, pits);
-    let (code, _, err) = run_checker_at(&root, &[]);
-    assert_eq!(code, 0, "a tenth is the bound, so it must pass:\n{err}");
+    let (code, out, err) = run_checker_at(&root, &[]);
+    assert_eq!(code, 0, "a tenth is the bound, so it must pass:\nSTDOUT:\n{out}\nSTDERR:\n{err}");
 
     // 101 is over it: refused as unrunnable, not reported as a violation.
     let over = &format!("{large}[[fix_window]]\ntarget=\"src/a.rs\"\ncap=101\nk_id=\"K-999\"\nreason=\"x\"\n");

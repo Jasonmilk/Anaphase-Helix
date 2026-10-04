@@ -176,9 +176,9 @@ async fn no_episode_writes_note_verbatim() {
 
 #[test]
 fn mode_serde_roundtrip_and_default() {
-    let m: Mode = serde_json::from_str("\"drive\"").unwrap();
+    let m: Mode = serde_json::from_str("\"driving\"").unwrap();
     assert_eq!(m, Mode::Drive);
-    let m: Mode = serde_json::from_str("\"survive\"").unwrap();
+    let m: Mode = serde_json::from_str("\"survival\"").unwrap();
     assert_eq!(m, Mode::Survive);
     assert_eq!(serde_json::to_string(&Mode::Partner).unwrap(), "\"partner\"");
     // Helix's native state is the memory-bearing partner (ADR-0006 D3).
@@ -199,7 +199,7 @@ fn config_loads_mode_from_toml() {
          soft_reflex_threshold = 0.7\n\
          execution_placeholder = \"echo\"\n\
          cycle_cap = 7\n\
-         mode = \"drive\"\n",
+         mode = \"driving\"\n",
     )
     .unwrap();
     assert_eq!(rc.mode, Some(Mode::Drive));
