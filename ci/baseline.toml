@@ -16,9 +16,9 @@
 [[waiver]]
 check   = "CI-6"
 target  = "src/bind.rs"
-reason  = "拆分待评估：若职责单一则阈值问题，若可拆则拆"
-owner   = "TBD"
-due     = "2026-10-02"
+reason  = "拆分待评估：若职责单一则阈值问题，若可拆则拆。**续期一次（2026-10-04），拆分挂条件**：waiver 若扛过 10-09 转硬则拆分进 P10；不能则 10-08 前清尾"
+owner   = "jason"
+due     = "2026-10-11"
 
 [[waiver]]
 check   = "CI-6"
