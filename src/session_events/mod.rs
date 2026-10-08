@@ -15,6 +15,7 @@
 //! in the reasoning trace — and credentials are redacted on write, so the
 //! stream never becomes a sensitive data lake.
 
+pub mod convergence;
 pub mod crystallize;
 pub mod gc;
 pub mod identity;
@@ -34,6 +35,7 @@ pub use identity::{
     allocate_period_id, ambiguous_error, is_job_id, is_period_id, not_found_error, resolve_one,
     resolve_period, try_allocate_period_id, PeriodRef, Resolved,
 };
+pub use convergence::{ConvergenceConfig, PeriodStatus, StatusSource};
 pub use crystallize::{crystallize, CrystalSuggestion};
 pub use naming::{freeze_name, rename_period};
 pub use pins::{

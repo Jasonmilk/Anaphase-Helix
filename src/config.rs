@@ -69,6 +69,24 @@ pub struct Config {
 pub const DEFAULT_MEMORY_INJECT_CHARS: usize = 800;
 fn default_memory_inject_chars() -> usize { DEFAULT_MEMORY_INJECT_CHARS }
 
+/// ADR-0049 D6: session-convergence defaults. `7 天归档隐性 / 半年压缩留存` are the
+/// user's stated defaults (intent, not a guess); `enabled` is the OFF SWITCH —
+/// turning it off restores the pre-ADR-0049 "last round only" injection.
+pub const DEFAULT_CONVERGE_ENABLED: bool = true;
+pub const DEFAULT_CONVERGE_HIDE_AFTER_DAYS: u64 = 7;
+pub const DEFAULT_CONVERGE_COMPRESS_AFTER_DAYS: u64 = 180;
+/// 12, not 24. Measured on the acceptance chain (21 rounds): a cap ABOVE the chain
+/// length never elides, so every round added a line and the prompt grew 287 -> 1504
+/// chars — heavier, not lighter, i.e. the criterion "not linear in chain length"
+/// FAILED at the exact scale it is checked at. A cap that never binds is not a bound.
+pub const DEFAULT_CONVERGE_SKELETON_MAX_LINES: usize = 12;
+pub const DEFAULT_CONVERGE_SKELETON_LINE_CHARS: usize = 96;
+fn default_converge_enabled() -> bool { DEFAULT_CONVERGE_ENABLED }
+fn default_converge_hide_after_days() -> u64 { DEFAULT_CONVERGE_HIDE_AFTER_DAYS }
+fn default_converge_compress_after_days() -> u64 { DEFAULT_CONVERGE_COMPRESS_AFTER_DAYS }
+fn default_converge_skeleton_max_lines() -> usize { DEFAULT_CONVERGE_SKELETON_MAX_LINES }
+fn default_converge_skeleton_line_chars() -> usize { DEFAULT_CONVERGE_SKELETON_LINE_CHARS }
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct AnaphaseConfig {
     pub mind_endpoint: Option<String>,
@@ -125,6 +143,21 @@ pub struct AnaphaseConfig {
     /// (pure stateless). Protocol default 800 (ADR-0023).
     #[serde(default = "default_memory_inject_chars")]
     pub memory_inject_chars: usize,
+    /// ADR-0049 D6: 会话收敛开关。false = 回到"只注入上一轮"（旧行为）。
+    #[serde(default = "default_converge_enabled")]
+    pub converge_enabled: bool,
+    /// 超过这个天数 ⇒ 默认视图隐性（`draft` → `converged`）。存储值优先。
+    #[serde(default = "default_converge_hide_after_days")]
+    pub converge_hide_after_days: u64,
+    /// 冷区留存阈值（本版只登记，不改字节 —— 隐性化≠删除）。
+    #[serde(default = "default_converge_compress_after_days")]
+    pub converge_compress_after_days: u64,
+    /// 骨架行上限：有界性的**旋钮**（注入不随链长增长的唯一保证）。
+    #[serde(default = "default_converge_skeleton_max_lines")]
+    pub converge_skeleton_max_lines: usize,
+    /// 骨架每行字符上限。
+    #[serde(default = "default_converge_skeleton_line_chars")]
+    pub converge_skeleton_line_chars: usize,
     /// Demo/smoke input for the local run loop (O-5, ADR-0023): CLI `--input`
     /// wins, then this config, then the protocol-default demo task. This is
     /// the demo task source — no literal in main.rs.
@@ -361,6 +394,11 @@ impl Default for AnaphaseConfig {
             session_events_path: None,
             gene_lock_path: None,
             memory_inject_chars: DEFAULT_MEMORY_INJECT_CHARS,
+            converge_enabled: DEFAULT_CONVERGE_ENABLED,
+            converge_hide_after_days: DEFAULT_CONVERGE_HIDE_AFTER_DAYS,
+            converge_compress_after_days: DEFAULT_CONVERGE_COMPRESS_AFTER_DAYS,
+            converge_skeleton_max_lines: DEFAULT_CONVERGE_SKELETON_MAX_LINES,
+            converge_skeleton_line_chars: DEFAULT_CONVERGE_SKELETON_LINE_CHARS,
             smoke_input: None,
             judge_backend: crate::judge::JudgeBackend::default(),
             judge_endpoint: None,
@@ -464,6 +502,11 @@ mod tests {
                 session_events_path: None,
                 gene_lock_path: None,
                 memory_inject_chars: DEFAULT_MEMORY_INJECT_CHARS,
+            converge_enabled: DEFAULT_CONVERGE_ENABLED,
+            converge_hide_after_days: DEFAULT_CONVERGE_HIDE_AFTER_DAYS,
+            converge_compress_after_days: DEFAULT_CONVERGE_COMPRESS_AFTER_DAYS,
+            converge_skeleton_max_lines: DEFAULT_CONVERGE_SKELETON_MAX_LINES,
+            converge_skeleton_line_chars: DEFAULT_CONVERGE_SKELETON_LINE_CHARS,
                 smoke_input: None,
                 judge_backend: crate::judge::JudgeBackend::default(),
                 judge_endpoint: None,

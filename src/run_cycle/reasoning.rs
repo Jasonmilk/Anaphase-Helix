@@ -50,6 +50,17 @@ impl AgentLoop {
             // O-1 (ADR-0016 D1): structured commands never reach the LLM —
             // the plan already exists, assemble the job and go.
             if self.context.structured {
+                /* ADR-0049 D4: READING INSTRUCTIONS ARE NOT TOOL CALLS (lodestone-spec:ADR-0002
+                 * D6: `lodes` / `lode <slug>` / `body <slug>` / `sediment`). They are answered
+                 * HERE, from the append-only store, at 0 tokens and with no egress — handing them
+                 * to the pipeline would turn "read my own history" into a remote call. Checked
+                 * against the live fixture manifests (`calc`/`numbers`/`rate`/`weather`/
+                 * `web_search`): the four command words collide with no tool name. */
+                if let Some(answer) = self.answer_read_instruction() {
+                    self.context.reasoning_output = answer;
+                    self.context.calls.clear();
+                    return Ok(TransitionCondition::NoToolNeeded);
+                }
                 if let Some(p) = self.pipeline.as_ref() {
                     let job_id = trace_id.clone();
                     // stage events (ADR-0019): stage1 = call parsing
@@ -138,16 +149,26 @@ impl AgentLoop {
 \n[memory: Helix's past experiences — true history, answer from them]\n{}", prompt, inject)
                 }
             };
-            // Explicit continuation (2026-09-07): resume a previous
-            // experience as true history — the new period continues the
-            // conversation instead of meeting a stranger.
-            let prompt = match self.context.resume.as_ref() {
-                Some(r) => format!(
-                    "{}
-\n[previous episode — true history of this conversation's last round]\n{}",
+            /* ADR-0049 D3 (lodestone-spec:ADR-0002 D6 L0): the continuation carries the CHAIN'S
+             * SKELETON — one bounded line per round — not a truncated copy of the last round.
+             * Measured before this (experiment A, 21 rounds): the prompt was still 288 chars and
+             * carried round 20 only, so anything said in round 1 was gone AND unreachable. The
+             * elision is NAMED and `!body <id>` is the way back. */
+            let skel = self.session_events_dir.as_ref().and_then(|d| {
+                let leaf = self.context.resume_period.as_deref()?;
+                crate::session_events::convergence::skeleton_for_prompt(
+                    d, leaf, &self.convergence, self.clock.now())
+            });
+            let prompt = match (skel, self.context.resume.as_ref()) {
+                (Some(sk), _) => format!(
+                    "{}\n[conversation so far — one line per round, oldest first; `!body <id>` retrieves any round in full]\n{}",
+                    prompt, sk
+                ),
+                (None, Some(r)) => format!(
+                    "{}\n[previous episode — true history of this conversation's last round]\n{}",
                     prompt, r
                 ),
-                None => prompt,
+                (None, None) => prompt,
             };
             // P10a (ADR-0031): fold the cognitive craft note (zero-token
             // deterministic orchestration from Mind) into the prompt —

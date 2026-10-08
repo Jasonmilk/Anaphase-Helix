@@ -23,6 +23,10 @@ use crate::contract::{
 use crate::evidence::EvidenceRecord;
 use crate::hitl::HITLApprover;
 use crate::ledger::unix_secs_to_rfc3339;
+use crate::session_events::convergence::{
+    answer_lodes as cv_answer_lodes, answer_lode as cv_answer_lode,
+    answer_sediment as cv_answer_sediment,
+};
 use crate::pipeline::Pipeline;
 use crate::reflex::ReflexArc;
 use crate::states::HelixState;
@@ -184,6 +188,9 @@ pub struct AgentLoop {
     /// Source: config `[anaphase] memory_inject_chars` (protocol default
     /// const below, ADR-0023); main overrides from config.
     pub memory_inject_chars: usize,
+    /// ADR-0049 D6: 会话收敛的旋钮（状态/骨架/下钻）。**缺省 = 协议默认**，
+    /// main 从 `[anaphase]` 覆盖。`enabled=false` = 回到旧行为。
+    pub convergence: crate::session_events::ConvergenceConfig,
     /// O-6 (ADR-0024): judge-point backend — complexity assessment for the
     /// Amygdala -> suggested_mode chain. Rules by default (zero tokens);
     /// SmallLlm (3B-class) when configured. Always returns 1/2/3.
@@ -466,6 +473,7 @@ impl AgentLoop {
             rails: None,
             rails_config: crate::config::RailsConfig::default(),
             memory_inject_chars: DEFAULT_INJECT_CHARS,
+            convergence: crate::session_events::ConvergenceConfig::default(),
             judge: std::sync::Arc::new(crate::judge::RulesJudge {
                 // config source, not literals (DNA principle 11 / ADR-0002):
                 // MindConfig protocol defaults feed the rules judge; main
@@ -1053,6 +1061,26 @@ impl AgentLoop {
     /// (gRPC execute) + stage 4 (evidence record). The HITL execution gate
     /// (DNA principle 4) and the tool audit gate (principle 5) still apply per
     /// planned call — low-risk tools pass through with zero extra delay.
+    /// ADR-0049 D4 — the D6 drill-down, answered locally from the append-only store.
+    /// `None` means "not a reading instruction": the caller keeps its normal path.
+    fn answer_read_instruction(&self) -> Option<String> {
+        let call = self.context.calls.first()?;
+        let dir = self.session_events_dir.as_ref()?;
+        let cfg = &self.convergence;
+        let now = self.clock.now();
+        let arg = call.args.get("0").and_then(|v| v.as_str()).unwrap_or("");
+        let leaf = self.context.resume_period.as_deref().unwrap_or(arg);
+        match call.tool.as_str() {
+            "lodes" => Some(cv_answer_lodes(dir, Some(leaf), cfg, now)),
+            "lode" => Some(cv_answer_lode(dir, arg, cfg, now)),
+            "sediment" => Some(cv_answer_sediment(dir, leaf, cfg, now)),
+            "body" => crate::session_events::convergence::retrieve_body(dir, arg).map(|b| {
+                format!("[full round {arg} — read from its append-only event stream]\n{b}")
+            }),
+            _ => None,
+        }
+    }
+
     async fn execute_structured(&mut self) -> Result<TransitionCondition, String> {
         for c in &self.context.calls {
             /* THE ARGS MUST REACH THE JUDGEMENT (ADR-0048 §225 F3): this was `&[]` verbatim —

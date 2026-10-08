@@ -974,6 +974,8 @@ async fn build_agent(config: &config::Config) -> BuiltAgent {
         // O-5 (ADR-0023): cognitive-injection budget from config (protocol
         // default 800 lives in config.rs, not here).
         agent.memory_inject_chars = config.anaphase.memory_inject_chars;
+        agent.convergence =
+            anaphase::session_events::ConvergenceConfig::from_config(&config.anaphase);
         agent.trace = config
             .anaphase
             .reasoning_trace_path

@@ -569,3 +569,33 @@ ncloc   = 293
 counter = 2
 k_id    = "K-122"
 reason  = "M1 refs three-tier, new/heavily changed this session; first-sign per K-122"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 2026-10-09 · 一次自觉的 re-base（ADR-0049 / 坑 K-126）—— 凭什么，记在这里
+#
+# 本仓 ci/baseline.toml:19 引用了「关账档登记」，而**关账档不在任何仓里**：
+#   工作区根 `~/Developer/Jasonmilk/DSH-关账档-2026-10-11.md`（同目录另有
+#   `DSH-冻结档-2026-10-10.md`）。那个引用在仓内 `git log` 里回答不了问题 ——
+#   所以「凭什么 emit」这件事写在这里，仓内可查。
+#
+# 冻结窗口：2026-10-04 → 2026-10-11（零余量，任何一行增长即红）。
+# 本次 emit 发生在窗口内，是三段各自成笔的链条：
+#   ① K-126 已具名归因（单独 commit c86a4c2/f69b44f，先记坑再落文件）；
+#   ② ADR-0049 需要新模块 + 触碰 src/config.rs —— 该目录与该文件均为零余量，
+#      `--emit-ratchet` 是这套机制里**唯一被设计出来移动上界的通道**
+#      （check_line_budget.py:「the emit is the only path that moves a ceiling up」）；
+#   ③ emit 写入的是**全部** target 的实测值（`merged = dict(current)`），
+#      所以做了**逐条比对**，见下表 —— 无一条漂移被顺手吸收（K-123 的形状）。
+#
+# 逐条比对（emit 前 → emit 后，全部 9 条都有归属）：
+#   src/session_events/convergence.rs   新增 268  ← ADR-0049 新模块本身
+#   src/session_events/                 1714→1984 (+270) = 268 + mod.rs 导出(+2)
+#   src/session_events/mod.rs             43→45   (+2) ← 导出 convergence
+#   src/config.rs                        367→397  (+30) ← 5 个收敛配置项 + 常量 + 默认函数
+#   src/run_cycle/mod.rs                 678→708  (+30) ← AgentLoop.convergence + 读数指令 helper
+#   src/run_cycle/reasoning.rs           256→258  (+2)  ← 注入改骨架 + 读数指令分支
+#   src/run_cycle/                       1407→1439 (+32) = 上面两个直接子项之和
+#   src/main.rs                         1020→1022 (+2)  ← from_config 覆盖
+#   src/                                  4493→4525 (+32) = config.rs(+30) + main.rs(+2)
+#   （目录条目 = **直接子项之和**；逐层相加与实测一致，故上表可核对。）
+# ─────────────────────────────────────────────────────────────────────────────
