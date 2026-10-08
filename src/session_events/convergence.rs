@@ -70,6 +70,8 @@ pub struct ConvergenceConfig {
     pub compress_after_days: u64,
     pub skeleton_max_lines: usize,
     pub skeleton_line_chars: usize,
+    /// D5: the SUNK region's in-place gist is ONE bounded blob, not one line per round.
+    pub gist_max_chars: usize,
 }
 
 impl Default for ConvergenceConfig {
@@ -81,6 +83,7 @@ impl Default for ConvergenceConfig {
             compress_after_days: crate::config::DEFAULT_CONVERGE_COMPRESS_AFTER_DAYS,
             skeleton_max_lines: crate::config::DEFAULT_CONVERGE_SKELETON_MAX_LINES,
             skeleton_line_chars: crate::config::DEFAULT_CONVERGE_SKELETON_LINE_CHARS,
+            gist_max_chars: crate::config::DEFAULT_CONVERGE_GIST_MAX_CHARS,
         }
     }
 }
@@ -95,6 +98,7 @@ impl ConvergenceConfig {
             compress_after_days: cfg.converge_compress_after_days,
             skeleton_max_lines: cfg.converge_skeleton_max_lines,
             skeleton_line_chars: cfg.converge_skeleton_line_chars,
+            gist_max_chars: cfg.converge_gist_max_chars,
         }
     }
 }
@@ -151,6 +155,37 @@ pub struct SkeletonRow {
     pub id: String,
     pub status: PeriodStatus,
     pub label: String,
+    /// `lodestone-spec:ADR-0002` D5 的另一半：**原位摘要**。原轮沉底后，这一行的原文
+    /// 不再出现在骨架里，但这段 gist 仍在 —— 它取自该轮自己的字节，**永不替代原文**
+    /// （事件流仍是原件的所在地），并带来源 id 与 `!body <id>` 取回路径。
+    pub gist: Option<String>,
+}
+
+/// D5: the sunk round's in-place gist. **Write-once** per period (`<id>.gist`), derived from that
+/// round's own frozen name/preview — so it is versioned by content, traceable to its source id,
+/// and it can never replace the original: the event file stays exactly as written. Produced
+/// **on demand** (when the skeleton first needs it), which is the user's own "按需存储和按需激活".
+pub fn gist_of(dir: &Path, p: &PeriodSummary, max_chars: usize) -> String {
+    let path = dir.join(format!("{}.gist", p.period_id));
+    if let Ok(existing) = std::fs::read_to_string(&path) {
+        let t = existing.trim();
+        if !t.is_empty() {
+            return t.to_string();
+        }
+    }
+    let src = p
+        .name
+        .as_deref()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or(p.preview.as_str());
+    let collapsed = src.split_whitespace().collect::<Vec<_>>().join(" ");
+    let total = collapsed.chars().count();
+    let mut g: String = collapsed.chars().take(max_chars).collect();
+    if total > max_chars {
+        g.push('…');
+    }
+    let _ = std::fs::write(&path, &g);
+    g
 }
 
 /// Build the rows for a chain (oldest first). The label is the period's frozen
@@ -184,6 +219,7 @@ pub fn skeleton_rows(
                 id: p.period_id.clone(),
                 status,
                 label,
+                gist: Some(gist_of(dir, p, cfg.gist_max_chars)),
             }
         })
         .collect()
@@ -208,17 +244,43 @@ pub fn skeleton_rows_for(
 /// budget the **newest** rows survive (the active zone) and the elision is NAMED
 /// with the command that gets the rest back — a silent cut would make "converged"
 /// and "lost" the same reading.
-pub fn skeleton(rows: &[SkeletonRow], max_lines: usize) -> String {
+pub fn skeleton(rows: &[SkeletonRow], max_lines: usize, gist_chars: usize) -> String {
     if rows.is_empty() || max_lines == 0 {
         return String::new();
     }
     let mut out = String::new();
     let hidden = rows.len().saturating_sub(max_lines);
     if hidden > 0 {
+        /* D5's other half: the sunk region keeps an IN-PLACE GIST. It is ONE bounded blob —
+         * "one line per round" would just move the old linear growth into the gist — and it
+         * covers the sunk rounds oldest-first, so the earliest content is the last to be cut.
+         * When the character budget cannot hold them all, the REMAINDER IS NAMED: a silent cut
+         * would make "converged" and "lost" the same reading. */
+        let mut gist = String::new();
+        let mut used = 0usize;
+        let mut included = 0usize;
+        for r in &rows[..hidden] {
+            let piece = r.gist.as_deref().unwrap_or(r.label.as_str());
+            let cost = piece.chars().count() + 3;
+            if used + cost > gist_chars {
+                break;
+            }
+            if !gist.is_empty() {
+                gist.push_str(" / ");
+            }
+            gist.push_str(piece);
+            used += cost;
+            included += 1;
+        }
         let _ = writeln!(
             out,
-            "- [{hidden} earlier round(s) hidden — retrieve with `!body <id>`]"
+            "- [gist of {hidden} earlier round(s) — bounded; originals intact, `!body <id>` retrieves any]"
         );
+        let _ = write!(out, "  {gist}");
+        if included < hidden {
+            let _ = write!(out, " … (+{} more, `!lodes`)", hidden - included);
+        }
+        out.push('\n');
     }
     for r in &rows[hidden..] {
         let _ = writeln!(out, "- {} [{}] {}", r.id, r.status.as_str(), r.label);
@@ -270,7 +332,7 @@ pub fn answer_lodes(
     if rows.is_empty() {
         return format!("(unknown round: {leaf})");
     }
-    skeleton(&rows, cfg.skeleton_max_lines)
+    skeleton(&rows, cfg.skeleton_max_lines, cfg.gist_max_chars)
 }
 
 /// D6 **L1** — one round expanded: status, why, where, and how to get the body.
@@ -323,7 +385,7 @@ pub fn skeleton_for_prompt(
     if rows.len() < 2 {
         return None;
     }
-    Some(skeleton(&rows, cfg.skeleton_max_lines))
+    Some(skeleton(&rows, cfg.skeleton_max_lines, cfg.gist_max_chars))
 }
 
 /// The chain from the ROOT down to `leaf`, oldest first. Walks `parent` links only

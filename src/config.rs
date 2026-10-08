@@ -81,11 +81,15 @@ pub const DEFAULT_CONVERGE_COMPRESS_AFTER_DAYS: u64 = 180;
 /// FAILED at the exact scale it is checked at. A cap that never binds is not a bound.
 pub const DEFAULT_CONVERGE_SKELETON_MAX_LINES: usize = 12;
 pub const DEFAULT_CONVERGE_SKELETON_LINE_CHARS: usize = 96;
+/// D5 的另一半：沉底区的**原位摘要**（gist）字符上限。它是一块**有界**的文本，
+/// 覆盖全部沉底轮次；原文仍在沉淀区（事件流），gist 永不替代它。
+pub const DEFAULT_CONVERGE_GIST_MAX_CHARS: usize = 400;
 fn default_converge_enabled() -> bool { DEFAULT_CONVERGE_ENABLED }
 fn default_converge_hide_after_days() -> u64 { DEFAULT_CONVERGE_HIDE_AFTER_DAYS }
 fn default_converge_compress_after_days() -> u64 { DEFAULT_CONVERGE_COMPRESS_AFTER_DAYS }
 fn default_converge_skeleton_max_lines() -> usize { DEFAULT_CONVERGE_SKELETON_MAX_LINES }
 fn default_converge_skeleton_line_chars() -> usize { DEFAULT_CONVERGE_SKELETON_LINE_CHARS }
+fn default_converge_gist_max_chars() -> usize { DEFAULT_CONVERGE_GIST_MAX_CHARS }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct AnaphaseConfig {
@@ -158,6 +162,9 @@ pub struct AnaphaseConfig {
     /// 骨架每行字符上限。
     #[serde(default = "default_converge_skeleton_line_chars")]
     pub converge_skeleton_line_chars: usize,
+    /// 沉底区 gist 的字符上限（有界为**一块**，不是每轮一行）。
+    #[serde(default = "default_converge_gist_max_chars")]
+    pub converge_gist_max_chars: usize,
     /// Demo/smoke input for the local run loop (O-5, ADR-0023): CLI `--input`
     /// wins, then this config, then the protocol-default demo task. This is
     /// the demo task source — no literal in main.rs.
@@ -399,6 +406,7 @@ impl Default for AnaphaseConfig {
             converge_compress_after_days: DEFAULT_CONVERGE_COMPRESS_AFTER_DAYS,
             converge_skeleton_max_lines: DEFAULT_CONVERGE_SKELETON_MAX_LINES,
             converge_skeleton_line_chars: DEFAULT_CONVERGE_SKELETON_LINE_CHARS,
+            converge_gist_max_chars: DEFAULT_CONVERGE_GIST_MAX_CHARS,
             smoke_input: None,
             judge_backend: crate::judge::JudgeBackend::default(),
             judge_endpoint: None,
@@ -507,6 +515,7 @@ mod tests {
             converge_compress_after_days: DEFAULT_CONVERGE_COMPRESS_AFTER_DAYS,
             converge_skeleton_max_lines: DEFAULT_CONVERGE_SKELETON_MAX_LINES,
             converge_skeleton_line_chars: DEFAULT_CONVERGE_SKELETON_LINE_CHARS,
+            converge_gist_max_chars: DEFAULT_CONVERGE_GIST_MAX_CHARS,
                 smoke_input: None,
                 judge_backend: crate::judge::JudgeBackend::default(),
                 judge_endpoint: None,
