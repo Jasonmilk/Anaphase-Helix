@@ -529,3 +529,61 @@ async fn a_reply_that_asks_for_a_tool_is_refused_even_in_prose_plus_tool_shape()
         "a tool request must never reach the human as an answer"
     );
 }
+
+/// B18 (ADR-0048 D1) — the **ledger** leg: two runs of ONE input must reach the ledger with two
+/// DIFFERENT keys.
+///
+/// WHY THIS ASSERTS THE ENVELOPE KEY: the ledger row's key is not invented in Reflection — it is
+/// `self.context.job.job_id`, read at `src/run_cycle/reflection.rs:30` and handed straight to
+/// `build_verdict(&job_id)`. The envelope is assembled in Reasoning (stage 2), before Execution,
+/// so asserting it needs no tool call, no mock server and no timing — while the ledger key is the
+/// SAME VALUE by that line. The equality itself is already pinned by
+/// `run_cycle_full_chain_met` (`assert_eq!(job_id, &job.job_id)`).
+///
+/// The obvious alternative — driving a tool call so a verdict row exists, then reading it — was
+/// tried and rejected: the in-process `MockTentacle` fails intermittently (measured: 2-6 of 15
+/// tests in this file red per run at default threads vs 1 at `--test-threads=1`; the same family
+/// hits `run_cycle_full_chain_met`/`_unmet`/`run_cycle_deterministic_replay`). That flake is
+/// PRE-EXISTING and out of scope, and a test that inherits it is not a contract test — so the
+/// assertion is on the deterministic source of the same value instead.
+///
+/// /// Mutation: revert the join key in `arm_reasoning` to `derive_job_id(&self.context.user_input)`
+/// /// ⇒ both envelopes carry the same digest ⇒ `assert_ne!(ka, kb)` goes red (measured).
+#[tokio::test]
+async fn two_runs_of_one_input_assemble_distinct_ledger_keys() {
+    let output = r#"{"calls":[{"tool":"numbers","args":{},"expect":"numbers"}],"impasse":false}"#;
+    let run = |mock: MockTentacle| {
+        let reason: Arc<dyn ReasoningAdapter> =
+            Arc::new(StructuredReasoning { output: output.into() });
+        async move {
+            let mut agent = base_agent(reason).with_pipeline(build_pipeline(mock, 1000).await);
+            agent.run_cycle("one input, two runs").await.unwrap();
+            agent
+                .context
+                .job
+                .as_ref()
+                .expect("the tt_job envelope is assembled in Reasoning (stage 2)")
+                .job_id
+                .clone()
+        }
+    };
+
+    let ka = run(MockTentacle::new().with_tool("numbers", r#"{"series":[1.0]}"#)).await;
+    let kb = run(MockTentacle::new().with_tool("numbers", r#"{"series":[1.0]}"#)).await;
+
+    assert_ne!(
+        ka, kb,
+        "B18: one input, two runs must reach the ledger with two keys, got {ka} and {kb}"
+    );
+    for k in [&ka, &kb] {
+        assert!(
+            anaphase::session_events::is_period_id(k),
+            "the ledger key must be an allocated period id, not a digest: {k}"
+        );
+    }
+    assert_ne!(
+        ka,
+        anaphase::contract::derive_job_id("one input, two runs"),
+        "the input digest is the OLD key and must not be used"
+    );
+}
