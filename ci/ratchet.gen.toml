@@ -149,13 +149,13 @@ target = "src/reflex.rs"
 ncloc  = 22
 [[ratchet]]
 target = "src/run_cycle/"
-ncloc  = 1450
+ncloc  = 1456
 [[ratchet]]
 target = "src/run_cycle/memory_retrieval.rs"
 ncloc  = 81
 [[ratchet]]
 target = "src/run_cycle/mod.rs"
-ncloc  = 719
+ncloc  = 725
 [[ratchet]]
 target = "src/run_cycle/reasoning.rs"
 ncloc  = 258
@@ -176,10 +176,10 @@ target = "src/security.rs"
 ncloc  = 68
 [[ratchet]]
 target = "src/session_events/"
-ncloc  = 2075
+ncloc  = 2116
 [[ratchet]]
 target = "src/session_events/convergence.rs"
-ncloc  = 359
+ncloc  = 400
 [[ratchet]]
 target = "src/session_events/crystallize.rs"
 ncloc  = 107

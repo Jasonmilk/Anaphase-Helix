@@ -1081,7 +1081,14 @@ impl AgentLoop {
             "sediment" => Some(cv_answer_sediment(dir, leaf, cfg, now)),
             /* 一次**具名用户动作**的落点。不是模型判断 —— 3B 上"自己决定该吸收还是驳回"
              * 会通过简单测试、在真实使用里才崩，那是装饰性绿灯。 */
-            "reject" => Some(crate::session_events::convergence::answer_reject(dir, arg, &reason)),
+            "reject" => Some(crate::session_events::convergence::answer_reject(
+                dir,
+                arg,
+                &reason,
+                "human",
+                // when 来自**注入的时钟**（不是 SystemTime::now）：侧车因此不参与字节级回放。
+                &crate::ledger::unix_secs_to_rfc3339(now),
+            )),
             "settle" => match crate::session_events::convergence::write_state(
                 dir, arg, crate::session_events::PeriodStatus::Converged)
             {

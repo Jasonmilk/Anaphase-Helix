@@ -179,26 +179,70 @@ pub fn read_rejection(dir: &Path, id: &str) -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
-/// 记下驳回**及其理由**。理由为空时写一条**具名默认**（"未说明"），
-/// 因为"没有理由"与"没记"必须是两种可分辨的读数。
-pub fn write_rejection(dir: &Path, id: &str, reason: &str) -> std::io::Result<()> {
+/// `why` 的**形态约束**（人类 2026-10-09）：必须写成「**因为〈可观测条件〉，所以不吸收**」。
+///
+/// 理由不是洁癖：用户现在替 Helix 摸索，**日后要把学到的交给 ta** ⇒ 每条判断都要能被**学会**。
+/// 「因为我觉得不对」只能被**记住**；「因为〈可观测条件〉，所以不吸收」才能变成 Helix 自己的判据。
+/// **不可泛化的理由 = 无法传递的能力** —— 比文档腐烂严重得多。
+/// 不符形态 ⇒ **拒绝写入**（fail-closed），而不是存下一个学不会的理由。
+pub fn validate_reason(reason: &str) -> Result<(), String> {
     let r = reason.trim();
-    let body = if r.is_empty() { "未说明（用户未给理由）" } else { r };
-    std::fs::write(reject_path(dir, id), body)
+    if r.is_empty() {
+        return Err("理由为空：缺理由与没记必须是两种可分辨的读数".to_string());
+    }
+    if !(r.starts_with("因为") && r.contains("所以")) {
+        return Err(
+            "理由必须写成「因为〈可观测条件〉，所以不吸收」—— 不可泛化的理由无法传递给 Helix"
+                .to_string(),
+        );
+    }
+    if r.chars().count() < 12 {
+        return Err("理由过短：〈可观测条件〉必须是可观测的，不是一句话占位".to_string());
+    }
+    Ok(())
+}
+
+/// 记下驳回：`<id>.rejected` = **why**（受形态约束），`<id>.rejected.at` = **when + who**。
+///
+/// `when` 来自**调用方注入的时钟**（不是 `SystemTime::now()`）—— 侧车因此不参与字节级
+/// 回放，这是 ADR-0049 §10.2 记下的代价，明写。
+/// `who` ∈ `human` / `auto` / `survival`：一次驳回**是谁做的**，本身是可学的信号。
+pub fn write_rejection(
+    dir: &Path,
+    id: &str,
+    why: &str,
+    who: &str,
+    when: &str,
+) -> std::io::Result<()> {
+    validate_reason(why).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
+    std::fs::write(reject_path(dir, id), why.trim())?;
+    let at = format!("{} | {}", when.trim(), who.trim());
+    std::fs::write(dir.join(format!("{id}.rejected.at")), at)
+}
+
+/// `(when, who)` —— 驳回的落笔时刻与动作主体。缺文件返回 `None`（"没记" ≠ "记了空"）。
+pub fn read_rejection_at(dir: &Path, id: &str) -> Option<String> {
+    std::fs::read_to_string(dir.join(format!("{id}.rejected.at")))
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
 }
 
 /// `!reject <id> [理由]` 的回答：把这次动作**说清楚**（可审查四问的"为什么"）。
-pub fn answer_reject(dir: &Path, arg: &str, reason: &str) -> String {
+pub fn answer_reject(dir: &Path, arg: &str, reason: &str, who: &str, when: &str) -> String {
     let id = arg.trim();
     if id.is_empty() {
-        return "(用法：!reject <period_id> [理由])".to_string();
+        return "(用法：!reject <period_id> 因为〈可观测条件〉，所以不吸收)".to_string();
     }
-    match write_rejection(dir, id, reason) {
+    match write_rejection(dir, id, reason, who, when) {
         Ok(()) => format!(
-            "已驳回 {id} —— 理由：{}\n  · 字节未动（仍在 {id}.events.jsonl）\n  · 后续注入不再包含它\n  · 仍可取回：!body {id}",
-            read_rejection(dir, id).unwrap_or_default()
+            "已驳回 {id}（子树级）\n  · why ：{}\n  · when：{}\n  · who ：{who}\n  · 字节未动（仍在 {id}.events.jsonl）\n  · 它**及其子孙**不再进入注入\n  · 仍可取回：!body {id}",
+            read_rejection(dir, id).unwrap_or_default(),
+            read_rejection_at(dir, id).unwrap_or_default(),
         ),
-        Err(e) => format!("(驳回失败：{e})"),
+        Err(e) => format!(
+            "(驳回未写入：{e})\n  正确形态：!reject {id} 因为〈可观测条件〉，所以不吸收"
+        ),
     }
 }
 
@@ -239,7 +283,7 @@ pub fn skeleton_rows(
     now_secs: u64,
 ) -> Vec<SkeletonRow> {
     let cutoff = converge_cutoff(now_secs, cfg.hide_after_days);
-    path_oldest_first
+    let mut rows = path_oldest_first
         .iter()
         .map(|p| {
             let stored = read_state(dir, &p.period_id);
@@ -264,7 +308,20 @@ pub fn skeleton_rows(
                 rejected: read_rejection(dir, &p.period_id),
             }
         })
-        .collect()
+        .collect::<Vec<_>>();
+
+    /* **子树级**（人类 2026-10-09 裁决）：`reject` 标记的是**一段**（B 及其后续），不是单点。
+     * 沿路径自最旧向最新折叠：一旦某轮被驳回，**其后所有轮**都继承该驳回状态。
+     * ⇒ 「另开分支」的语义 = 这条支线整体退出主线注入，而不是只挖掉中间一个洞。 */
+    let mut inherited = false;
+    for r in rows.iter_mut() {
+        if r.rejected.is_some() {
+            inherited = true;
+        } else if inherited {
+            r.rejected = Some(format!("继承自其祖先的驳回（子树级）"));
+        }
+    }
+    rows
 }
 
 /// List the store and build the L0 rows for the chain ending at `leaf`.

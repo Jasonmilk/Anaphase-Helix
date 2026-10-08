@@ -203,23 +203,23 @@ fn a_rejection_leaves_the_injection_but_stays_readable() {
     let dir = tmp("reject");
     let a = sum("run-x-p0000000000000001", None, "A 段：已定型");
     let b = sum("run-x-p0000000000000002", Some("run-x-p0000000000000001"), "B 段：另开分支");
+    let c = sum("run-x-p0000000000000005", Some("run-x-p0000000000000002"), "B 的子孙");
 
     write_period(&dir, &a.period_id, None, "A 段：已定型");
     write_period(&dir, &b.period_id, Some(&a.period_id), "B 段：另开分支");
-    write_rejection(&dir, &a.period_id, "无").unwrap();
-    write_rejection(&dir, &b.period_id, "方向不对，另开一支").unwrap();
+    write_rejection(&dir, &b.period_id, "因为方向与主线不一致，所以不吸收", "human", "2026-10-09T00:00:00Z").unwrap();
     // A 已定型：显式状态（本 ADR §6.2.2 一直留着的那个入口）
     write_state(&dir, &a.period_id, PeriodStatus::Converged).unwrap();
     // A 应当留在注入里，B 不应当。
-    std::fs::remove_file(reject_path(&dir, &a.period_id)).unwrap();
 
-    let list = vec![a.clone(), b.clone()];
+    let list = vec![a.clone(), b.clone(), c.clone()];
     let refs: Vec<&anaphase::session_events::PeriodSummary> = list.iter().collect();
     let cfg = ConvergenceConfig::default();
     let rows = skeleton_rows(&dir, &refs, &cfg, 1_700_000_000);
-    assert_eq!(rows.len(), 2);
+    assert_eq!(rows.len(), 3);
     assert!(rows[0].rejected.is_none(), "A 未被驳回");
-    assert_eq!(rows[1].rejected.as_deref(), Some("方向不对，另开一支"), "③ 理由必须记下");
+    assert!(rows[2].rejected.is_some(), "**子树级**：B 的子孙随之被驳回");
+    assert_eq!(rows[1].rejected.as_deref(), Some("因为方向与主线不一致，所以不吸收"), "③ 理由必须记下");
 
     let injected = skeleton(&rows, 12, 400);
     assert!(injected.contains("A 段：已定型"), "① A 必须在注入里: {injected:?}");
@@ -231,19 +231,27 @@ fn a_rejection_leaves_the_injection_but_stays_readable() {
     // ② 读数（!lodes）仍列出它，且带理由与取回路径 —— 否则"驳回"等于"看不见"，就是删除。
     let listed = answer_lodes(&dir, Some(&b.period_id), &cfg, 1_700_000_000);
     assert!(listed.contains("rejected branch"), "② 读数必须列出被驳回的分支: {listed:?}");
-    assert!(listed.contains("方向不对，另开一支"), "② 理由必须可读: {listed:?}");
+    assert!(listed.contains("因为方向与主线不一致，所以不吸收"), "② 理由必须可读: {listed:?}");
     assert!(listed.contains(&format!("!body {}", b.period_id)), "④ 必须给取回路径: {listed:?}");
 
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// 空理由写**具名默认**：「没有理由」与「没记」必须是两种可分辨的读数。
+/// why 的**形态约束**：不可泛化的理由**拒绝写入** —— 因为它无法传递给 Helix。
+/// 同时：空理由也要拒（"缺理由"与"没记"必须可分辨）。
+///
+/// /// Mutation: 去掉 `validate_reason(why)?` ⇒ 学不会的理由落盘 ⇒ 红。
 #[test]
-fn an_empty_reason_is_recorded_as_a_named_absence() {
-    let dir = tmp("reject-empty");
-    write_rejection(&dir, "run-x-p0000000000000003", "   ").unwrap();
-    let r = read_rejection(&dir, "run-x-p0000000000000003").unwrap();
-    assert!(r.contains("未说明"), "空理由不得变成空文件: {r:?}");
+fn a_non_generalizable_reason_is_refused() {
+    let dir = tmp("reject-shape");
+    let bad = write_rejection(&dir, "run-x-p0000000000000003", "我觉得不对", "human", "t");
+    assert!(bad.is_err(), "『我觉得不对』必须被拒（不可泛化）");
+    assert!(!reject_path(&dir, "run-x-p0000000000000003").exists(), "拒写 ⇒ 不落盘");
+    assert!(write_rejection(&dir, "run-x-p0000000000000003", "  ", "human", "t").is_err(), "空理由拒");
+    // 合规形态写入 + when/who 落 `<id>.rejected.at`
+    write_rejection(&dir, "run-x-p0000000000000003", "因为与已定型段矛盾，所以不吸收", "human", "2026-10-09T01:00:00Z").unwrap();
+    assert!(read_rejection_at(&dir, "run-x-p0000000000000003").unwrap().contains("human"));
+    assert!(read_rejection_at(&dir, "run-x-p0000000000000003").unwrap().contains("2026-10-09T01:00:00Z"));
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -251,9 +259,10 @@ fn an_empty_reason_is_recorded_as_a_named_absence() {
 #[test]
 fn the_reject_answer_states_all_three_facts() {
     let dir = tmp("reject-answer");
-    let out = answer_reject(&dir, "run-x-p0000000000000004", "重复了");
+    let out = answer_reject(&dir, "run-x-p0000000000000004", "因为与前一轮重复，所以不吸收", "human", "2026-10-09T02:00:00Z");
     assert!(out.contains("字节未动"), "{out:?}");
-    assert!(out.contains("不再包含"), "{out:?}");
+    assert!(out.contains("不再进入注入"), "{out:?}");
     assert!(out.contains("!body run-x-p0000000000000004"), "{out:?}");
+    assert!(out.contains("when") && out.contains("who"), "when/who 必须回显: {out:?}");
     let _ = std::fs::remove_dir_all(&dir);
 }
