@@ -1069,11 +1069,25 @@ impl AgentLoop {
         let cfg = &self.convergence;
         let now = self.clock.now();
         let arg = call.args.get("0").and_then(|v| v.as_str()).unwrap_or("");
+        // 理由：`!reject <id> <理由…>` —— 位置参数 1..n 拼回一句人话。
+        let reason = (1..call.args.len())
+            .filter_map(|i| call.args.get(&i.to_string()).and_then(|v| v.as_str()))
+            .collect::<Vec<_>>()
+            .join(" ");
         let leaf = self.context.resume_period.as_deref().unwrap_or(arg);
         match call.tool.as_str() {
             "lodes" => Some(cv_answer_lodes(dir, Some(leaf), cfg, now)),
             "lode" => Some(cv_answer_lode(dir, arg, cfg, now)),
             "sediment" => Some(cv_answer_sediment(dir, leaf, cfg, now)),
+            /* 一次**具名用户动作**的落点。不是模型判断 —— 3B 上"自己决定该吸收还是驳回"
+             * 会通过简单测试、在真实使用里才崩，那是装饰性绿灯。 */
+            "reject" => Some(crate::session_events::convergence::answer_reject(dir, arg, &reason)),
+            "settle" => match crate::session_events::convergence::write_state(
+                dir, arg, crate::session_events::PeriodStatus::Converged)
+            {
+                Ok(()) => Some(format!("已定型 {arg}（status=converged，显式）")),
+                Err(e) => Some(format!("(定型失败：{e})")),
+            },
             "body" => crate::session_events::convergence::retrieve_body(dir, arg).map(|b| {
                 format!("[full round {arg} — read from its append-only event stream]\n{b}")
             }),

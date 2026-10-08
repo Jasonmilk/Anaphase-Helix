@@ -12,6 +12,7 @@ fn row(id: &str, st: PeriodStatus, gist: Option<&str>) -> SkeletonRow {
         status: st,
         label: format!("label-{id}"),
         gist: gist.map(|g| g.to_string()),
+        rejected: None,
     }
 }
 
@@ -140,4 +141,119 @@ fn chain_walks_lineage_only_and_survives_a_cycle() {
     assert_eq!(path, vec!["a", "b", "c"], "root first, leaf last");
     let cyc = vec![mk("y", Some("z")), mk("z", Some("y"))];
     assert_eq!(chain_of(&cyc, "y").len(), 2, "环必须终止");
+}
+
+// ───────────────────────── 一次具名驳回（不是模型判断）─────────────────────────
+
+fn tmp(tag: &str) -> std::path::PathBuf {
+    // pid + 原子序号：同进程内两次同参调用也必须不同（教训：裸 temp_dir 会撞）
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static N: AtomicU64 = AtomicU64::new(0);
+    let d = std::env::temp_dir().join(format!(
+        "convg-{}-{}-{}",
+        tag,
+        std::process::id(),
+        N.fetch_add(1, Ordering::Relaxed)
+    ));
+    let _ = std::fs::remove_dir_all(&d);
+    std::fs::create_dir_all(&d).unwrap();
+    d
+}
+
+fn sum(id: &str, parent: Option<&str>, preview: &str) -> anaphase::session_events::PeriodSummary {
+    anaphase::session_events::PeriodSummary {
+        period_id: id.into(),
+        job_id: "j".into(),
+        first_ts: "2026-01-01T00:00:00Z".into(),
+        last_ts: "2026-01-01T00:00:00Z".into(),
+        count: 1,
+        preview: preview.into(),
+        reply: "r".into(),
+        parent: parent.map(|s| s.to_string()),
+        conversation_id: None,
+        model: None,
+        name: None,
+    }
+}
+
+/// 写一个**最小但真实**的 period 事件文件 —— `answer_lodes` 读的是 store，
+/// 不是内存列表；用夹具替代它就会测到另一个东西。
+fn write_period(dir: &std::path::Path, id: &str, parent: Option<&str>, text: &str) {
+    let t = "2026-01-01T00:00:00Z";
+    let mut rows = vec![
+        format!(r#"{{"type":"turn/start","period_id":"{id}","job_id":"j","seq":0,"time":"{t}","data":{{}}}}"#),
+        format!(r#"{{"type":"user/message","period_id":"{id}","job_id":"j","seq":1,"time":"{t}","data":{{"text":"{text}"}}}}"#),
+    ];
+    if let Some(par) = parent {
+        rows.push(format!(r#"{{"type":"context/inject","period_id":"{id}","job_id":"j","seq":2,"time":"{t}","data":{{"resume_from":"{par}"}}}}"#));
+    }
+    std::fs::write(
+        dir.join(format!("{id}.events.jsonl")),
+        rows.join("\n") + "\n",
+    )
+    .unwrap();
+}
+
+/// ★ 驳回的**唯一效果**：这段内容不进注入。四条同时断言 ——
+/// ① 注入里没有它 ② 它的行仍在 `!lodes` 的读数里（未被删）③ 理由被记下 ④ `!body` 仍可达。
+///
+/// /// Mutation: `skeleton` 里去掉 `filter(|r| r.rejected.is_none())` ⇒ 被驳回的内容回到注入 ⇒ 红。
+#[test]
+fn a_rejection_leaves_the_injection_but_stays_readable() {
+    let dir = tmp("reject");
+    let a = sum("run-x-p0000000000000001", None, "A 段：已定型");
+    let b = sum("run-x-p0000000000000002", Some("run-x-p0000000000000001"), "B 段：另开分支");
+
+    write_period(&dir, &a.period_id, None, "A 段：已定型");
+    write_period(&dir, &b.period_id, Some(&a.period_id), "B 段：另开分支");
+    write_rejection(&dir, &a.period_id, "无").unwrap();
+    write_rejection(&dir, &b.period_id, "方向不对，另开一支").unwrap();
+    // A 已定型：显式状态（本 ADR §6.2.2 一直留着的那个入口）
+    write_state(&dir, &a.period_id, PeriodStatus::Converged).unwrap();
+    // A 应当留在注入里，B 不应当。
+    std::fs::remove_file(reject_path(&dir, &a.period_id)).unwrap();
+
+    let list = vec![a.clone(), b.clone()];
+    let refs: Vec<&anaphase::session_events::PeriodSummary> = list.iter().collect();
+    let cfg = ConvergenceConfig::default();
+    let rows = skeleton_rows(&dir, &refs, &cfg, 1_700_000_000);
+    assert_eq!(rows.len(), 2);
+    assert!(rows[0].rejected.is_none(), "A 未被驳回");
+    assert_eq!(rows[1].rejected.as_deref(), Some("方向不对，另开一支"), "③ 理由必须记下");
+
+    let injected = skeleton(&rows, 12, 400);
+    assert!(injected.contains("A 段：已定型"), "① A 必须在注入里: {injected:?}");
+    assert!(
+        !injected.contains("B 段：另开分支") && !injected.contains(&b.period_id),
+        "① B 的**内容与行**都不得进注入: {injected:?}"
+    );
+
+    // ② 读数（!lodes）仍列出它，且带理由与取回路径 —— 否则"驳回"等于"看不见"，就是删除。
+    let listed = answer_lodes(&dir, Some(&b.period_id), &cfg, 1_700_000_000);
+    assert!(listed.contains("rejected branch"), "② 读数必须列出被驳回的分支: {listed:?}");
+    assert!(listed.contains("方向不对，另开一支"), "② 理由必须可读: {listed:?}");
+    assert!(listed.contains(&format!("!body {}", b.period_id)), "④ 必须给取回路径: {listed:?}");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// 空理由写**具名默认**：「没有理由」与「没记」必须是两种可分辨的读数。
+#[test]
+fn an_empty_reason_is_recorded_as_a_named_absence() {
+    let dir = tmp("reject-empty");
+    write_rejection(&dir, "run-x-p0000000000000003", "   ").unwrap();
+    let r = read_rejection(&dir, "run-x-p0000000000000003").unwrap();
+    assert!(r.contains("未说明"), "空理由不得变成空文件: {r:?}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// `!reject` 的回答必须说清"字节未动 + 不进注入 + 仍可取回"（可审查四问的落地）。
+#[test]
+fn the_reject_answer_states_all_three_facts() {
+    let dir = tmp("reject-answer");
+    let out = answer_reject(&dir, "run-x-p0000000000000004", "重复了");
+    assert!(out.contains("字节未动"), "{out:?}");
+    assert!(out.contains("不再包含"), "{out:?}");
+    assert!(out.contains("!body run-x-p0000000000000004"), "{out:?}");
+    let _ = std::fs::remove_dir_all(&dir);
 }

@@ -159,6 +159,47 @@ pub struct SkeletonRow {
     /// 不再出现在骨架里，但这段 gist 仍在 —— 它取自该轮自己的字节，**永不替代原文**
     /// （事件流仍是原件的所在地），并带来源 id 与 `!body <id>` 取回路径。
     pub gist: Option<String>,
+    /// 一次**具名的用户动作**的落点：`Some(reason)` = 这段被驳回（另开分支）。
+    /// **不是模型判断** —— 前沿（AGM 1985）说得明白：冲突时该放弃哪一条，逻辑本身
+    /// 决定不了，需要**外部标准**；而让模型自己当裁判的方法都假定强模型，我们是 3B。
+    /// 驳回**不删除**任何字节：事件流仍在，`!body` 仍可取回，`!lodes` 仍会列出它。
+    pub rejected: Option<String>,
+}
+
+/// 一次具名驳回的记录：`<period_id>.rejected`，内容就是**为什么被驳回**（一行）。
+/// 与 `.name` / `.state` / `.gist` 同构：一文件一词，append-only 友好，历史不回写。
+pub fn reject_path(dir: &Path, id: &str) -> PathBuf {
+    dir.join(format!("{id}.rejected"))
+}
+
+pub fn read_rejection(dir: &Path, id: &str) -> Option<String> {
+    std::fs::read_to_string(reject_path(dir, id))
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+/// 记下驳回**及其理由**。理由为空时写一条**具名默认**（"未说明"），
+/// 因为"没有理由"与"没记"必须是两种可分辨的读数。
+pub fn write_rejection(dir: &Path, id: &str, reason: &str) -> std::io::Result<()> {
+    let r = reason.trim();
+    let body = if r.is_empty() { "未说明（用户未给理由）" } else { r };
+    std::fs::write(reject_path(dir, id), body)
+}
+
+/// `!reject <id> [理由]` 的回答：把这次动作**说清楚**（可审查四问的"为什么"）。
+pub fn answer_reject(dir: &Path, arg: &str, reason: &str) -> String {
+    let id = arg.trim();
+    if id.is_empty() {
+        return "(用法：!reject <period_id> [理由])".to_string();
+    }
+    match write_rejection(dir, id, reason) {
+        Ok(()) => format!(
+            "已驳回 {id} —— 理由：{}\n  · 字节未动（仍在 {id}.events.jsonl）\n  · 后续注入不再包含它\n  · 仍可取回：!body {id}",
+            read_rejection(dir, id).unwrap_or_default()
+        ),
+        Err(e) => format!("(驳回失败：{e})"),
+    }
 }
 
 /// D5: the sunk round's in-place gist. **Write-once** per period (`<id>.gist`), derived from that
@@ -220,6 +261,7 @@ pub fn skeleton_rows(
                 status,
                 label,
                 gist: Some(gist_of(dir, p, cfg.gist_max_chars)),
+                rejected: read_rejection(dir, &p.period_id),
             }
         })
         .collect()
@@ -245,11 +287,15 @@ pub fn skeleton_rows_for(
 /// with the command that gets the rest back — a silent cut would make "converged"
 /// and "lost" the same reading.
 pub fn skeleton(rows: &[SkeletonRow], max_lines: usize, gist_chars: usize) -> String {
-    if rows.is_empty() || max_lines == 0 {
+    /* 一次具名驳回的**唯一效果**：这段内容不再进入**注入**。它不进 gist，也不占最近 N 行。
+     * 字节不动、`!body` 可达、`!lodes` 仍列出 —— 驳回是"从默认视图退出"，不是删除
+     * （隐性化 ≠ 删除）。 */
+    let kept: Vec<&SkeletonRow> = rows.iter().filter(|r| r.rejected.is_none()).collect();
+    if kept.is_empty() || max_lines == 0 {
         return String::new();
     }
     let mut out = String::new();
-    let hidden = rows.len().saturating_sub(max_lines);
+    let hidden = kept.len().saturating_sub(max_lines);
     if hidden > 0 {
         /* D5's other half: the sunk region keeps an IN-PLACE GIST. It is ONE bounded blob —
          * "one line per round" would just move the old linear growth into the gist — and it
@@ -259,7 +305,7 @@ pub fn skeleton(rows: &[SkeletonRow], max_lines: usize, gist_chars: usize) -> St
         let mut gist = String::new();
         let mut used = 0usize;
         let mut included = 0usize;
-        for r in &rows[..hidden] {
+        for r in &kept[..hidden] {
             let piece = r.gist.as_deref().unwrap_or(r.label.as_str());
             let cost = piece.chars().count() + 3;
             if used + cost > gist_chars {
@@ -282,7 +328,7 @@ pub fn skeleton(rows: &[SkeletonRow], max_lines: usize, gist_chars: usize) -> St
         }
         out.push('\n');
     }
-    for r in &rows[hidden..] {
+    for r in &kept[hidden..] {
         let _ = writeln!(out, "- {} [{}] {}", r.id, r.status.as_str(), r.label);
     }
     out
@@ -332,7 +378,22 @@ pub fn answer_lodes(
     if rows.is_empty() {
         return format!("(unknown round: {leaf})");
     }
-    skeleton(&rows, cfg.skeleton_max_lines, cfg.gist_max_chars)
+    /* `!lodes` 是**读数**，不是注入：它**列出全部**轮次，含被驳回的 —— 否则"驳回"
+     * 就等于"看不见"，而那正是删除。被驳回的行标出理由与取回路径。 */
+    let mut out = String::new();
+    let rejected: Vec<&SkeletonRow> = rows.iter().filter(|r| r.rejected.is_some()).collect();
+    if !rejected.is_empty() {
+        let _ = writeln!(out, "[{} rejected branch(es) — kept, not injected]", rejected.len());
+        for r in rejected {
+            let _ = writeln!(
+                out,
+                "- {} [rejected] {} — 理由：{}  · !body {}",
+                r.id, r.label, r.rejected.as_deref().unwrap_or("未说明"), r.id
+            );
+        }
+    }
+    out.push_str(&skeleton(&rows, cfg.skeleton_max_lines, cfg.gist_max_chars));
+    out
 }
 
 /// D6 **L1** — one round expanded: status, why, where, and how to get the body.
