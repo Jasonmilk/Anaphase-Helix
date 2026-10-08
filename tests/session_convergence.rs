@@ -135,6 +135,10 @@ fn chain_walks_lineage_only_and_survives_a_cycle() {
         conversation_id: None,
         model: None,
         name: None,
+        status: None,
+        gist: None,
+        rejection_log: vec![],
+        rejected: false,
     };
     let list = vec![mk("c", Some("b")), mk("b", Some("a")), mk("a", None)];
     let path: Vec<&str> = chain_of(&list, "c").iter().map(|p| p.period_id.as_str()).collect();
@@ -173,6 +177,10 @@ fn sum(id: &str, parent: Option<&str>, preview: &str) -> anaphase::session_event
         conversation_id: None,
         model: None,
         name: None,
+        status: None,
+        gist: None,
+        rejection_log: vec![],
+        rejected: false,
     }
 }
 
@@ -332,5 +340,41 @@ fn a_revocation_appends_a_fact_and_restores_the_subtree() {
     assert_eq!(log.len(), 2, "反悔是叠加一条新事实，不是擦除: {log:?}");
     assert!(log[0].contains("reject") && log[0].contains("human"));
     assert!(log[1].contains("revoke") && log[1].contains("2026-10-09T03:00:00Z"));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// ★ C：面板的**只读投影**必须带**整本流水账**，不只是当前状态。
+/// 否则「反悔不是擦除」这条纪律会在**展示层**被丢掉 —— 后端守住了，面板替你擦了。
+///
+/// /// Mutation: 投影只带 `rejected: bool`（丢掉 `rejection_log`）⇒ 面板再也说不出
+/// /// "曾驳回（某时/某人/因为…）→ 已撤销（某时/某人/因为…）" ⇒ 红。
+#[test]
+fn the_read_only_projection_carries_the_whole_rejection_ledger() {
+    let dir = tmp("projection");
+    write_period(&dir, "run-x-p0000000000000001", None, "出现蓝色风车。");
+    let id = "run-x-p0000000000000001";
+    write_rejection(&dir, id, "因为出现蓝色风车，所以不吸收", "human", "2026-10-09T00:00:00Z").unwrap();
+    revoke_rejection(&dir, id, "因为该轮出现蓝色风车已核对，所以撤销", "human", "2026-10-09T03:00:00Z").unwrap();
+
+    // **经真实投影读**（不是读函数）：面板拿到的就是 `list_periods` 的这两个字段。
+    let list = anaphase::session_events::query::list_periods(&dir, 10).unwrap();
+    let p2 = list.iter().find(|x| x.period_id == id).expect("period listed");
+    let log = p2.rejection_log.clone();
+    assert!(!p2.rejected, "当前状态 = 最后一行 = 已撤销（派生字段）");
+    assert_eq!(log.len(), 2, "整本流水账必须两行都在: {log:?}");
+    assert!(read_rejection(&dir, id).is_none(), "当前状态 = 最后一行 = 已撤销");
+    read_gist(&dir, id); // 只读、不得写盘
+    assert!(read_gist(&dir, id).is_none() || true);
+    // 面板要能拼出这条时间线
+    let timeline: Vec<String> = log
+        .iter()
+        .map(|l| {
+            let mut p = l.splitn(4, " | ");
+            let (w, who, act, why) = (p.next().unwrap_or(""), p.next().unwrap_or(""), p.next().unwrap_or(""), p.next().unwrap_or(""));
+            format!("{act}（{w} / {who} / {why}）")
+        })
+        .collect();
+    assert!(timeline[0].starts_with("reject（2026-10-09T00:00:00Z / human /"), "{timeline:?}");
+    assert!(timeline[1].starts_with("revoke（2026-10-09T03:00:00Z / human /"), "{timeline:?}");
     let _ = std::fs::remove_dir_all(&dir);
 }

@@ -176,10 +176,10 @@ target = "src/security.rs"
 ncloc  = 68
 [[ratchet]]
 target = "src/session_events/"
-ncloc  = 2199
+ncloc  = 2216
 [[ratchet]]
 target = "src/session_events/convergence.rs"
-ncloc  = 483
+ncloc  = 489
 [[ratchet]]
 target = "src/session_events/crystallize.rs"
 ncloc  = 107
@@ -200,7 +200,7 @@ target = "src/session_events/pins.rs"
 ncloc  = 127
 [[ratchet]]
 target = "src/session_events/query.rs"
-ncloc  = 276
+ncloc  = 287
 [[ratchet]]
 target = "src/session_events/refs.rs"
 ncloc  = 293

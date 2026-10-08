@@ -346,6 +346,14 @@ pub fn answer_revoke(dir: &Path, arg: &str, why: &str, who: &str, when: &str) ->
     }
 }
 
+/// **只读**取 gist（列表投影用；不产生副作用 —— 生产仍在 `gist_of` 的按需写一次）。
+pub fn read_gist(dir: &Path, id: &str) -> Option<String> {
+    std::fs::read_to_string(dir.join(format!("{id}.gist")))
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
 /// D5: the sunk round's in-place gist. **Write-once** per period (`<id>.gist`), derived from that
 /// round's own frozen name/preview — so it is versioned by content, traceable to its source id,
 /// and it can never replace the original: the event file stays exactly as written. Produced

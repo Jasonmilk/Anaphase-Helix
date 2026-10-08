@@ -135,6 +135,19 @@ pub struct PeriodSummary {
     pub model: Option<String>,
     /// Human-chosen experience name (`{job_id}.name` sidecar), if any.
     pub name: Option<String>,
+    /* ── ADR-0049 的**只读投影**（人类 2026-10-09：面板要让 Helix 第一次看见自己）──
+     * 三个字段都只**读**侧车，不生产、不写盘；它们挂在**既有** `/v1/sessions` 面上，
+     * 因此面板不需要新的「面」。 */
+    /// 显式状态（`.state`）。`None` = 没被显式设过（面板据龄期显示 draft/converged）。
+    pub status: Option<String>,
+    /// 沉底轮次的原位摘要（`.gist`）。
+    pub gist: Option<String>,
+    /// 驳回的**整本流水账**（`.rejection.log` 的全部行，含撤销）。
+    /// **不是当前状态** —— 当前状态是最后一行；面板必须显示整本，否则
+    /// 「反悔不是擦除」这条纪律会在展示层被丢掉。`rejected` 是它的派生。
+    pub rejection_log: Vec<String>,
+    /// 当前是否处于驳回态（= 日志最后一行是 `reject`）。派生自 `rejection_log`。
+    pub rejected: bool,
 }
 
 /// How many periods are TOMBSTONED (D0) in this store. A named count, because "the list is shorter"
@@ -310,6 +323,8 @@ pub fn list_periods(dir: &std::path::Path, limit: usize) -> io::Result<Vec<Perio
             existing_ids.push(period_id.clone());
             continue;
         }
+        let cdir = dir;
+        let period_key = if period_id.is_empty() { job_id.clone() } else { period_id.clone() };
         out.push(PeriodSummary {
             conversation_id: None,   /* filled after the window is known — see below */
             // Identity first, replay handle second: a client keys on
@@ -328,6 +343,11 @@ pub fn list_periods(dir: &std::path::Path, limit: usize) -> io::Result<Vec<Perio
             reply,
             parent,
             model,
+            status: crate::session_events::convergence::read_state(cdir, &period_key)
+                .map(|st| st.as_str().to_string()),
+            gist: crate::session_events::convergence::read_gist(cdir, &period_key),
+            rejection_log: crate::session_events::convergence::read_rejection_log(cdir, &period_key),
+            rejected: crate::session_events::convergence::read_rejection(cdir, &period_key).is_some(),
         });
     }
     // A parent pointer must point at a period that EXISTS. A value that does not
