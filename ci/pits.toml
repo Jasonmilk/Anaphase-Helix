@@ -141,3 +141,8 @@ summary  = "--emit-ratchet, the one documented way to tighten the ratchet, write
 id       = "K-125"
 recorded = "2026-10-04"
 summary  = "A grandfathered seed's migration window closes silently: when the date passes the seed simply leaves the WARN list, `blocking` never contained it, and no re-take is demanded — the seed path, the blocking expression and all twelve return-3 sites were each checked, and none of them reads the expiry. The warning it replaces promised 're-take it deliberately, or the rule means nothing', so the deadline cancels itself and the debt is forgiven by the passage of time. A promise with no execution behind it is the defect this ledger already records as 'an advisory that cannot fire', seen from the other side. The repair is NOT to make the expiry red: it is to make it leave a trace, the way a deliberate `--emit-ratchet` announces itself (K-124)."
+
+[[pit]]
+id       = "K-126"
+recorded = "2026-10-09"
+summary  = "A new source file is a NAMED decision, and until now nothing said so. `iter_sources` walks `src/` and every file it yields must carry a signed seed, but the failure mode is a CHECKER ERROR that reads like a tooling fault rather than a governance rule — so the honest first move at ADR-0049 was to record the pit BEFORE adding the file, not to discover it from a red gate. This entry names the file's arrival: `src/session_events/convergence.rs` (session convergence: status + skeleton + on-demand drill-down, lodestone-spec:ADR-0002 D5/D6). The repair is not a new allowance; it is the standing rule made explicit — a file that appears without a pit is a file nobody decided to add."
