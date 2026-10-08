@@ -166,47 +166,102 @@ pub struct SkeletonRow {
     pub rejected: Option<String>,
 }
 
-/// 一次具名驳回的记录：`<period_id>.rejected`，内容就是**为什么被驳回**（一行）。
-/// 与 `.name` / `.state` / `.gist` 同构：一文件一词，append-only 友好，历史不回写。
+/// 驳回的**唯一**落点：`<id>.rejection.log`，**append-only**。
+///
+/// 每行一次判断：`<when> | <who> | reject|revoke | <why>`。**最后一行决定当前状态**。
+/// ⇒ **撤销是叠加一条新事实，不是抹掉旧的**（与 append-only 同向）：反悔本身也是一次判断，
+/// 带着自己的 when / who / why，可被后人读到。
 pub fn reject_path(dir: &Path, id: &str) -> PathBuf {
-    dir.join(format!("{id}.rejected"))
+    dir.join(format!("{id}.rejection.log"))
 }
 
-pub fn read_rejection(dir: &Path, id: &str) -> Option<String> {
+/// Every judgement made about this round, oldest first — the full history, including reversals.
+pub fn read_rejection_log(dir: &Path, id: &str) -> Vec<String> {
     std::fs::read_to_string(reject_path(dir, id))
-        .ok()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
+        .map(|t| t.lines().filter(|l| !l.trim().is_empty()).map(|l| l.to_string()).collect())
+        .unwrap_or_default()
+}
+
+/// The store's own bytes — the only thing a理由 is allowed to point at.
+fn store_text(dir: &Path) -> String {
+    let mut out = String::new();
+    if let Ok(rd) = std::fs::read_dir(dir) {
+        for e in rd.flatten() {
+            let p = e.path();
+            let is_events = p.extension().and_then(|x| x.to_str()) == Some("jsonl");
+            if !is_events {
+                continue;
+            }
+            if let Ok(t) = std::fs::read_to_string(&p) {
+                out.push_str(&t);
+                out.push('\n');
+            }
+        }
+    }
+    out
 }
 
 /// `why` 的**形态约束**（人类 2026-10-09）：必须写成「**因为〈可观测条件〉，所以不吸收**」。
 ///
 /// 理由不是洁癖：用户现在替 Helix 摸索，**日后要把学到的交给 ta** ⇒ 每条判断都要能被**学会**。
-/// 「因为我觉得不对」只能被**记住**；「因为〈可观测条件〉，所以不吸收」才能变成 Helix 自己的判据。
-/// **不可泛化的理由 = 无法传递的能力** —— 比文档腐烂严重得多。
-/// 不符形态 ⇒ **拒绝写入**（fail-closed），而不是存下一个学不会的理由。
-pub fn validate_reason(reason: &str) -> Result<(), String> {
+/// 「因为我觉得不对」只能被**记住**；指向可观测者的理由才能变成 Helix 自己的判据。
+///
+/// **「可观测」不是关键词表** —— 判据是：理由必须与**存储里真实存在的字节**有公共子串
+/// （≥4 字符），或直接点名一个 store 里存在的 period id。
+/// 连词齐备但**指向不了任何东西**的理由（"因为我觉得不对，所以不吸收"）⇒ **拒写**。
+pub fn validate_reason(dir: &Path, reason: &str) -> Result<(), String> {
     let r = reason.trim();
     if r.is_empty() {
         return Err("理由为空：缺理由与没记必须是两种可分辨的读数".to_string());
     }
     if !(r.starts_with("因为") && r.contains("所以")) {
-        return Err(
-            "理由必须写成「因为〈可观测条件〉，所以不吸收」—— 不可泛化的理由无法传递给 Helix"
-                .to_string(),
-        );
+        return Err("理由必须写成「因为〈可观测条件〉，所以不吸收」".to_string());
     }
-    if r.chars().count() < 12 {
-        return Err("理由过短：〈可观测条件〉必须是可观测的，不是一句话占位".to_string());
+    let text = store_text(dir);
+    let chars: Vec<char> = r.chars().collect();
+    /* WITNESS: a ≥4-char run shared with the store's bytes. The STORE is the arbiter, so this is
+     * not a keyword list — a reason that names something real passes, and one that names only the
+     * speaker's own feeling fails. (Named residual: a 4-char run that coincidentally occurs in the
+     * store also passes; the guard raises the floor, it does not read minds.) */
+    for i in 0..chars.len() {
+        if i + 4 > chars.len() {
+            break;
+        }
+        let run: String = chars[i..i + 4].iter().collect();
+        if text.contains(&run) {
+            return Ok(());
+        }
     }
-    Ok(())
+    // A period id named in the reason is a witness too.
+    for tok in r.split(|c: char| c.is_whitespace() || c == '，' || c == '。' || c == '「' || c == '」') {
+        if super::identity::is_period_id(tok) {
+            return Ok(());
+        }
+    }
+    Err(format!(
+        "理由指向不了任何可观测的东西 —— 它与存储里真实存在的字节没有 4 字以上的公共串。\n  请写成「因为〈可观测条件：引用轮次/事件/工具/事实串〉，所以不吸收」"
+    ))
 }
 
-/// 记下驳回：`<id>.rejected` = **why**（受形态约束），`<id>.rejected.at` = **when + who**。
-///
-/// `when` 来自**调用方注入的时钟**（不是 `SystemTime::now()`）—— 侧车因此不参与字节级
-/// 回放，这是 ADR-0049 §10.2 记下的代价，明写。
-/// `who` ∈ `human` / `auto` / `survival`：一次驳回**是谁做的**，本身是可学的信号。
+/// Append one judgement. **Never rewrites**: a revoke is a NEW line, not a deletion.
+pub fn append_rejection(
+    dir: &Path,
+    id: &str,
+    action: &str,
+    why: &str,
+    who: &str,
+    when: &str,
+) -> std::io::Result<()> {
+    let line = format!("{} | {} | {} | {}\n", when.trim(), who.trim(), action, why.trim());
+    use std::io::Write as _;
+    let mut f = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(reject_path(dir, id))?;
+    f.write_all(line.as_bytes())
+}
+
+/// 记下驳回（append 一条 `reject`）。**形态不符即拒写**。
 pub fn write_rejection(
     dir: &Path,
     id: &str,
@@ -214,21 +269,47 @@ pub fn write_rejection(
     who: &str,
     when: &str,
 ) -> std::io::Result<()> {
-    validate_reason(why).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
-    std::fs::write(reject_path(dir, id), why.trim())?;
-    let at = format!("{} | {}", when.trim(), who.trim());
-    std::fs::write(dir.join(format!("{id}.rejected.at")), at)
+    validate_reason(dir, why).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
+    append_rejection(dir, id, "reject", why, who, when)
 }
 
-/// `(when, who)` —— 驳回的落笔时刻与动作主体。缺文件返回 `None`（"没记" ≠ "记了空"）。
+/// 撤销：同样受**形态约束**（反悔也是一次判断），但**不删任何历史行**。
+pub fn revoke_rejection(
+    dir: &Path,
+    id: &str,
+    why: &str,
+    who: &str,
+    when: &str,
+) -> std::io::Result<()> {
+    validate_reason(dir, why).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
+    append_rejection(dir, id, "revoke", why, who, when)
+}
+
+/// 当前状态：**最后一行决定**。`Some(why)` = 现在是驳回态。
+pub fn read_rejection(dir: &Path, id: &str) -> Option<String> {
+    let last = read_rejection_log(dir, id).pop()?;
+    let mut parts = last.splitn(4, " | ");
+    let _when = parts.next()?;
+    let _who = parts.next()?;
+    let action = parts.next()?;
+    let why = parts.next().unwrap_or("");
+    if action.trim() == "reject" {
+        Some(why.to_string())
+    } else {
+        None
+    }
+}
+
+/// 最近一次判断的 `when | who`（含撤销）。
 pub fn read_rejection_at(dir: &Path, id: &str) -> Option<String> {
-    std::fs::read_to_string(dir.join(format!("{id}.rejected.at")))
-        .ok()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
+    let last = read_rejection_log(dir, id).pop()?;
+    let mut parts = last.splitn(3, " | ");
+    let when = parts.next()?;
+    let who = parts.next()?;
+    Some(format!("{when} | {who}"))
 }
 
-/// `!reject <id> [理由]` 的回答：把这次动作**说清楚**（可审查四问的"为什么"）。
+/// `!reject <id> <因为〈可观测条件〉，所以不吸收>` —— 回答必须说清四件事。
 pub fn answer_reject(dir: &Path, arg: &str, reason: &str, who: &str, when: &str) -> String {
     let id = arg.trim();
     if id.is_empty() {
@@ -236,13 +317,32 @@ pub fn answer_reject(dir: &Path, arg: &str, reason: &str, who: &str, when: &str)
     }
     match write_rejection(dir, id, reason, who, when) {
         Ok(()) => format!(
-            "已驳回 {id}（子树级）\n  · why ：{}\n  · when：{}\n  · who ：{who}\n  · 字节未动（仍在 {id}.events.jsonl）\n  · 它**及其子孙**不再进入注入\n  · 仍可取回：!body {id}",
+            "已驳回 {id}（子树级）\n  · why ：{}\n  · when：{}\n  · who ：{who}\n  · 字节未动（仍在 {id}.events.jsonl）\n  · 它**及其子孙**不再进入注入\n  · 仍可取回：!body {id}\n  · 可撤销：!revoke {id} 因为〈可观测条件〉，所以撤销",
             read_rejection(dir, id).unwrap_or_default(),
             read_rejection_at(dir, id).unwrap_or_default(),
         ),
         Err(e) => format!(
             "(驳回未写入：{e})\n  正确形态：!reject {id} 因为〈可观测条件〉，所以不吸收"
         ),
+    }
+}
+
+/// `!revoke <id> <因为〈可观测条件〉，所以撤销>` —— **反悔是一次判断，不是擦除**。
+pub fn answer_revoke(dir: &Path, arg: &str, why: &str, who: &str, when: &str) -> String {
+    let id = arg.trim();
+    if id.is_empty() {
+        return "(用法：!revoke <period_id> 因为〈可观测条件〉，所以撤销)".to_string();
+    }
+    match revoke_rejection(dir, id, why, who, when) {
+        Ok(()) => {
+            let n = read_rejection_log(dir, id).len();
+            format!(
+                "已撤销对 {id} 的驳回（子树级）—— 它**及其子孙**重回注入\n  · why：{}\n  · 历史未删：该轮共 {n} 条判断，仍在 {}.rejection.log\n  · 原驳回行仍可读（反悔不是擦除）",
+                why.trim(),
+                id
+            )
+        }
+        Err(e) => format!("(撤销未写入：{e})\n  正确形态：!revoke {id} 因为〈可观测条件〉，所以撤销"),
     }
 }
 

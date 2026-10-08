@@ -1089,6 +1089,13 @@ impl AgentLoop {
                 // when 来自**注入的时钟**（不是 SystemTime::now）：侧车因此不参与字节级回放。
                 &crate::ledger::unix_secs_to_rfc3339(now),
             )),
+            "revoke" => Some(crate::session_events::convergence::answer_revoke(
+                dir,
+                arg,
+                &reason,
+                "human",
+                &crate::ledger::unix_secs_to_rfc3339(now),
+            )),
             "settle" => match crate::session_events::convergence::write_state(
                 dir, arg, crate::session_events::PeriodStatus::Converged)
             {

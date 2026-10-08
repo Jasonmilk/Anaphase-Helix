@@ -207,7 +207,7 @@ fn a_rejection_leaves_the_injection_but_stays_readable() {
 
     write_period(&dir, &a.period_id, None, "A 段：已定型");
     write_period(&dir, &b.period_id, Some(&a.period_id), "B 段：另开分支");
-    write_rejection(&dir, &b.period_id, "因为方向与主线不一致，所以不吸收", "human", "2026-10-09T00:00:00Z").unwrap();
+    write_rejection(&dir, &b.period_id, "因为该轮出现「B 段：另开分支」，所以不吸收", "human", "2026-10-09T00:00:00Z").unwrap();
     // A 已定型：显式状态（本 ADR §6.2.2 一直留着的那个入口）
     write_state(&dir, &a.period_id, PeriodStatus::Converged).unwrap();
     // A 应当留在注入里，B 不应当。
@@ -219,7 +219,7 @@ fn a_rejection_leaves_the_injection_but_stays_readable() {
     assert_eq!(rows.len(), 3);
     assert!(rows[0].rejected.is_none(), "A 未被驳回");
     assert!(rows[2].rejected.is_some(), "**子树级**：B 的子孙随之被驳回");
-    assert_eq!(rows[1].rejected.as_deref(), Some("因为方向与主线不一致，所以不吸收"), "③ 理由必须记下");
+    assert_eq!(rows[1].rejected.as_deref(), Some("因为该轮出现「B 段：另开分支」，所以不吸收"), "③ 理由必须记下");
 
     let injected = skeleton(&rows, 12, 400);
     assert!(injected.contains("A 段：已定型"), "① A 必须在注入里: {injected:?}");
@@ -231,7 +231,7 @@ fn a_rejection_leaves_the_injection_but_stays_readable() {
     // ② 读数（!lodes）仍列出它，且带理由与取回路径 —— 否则"驳回"等于"看不见"，就是删除。
     let listed = answer_lodes(&dir, Some(&b.period_id), &cfg, 1_700_000_000);
     assert!(listed.contains("rejected branch"), "② 读数必须列出被驳回的分支: {listed:?}");
-    assert!(listed.contains("因为方向与主线不一致，所以不吸收"), "② 理由必须可读: {listed:?}");
+    assert!(listed.contains("因为该轮出现「B 段：另开分支」，所以不吸收"), "② 理由必须可读: {listed:?}");
     assert!(listed.contains(&format!("!body {}", b.period_id)), "④ 必须给取回路径: {listed:?}");
 
     let _ = std::fs::remove_dir_all(&dir);
@@ -244,12 +244,13 @@ fn a_rejection_leaves_the_injection_but_stays_readable() {
 #[test]
 fn a_non_generalizable_reason_is_refused() {
     let dir = tmp("reject-shape");
-    let bad = write_rejection(&dir, "run-x-p0000000000000003", "我觉得不对", "human", "t");
-    assert!(bad.is_err(), "『我觉得不对』必须被拒（不可泛化）");
+    write_period(&dir, "run-x-p0000000000000003", None, "事实是蓝色风车。");
+    assert!(write_rejection(&dir, "run-x-p0000000000000003", "我觉得不对", "human", "t").is_err(), "无连词 ⇒ 拒");
     assert!(!reject_path(&dir, "run-x-p0000000000000003").exists(), "拒写 ⇒ 不落盘");
     assert!(write_rejection(&dir, "run-x-p0000000000000003", "  ", "human", "t").is_err(), "空理由拒");
-    // 合规形态写入 + when/who 落 `<id>.rejected.at`
-    write_rejection(&dir, "run-x-p0000000000000003", "因为与已定型段矛盾，所以不吸收", "human", "2026-10-09T01:00:00Z").unwrap();
+    assert!(write_rejection(&dir, "run-x-p0000000000000003", "因为我觉得不对，所以不吸收", "human", "t").is_err(), "空指 ⇒ 拒");
+    // 指向 store 里真实存在的可观测串 ⇒ 通过，并落 when/who
+    write_rejection(&dir, "run-x-p0000000000000003", "因为出现蓝色风车，所以不吸收", "human", "2026-10-09T01:00:00Z").unwrap();
     assert!(read_rejection_at(&dir, "run-x-p0000000000000003").unwrap().contains("human"));
     assert!(read_rejection_at(&dir, "run-x-p0000000000000003").unwrap().contains("2026-10-09T01:00:00Z"));
     let _ = std::fs::remove_dir_all(&dir);
@@ -259,10 +260,77 @@ fn a_non_generalizable_reason_is_refused() {
 #[test]
 fn the_reject_answer_states_all_three_facts() {
     let dir = tmp("reject-answer");
-    let out = answer_reject(&dir, "run-x-p0000000000000004", "因为与前一轮重复，所以不吸收", "human", "2026-10-09T02:00:00Z");
+    write_period(&dir, "run-x-p0000000000000004", None, "重复的出现蓝月亮。");
+    let out = answer_reject(&dir, "run-x-p0000000000000004", "因为出现蓝月亮，所以不吸收", "human", "2026-10-09T02:00:00Z");
     assert!(out.contains("字节未动"), "{out:?}");
     assert!(out.contains("不再进入注入"), "{out:?}");
     assert!(out.contains("!body run-x-p0000000000000004"), "{out:?}");
     assert!(out.contains("when") && out.contains("who"), "when/who 必须回显: {out:?}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// ★ A：「可泛化」这条约束**必须真的挡得住东西**。
+/// `因为我觉得不对，所以不吸收` 有连词、够长 —— 但它**没指向任何可观测实体**，必须被拒。
+///
+/// /// Mutation: `validate_reason` 退回"只查连词 + 长度" ⇒ 这条红。
+#[test]
+fn a_reason_that_points_at_nothing_observable_is_refused() {
+    let dir = tmp("witness");
+    write_period(&dir, "run-x-p0000000000000001", None, "第 10 轮：中间事实「蓝色风车」。");
+    let out = answer_reject(
+        &dir,
+        "run-x-p0000000000000001",
+        "因为我觉得不对，所以不吸收",
+        "human",
+        "2026-10-09T00:00:00Z",
+    );
+    assert!(out.contains("驳回未写入"), "空指的自我感觉必须被拒: {out}");
+    assert!(!reject_path(&dir, "run-x-p0000000000000001").exists(), "拒写 ⇒ 不落盘");
+    // 指向 store 里**真实存在**的可观测串 ⇒ 通过
+    let ok = answer_reject(
+        &dir,
+        "run-x-p0000000000000001",
+        "因为该轮出现了蓝色风车，所以不吸收",
+        "human",
+        "2026-10-09T00:00:00Z",
+    );
+    assert!(!ok.contains("驳回未写入"), "指向可观测实体必须通过: {ok}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// ★ B：驳回**可逆** —— 撤销后该节点**及其子孙**重新进入注入；
+/// 且撤销本身**也受记录**（when + who + why），**不删历史行**（反悔是一次判断，不是擦除）。
+///
+/// /// Mutation: `read_rejection` 改成"只要日志里出现过 reject 就算驳回" ⇒ 撤销无效 ⇒ 红。
+#[test]
+fn a_revocation_appends_a_fact_and_restores_the_subtree() {
+    let dir = tmp("revoke");
+    let a = sum("run-x-p0000000000000001", None, "A 段");
+    let b = sum("run-x-p0000000000000002", Some("run-x-p0000000000000001"), "B 段：出现蓝色风车");
+    let c = sum("run-x-p0000000000000003", Some("run-x-p0000000000000002"), "B 的子孙");
+    for p in [&a, &b, &c] {
+        write_period(&dir, &p.period_id, p.parent.as_deref(), &p.preview);
+    }
+    let list = vec![a, b, c];
+    let refs: Vec<&anaphase::session_events::PeriodSummary> = list.iter().collect();
+    let cfg = ConvergenceConfig::default();
+    let why = "因为该轮出现蓝色风车，所以不吸收";
+
+    write_rejection(&dir, &list[1].period_id, why, "human", "2026-10-09T00:00:00Z").unwrap();
+    let cut = skeleton(&skeleton_rows(&dir, &refs, &cfg, 1_700_000_000), 12, 400);
+    assert!(!cut.contains("B 段"), "驳回后 B 不得进注入: {cut:?}");
+    assert!(!cut.contains("B 的子孙"), "子孙随之退出: {cut:?}");
+    assert!(cut.contains("A 段"), "A 不受影响: {cut:?}");
+
+    revoke_rejection(&dir, &list[1].period_id, "因为该轮出现蓝色风车已核对，所以撤销", "human", "2026-10-09T03:00:00Z").unwrap();
+    let back = skeleton(&skeleton_rows(&dir, &refs, &cfg, 1_700_000_000), 12, 400);
+    assert!(back.contains("B 段"), "撤销后 B 必须回来: {back:?}");
+    assert!(back.contains("B 的子孙"), "撤销后子孙也回来: {back:?}");
+
+    // 历史**未删**：两条判断都在（reject + revoke），且各自带 when|who|why
+    let log = read_rejection_log(&dir, &list[1].period_id);
+    assert_eq!(log.len(), 2, "反悔是叠加一条新事实，不是擦除: {log:?}");
+    assert!(log[0].contains("reject") && log[0].contains("human"));
+    assert!(log[1].contains("revoke") && log[1].contains("2026-10-09T03:00:00Z"));
     let _ = std::fs::remove_dir_all(&dir);
 }
