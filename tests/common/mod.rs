@@ -228,3 +228,31 @@ pub async fn connect_tentacle(
     }
     panic!("tentacle gRPC server not ready at {endpoint}");
 }
+
+/// ADR-0048 D1 + ADR-0041 §7.5: the cross-source join key is a PER-RUN identity
+/// (`run-<digest>-p<16hex>`), so a byte-level replay comparison must compare the BODY and
+/// normalise the identity out. Normalising alone would be decoration — every caller ALSO
+/// asserts the two identities differ, which is the property B18 exists to create; with the
+/// old digest key those two assertions could not both hold, so this pair is the contract.
+pub fn normalise_period_ids(s: &str) -> String {
+    fn flush(out: &mut String, tok: &mut String) {
+        if anaphase::session_events::is_period_id(tok) {
+            out.push_str("<PERIOD>");
+        } else {
+            out.push_str(tok);
+        }
+        tok.clear();
+    }
+    let mut out = String::with_capacity(s.len());
+    let mut tok = String::new();
+    for ch in s.chars() {
+        if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+            tok.push(ch);
+        } else {
+            flush(&mut out, &mut tok);
+            out.push(ch);
+        }
+    }
+    flush(&mut out, &mut tok);
+    out
+}

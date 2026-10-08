@@ -108,7 +108,17 @@ async fn deterministic_replay_same_clock_same_trail() {
     b.run_cycle("numbers").await.expect("b runs");
     let ea = a.pipeline.as_ref().unwrap().events.lock().unwrap().to_jsonl();
     let eb = b.pipeline.as_ref().unwrap().events.lock().unwrap().to_jsonl();
-    assert_eq!(ea, eb, "same input + same clock -> byte-identical event trail");
+    /* ADR-0048 D1 / ADR-0041 §7.5: compare the trail with the per-run IDENTITY normalised
+     * out, THEN assert the identities differ — B18's contract is the second line. */
+    assert_eq!(
+        common::normalise_period_ids(&ea),
+        common::normalise_period_ids(&eb),
+        "same input + same clock -> byte-identical event trail, identity normalised out"
+    );
+    assert_ne!(
+        a.context.period_id, b.context.period_id,
+        "one input, two runs -> two identities (B18); equal ids here means the digest came back"
+    );
 }
 
 #[tokio::test]

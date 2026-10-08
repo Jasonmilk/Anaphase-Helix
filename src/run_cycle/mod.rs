@@ -319,6 +319,11 @@ pub struct AgentContext {
     /// the reader (which refuses non-ids) dropped their threads and the sidebar saw them as roots.
     /// Absent resolution means ABSENT parent: a wrong parent is worse than a missing one.
     pub resume_period: Option<String>,
+    /// THIS PERIOD'S JOIN KEY (ADR-0048 D1): allocated at the cycle entry, unique per run, and the
+    /// value the Tuck chain (`x-tuck-trace`), the body trace and the ledger all key on. It replaced
+    /// the input digest — measured 2026-10-09, 462 periods came from 56 digests and one covered 219
+    /// runs. `None` = the identity layer refused; the key is then ABSENT, never a colliding digest.
+    pub period_id: Option<String>,
     pub reasoning_output: String,
     /// Private reasoning (thinking) accumulated from the streaming sink
     /// (ADR-0029). Persisted as `assistant/think` (redacted, display-only).
@@ -641,7 +646,7 @@ impl AgentLoop {
             let mut guard = ring.lock().unwrap();
             guard.emit(
                 &crate::ledger::unix_secs_to_rfc3339(self.clock.now()),
-                &crate::contract::derive_job_id(&self.context.user_input),
+                self.context.period_id.as_deref().unwrap_or_default(),
                 0,
                 phase,
                 detail,
@@ -683,6 +688,19 @@ impl AgentLoop {
     }
 
     pub async fn run_cycle(&mut self, user_input: &str) -> Result<CycleOutcome, String> {
+        /* PERIOD IDENTITY AT THE CYCLE ENTRY (ADR-0048 D1/D2). It is allocated HERE — before the
+         * gate check, before the first state transition — so EVERY cycle event, stage event and
+         * cross-source join in this run carries one key. It replaced the input digest: measured
+         * (M0.5, 2026-10-09), 462 periods came from 56 digests and one digest covered 219 runs, so
+         * the Tuck chain, the ledger and the body trace merged 219 executions into one. Allocation
+         * failure leaves the key EMPTY (never the digest): a fallback would make "missing" and
+         * "colliding" the same value downstream. */
+        self.context.period_id = crate::session_events::try_allocate_period_id(
+            &crate::contract::derive_job_id(user_input),
+            self.clock.now(),
+        )
+        .map_err(|e| warn!("[Period] no identity this cycle: {}", e))
+        .ok();
         /* THE SINK (ADR-0048 §235): every path that reaches reasoning asks the judge HERE, so the
          * check cannot be forgotten by a caller — §206 measured that a declaration enforced at two
          * of four call sites is fail-closed only "where someone remembered". The cost model is the

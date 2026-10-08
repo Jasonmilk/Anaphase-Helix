@@ -136,10 +136,18 @@ async fn run_cycle_deterministic_replay() {
         .with_pipeline(build_pipeline(mk_tentacle(), 777).await);
     b.run_cycle("compute ratio").await.unwrap();
 
+    /* ADR-0048 D1 / ADR-0041 §7.5: the join key is now a PER-RUN identity, so the replay
+     * comparison compares the BODY and normalises the identity out — and then asserts the two
+     * identities DIFFER. Only the second assertion is B18's contract; normalising without it
+     * would make this test decoration (measurement rule ⑨: prove it can go red). */
     assert_eq!(
-        a.pipeline.as_ref().unwrap().ledger.to_jsonl(),
-        b.pipeline.as_ref().unwrap().ledger.to_jsonl(),
-        "same input + same clock + same mock -> byte-identical ledger"
+        common::normalise_period_ids(&a.pipeline.as_ref().unwrap().ledger.to_jsonl()),
+        common::normalise_period_ids(&b.pipeline.as_ref().unwrap().ledger.to_jsonl()),
+        "same input + same clock + same mock -> byte-identical ledger, identity normalised out"
+    );
+    assert_ne!(
+        a.context.period_id, b.context.period_id,
+        "one input, two runs -> two identities (B18); equal ids here means the digest came back"
     );
 }
 
