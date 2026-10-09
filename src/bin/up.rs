@@ -41,7 +41,12 @@ const TENTACLE_GRPC_DEFAULT_PORT: u16 = 50051;
 const MIND_GRPC_DEFAULT_PORT: u16 = 50051;
 /// Cellrix web panel default port (cellrix-web documented protocol default,
 /// ADR-0014; env `WEB_PORT` overrides).
-const WEB_PORT_DEFAULT: u16 = 8080;
+/// The panel's listen port. 8080 was here and it is NOT an ecosystem port: it belongs to
+/// `not_ecosystem.llama-server` in `Helix-Mind/docs/helixECO/ports.json`, so the launcher was
+/// putting the panel on llama-server's port — the collision this project actually hit. The SSOT
+/// gives `panel = 50050`, five digits like every other ecosystem component (50051/50052/50061,
+/// 60052/60053/60054). A launcher that guesses a port is a fourth statement of a declared fact.
+const WEB_PORT_DEFAULT: u16 = 50050;
 
 /// A missing component with a concrete build hint (G-5 prereq guide).
 struct Missing {
