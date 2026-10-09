@@ -33,6 +33,27 @@
 //! gateway exposes **no route** for a gate decision (`tuck-gateway` routes
 //! `/v1/chat/completions` only). So an adapter needs either a Tuck-side endpoint or a
 //! deployment-layer binary that links both — cross-organ work, tracked in the ledger.
+//!
+//! # ✅ UPDATED 2026-10-09: the door-keeper surface now exists (Tuck side)
+//!
+//! The paragraph above is kept as written (it was true on 2026-09-20, and a correction
+//! here is a **new record, not a rewrite** — the same rule this project applies to
+//! ledgers). What changed: **Tuck now serves the gate over HTTP.**
+//!
+//! * `POST /v1/security/gate` (Tuck `crates/tuck-gateway/src/lib.rs`, K16 M1a) —
+//!   request/response shapes chosen to **mirror this module's contract exactly**
+//!   (`GateCheck` / `GateResponse{decision, reason}`), so no mapping table is needed.
+//! * It **obeys the rule above**: on the Tuck side the handler reports **`gate=none`
+//!   when no admission table is installed** (Tuck's I7, `pipeline/mod.rs:171`). It does
+//!   **not** paper over absence — so it is the opposite of the `PermissiveGate` failure
+//!   mode this comment warns about.
+//! * It lands **one audit row per verdict** on the Tuck side (K16 M1b-2b), using the
+//!   same vocabulary it returns over HTTP (one name, one thing).
+//!
+//! ⇒ So the remaining work is **no longer cross-organ**: it is this repo's side only —
+//! an adapter that POSTs `GateCheck` to that route, plus the wiring in `main.rs`
+//! (**still observe mode first**: install the door, change no behavior, and only then
+//! decide about flipping it to enforcing). Tracked as K16 M2.
 
 use async_trait::async_trait;
 use std::fmt;
