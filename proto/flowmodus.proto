@@ -27,6 +27,13 @@ message ReasonRequest {
     string model = 4;
     // Maximum tokens to generate (default: 2048)
     uint32 max_tokens = 3;
+    // The system message: L0 identity (gene lock) + L1 tool awareness, assembled by the caller.
+    // It is a SYSTEM-role message, not a prefix on `prompt` — a user-role identity claim is context,
+    // a system-role claim is who the model IS for this session (measured 2026-10-09: asked "who are
+    // you", the model answered "Qwen", because on this channel nothing ever told it otherwise).
+    // Empty = no system message, so the upstream's own identity applies — the honest degraded state.
+    // APPENDED as tag 5: no existing field is renumbered.
+    string system = 5;
 }
 
 message ReasonResponse {

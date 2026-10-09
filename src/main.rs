@@ -933,7 +933,10 @@ async fn build_agent(config: &config::Config) -> BuiltAgent {
                 // — but **parsing** is shared (ADR-0045). The `&endpoint[7..]`
                 // hardcoded prefix length is gone: it encoded `len("grpc://")`
                 // in a second place, next to the parser that already knew it.
-                match GrpcFlowModusAdapter::new(endpoint, config.anaphase.reasoning_model.as_deref().unwrap_or("")).await {
+                match /* The identity block was assembled above and previously went nowhere on this channel: the
+                 * gRPC constructor had no slot for it. It is passed here exactly as the HTTP adapter
+                 * receives it, so both channels carry the same identity (2026-10-09). */
+                GrpcFlowModusAdapter::new(endpoint, config.anaphase.reasoning_model.as_deref().unwrap_or(""), Some(identity_system.clone())).await {
                     Ok(adapter) => Arc::new(adapter),
                     Err(e) => {
                         eprintln!("Warning: Failed to connect to FlowModus at {}: {}. Falling back to Noop reasoning.", endpoint, e);
