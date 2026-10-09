@@ -917,6 +917,18 @@ impl AgentLoop {
                             "text": self.context.reasoning_output,
                             "chars": self.context.reasoning_output.chars().count(),
                             "model": model,
+                            /* ★ 具名：为什么【没有】模型（第 13 条：缺失必须具名）。
+                             * `model: null` 有两个完全不同的意思 —— "按设计绕过了 LLM" 与 "上游没报模型" ——
+                             * 而读者无法区分（第 16 条同族：一槽两义）。
+                             * 条件【与旁路自身的条件逐字相同】（reasoning.rs:94），不是新规则：
+                             *   rail_mode && !rail_nodes.is_empty()  ⇒ 走的正是 rail 引用作答那条路。
+                             * 实测（2026-10-09）：问「用 calc 算 1234×5678」得到 [rail citation] 且 model:null，
+                             * 该轮只有 2 行事件（健康轮次 14 行）—— 静默的答非所问。 */
+                            "bypass": if self.context.rail_mode && !self.context.rail_nodes.is_empty() {
+                                serde_json::json!("rail")
+                            } else {
+                                serde_json::Value::Null
+                            },
                         }),
                     );
                     let _ = ev.emit(
@@ -929,6 +941,12 @@ impl AgentLoop {
                             "verdict": self.context.last_verdict,
                             "reply": self.context.reasoning_output,
                             "model": model,
+                            /* 同一个具名（见 AssistantReply 处的注释） */
+                            "bypass": if self.context.rail_mode && !self.context.rail_nodes.is_empty() {
+                                serde_json::json!("rail")
+                            } else {
+                                serde_json::Value::Null
+                            },
                         }),
                     );
                 }

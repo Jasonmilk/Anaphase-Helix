@@ -404,9 +404,12 @@ pub fn rewrite_atomically(path: &std::path::Path, body: &str) -> std::io::Result
     Ok(())
 }
 
-const SURVIVING_KEYS: [&str; 14] = [
+const SURVIVING_KEYS: [&str; 15] = [
     "resume_from", "model", "choice", "nodes", "chars", "injected_chars", "done", "success", "verdict",
     "impasse", "completion_tokens", "cached_tokens", "prompt_tokens", "at",
+    /* 2026-10-09：「为什么没有模型」是结构、不是内容 ⇒ 内容清理时必须留下，
+     * 否则清理后 `model: null` 又变回不可归因（一槽两义）。 */
+    "bypass",
 ];
 const KNOWN_CONTENT_KEYS: [&str; 8] =
     ["text", "reply", "reason", "summary", "args", "result", "preview", "content_body"];
