@@ -220,8 +220,9 @@ reason = "sees the impasse as it happens and reports it at the source, because t
 
 [[fix_window]]
 target = "src/main.rs"
-cap    = 7
-k_id   = "B22,B17"
+cap    = 24
+k_id   = "B22,B17,K16-M2"
+reason = "K16 M2 (2026-10-09): the door on `do` is now INSTALLED on the production path — `resolve_pipeline` used to be the end of the line, and `security.rs` had recorded since 2026-09-20 that no gate was installed anywhere (`with_security_gate` was called only from tests). The wiring is observation-only: Tuck answers `pass` and NAMES `gate=none` when no admission table is loaded, so behaviour is unchanged (that naming is the point: an absent door must not look like a door that passed). The 17 lines are the wiring plus the comment explaining why the endpoint is DERIVED from `tuck_endpoint` rather than given a new config field (`AnaphaseConfig` has no `Default` and 6+ bare literals in tests/ — adding a field breaks them all at once)."
 reason = "the HTTP channel carries the whole verdict instead of only `done`, so an impasse is distinguishable from a normal end; and the startup line that reports an ungoverned engine"
 
 # B17 is a FEATURE, not a fix, and the ratio rule said so before I did: appending
@@ -599,3 +600,9 @@ reason  = "M1 refs three-tier, new/heavily changed this session; first-sign per 
 #   src/                                  4493→4525 (+32) = config.rs(+30) + main.rs(+2)
 #   （目录条目 = **直接子项之和**；逐层相加与实测一致，故上表可核对。）
 # ─────────────────────────────────────────────────────────────────────────────
+
+[[fix_window]]
+target = "src/adapters/security_gate.rs"
+cap    = 8
+k_id   = "K16-M2"
+reason = "the decision path's URL had to be DERIVED from an existing deployment fact (tuck_endpoint, whose own comment already calls it the audit leg + fail-closed gate) instead of gaining a config field: AnaphaseConfig has no Default and 6+ bare literals in tests/, so one new field breaks them all at once. gate_url is 8 lines of production code; its three tests live in security_gate_tests.rs, which the budget excludes as a test path."

@@ -188,3 +188,38 @@ async fn an_unreachable_gate_does_not_permit() {
 fn default_gate_timeout_is_bounded() {
     assert!(DEFAULT_GATE_TIMEOUT <= Duration::from_secs(2));
 }
+
+mod gate_url_tests {
+    use super::gate_url;
+
+    #[test]
+    fn derives_the_decision_path_from_the_tuck_endpoint() {
+        // 一个真端点的**路径**是部署事实 ⇒ 由 Tuck 的地址派生，不另立字段。
+        assert_eq!(
+            gate_url(Some("http://127.0.0.1:60052"), None).as_deref(),
+            Some("http://127.0.0.1:60052/v1/security/gate")
+        );
+        // 尾斜杠不能让路径拼成 `//v1/...`（一个字符的差别能让门看起来"连不上"）
+        assert_eq!(
+            gate_url(Some("http://127.0.0.1:60052/"), None).as_deref(),
+            Some("http://127.0.0.1:60052/v1/security/gate")
+        );
+    }
+
+    #[test]
+    fn an_explicit_url_wins_over_the_derived_one() {
+        assert_eq!(
+            gate_url(Some("http://tuck:60052"), Some("http://gate.example/decide")).as_deref(),
+            Some("http://gate.example/decide")
+        );
+    }
+
+    #[test]
+    fn no_tuck_endpoint_means_no_gate_at_all() {
+        // ★ 关键区分：`None` = **没装门**，而不是"装了一道全都放行的门"。
+        //   （后者的缺席看不见，比 `None` 更糟 —— 本模块头注写的正是这件事。）
+        assert_eq!(gate_url(None, None), None);
+        assert_eq!(gate_url(Some("   "), Some("")), None);
+    }
+}
+
