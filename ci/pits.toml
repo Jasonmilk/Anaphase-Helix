@@ -146,3 +146,8 @@ summary  = "A grandfathered seed's migration window closes silently: when the da
 id       = "K-126"
 recorded = "2026-10-09"
 summary  = "TWO honest boundaries were hit at once, and both looked like tooling noise rather than policy. (1) `src/session_events/` is a RATCHETED DIRECTORY (`1714`) and `src/config.rs` a ratcheted file (`367`), both with ZERO headroom: measured while implementing ADR-0049, a new module pushed the directory to 1976 and the config to 397, and the gate said `grew past their ratchet`. So any feature that lands inside them needs an explicit `--emit-ratchet` — a deliberate, announcing act — not a cleverer edit. (2) A NEW source file needs a named pit plus a signed seed, and the missing-seed error (`N key(s) have no valid signed seed`) reads as a CHECKER ERROR, i.e. as a broken tool, while it is in fact the governance rule 'a file that appears without a pit is a file nobody decided to add'. Recorded without repair: the change was reverted rather than force the ratchet, because the freeze runs to 2026-10-11 and breaking it two days early was not this session's call to make quietly. The pit's value is that the NEXT attempt starts from 'this needs an emit-ratchet', instead of rediscovering it from a red gate."
+
+[[pit]]
+id       = "K16-M2"
+recorded = "2026-10-09"
+summary  = "The door on `do` was never installed on the production path: `with_security_gate` is called only from tests, `PipelineConfig` defaults the field to None, and main.rs never called the setter — so every tool call executed ungated. Measured and written into `src/security.rs` on 2026-09-20, before this fix."
