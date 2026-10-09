@@ -1,3 +1,36 @@
+## [2026-10-09] 身份通道打通（proto `system=5`）+ 陷阱第 22–26 条
+
+### 症状与根因
+问"你是谁" ⇒ 答 **Qwen**（不是 gene_lock 里的 `Dash`）。
+根因：**活的 gRPC 通道没有 system 位** —— `ReasonRequest` 只有 `prompt/cognitive_mode/model/max_tokens`；
+`build_identity_block` 在 `main.rs:902` 算出身**份块，到 `:936` 被丢弃**（`GrpcFlowModusAdapter::new` 只有两个参数）。
+对照：HTTP 路径（`main.rs:922`）把它作为 system message 传了 —— `http_reasoning.rs` 注释写着
+*"a system-role identity claim is who the model IS for this session"*。
+
+### 变更（跨两仓）
+- `proto/flowmodus.proto` + FlowModus 同文：`ReasonRequest` **追加** `string system = 5;`（不改既有 tag）
+- FlowModus `grpc_cmd.rs`：`system` 作为**独立 system 消息**转发（空 ⇒ 不发；不作者、不判断）
+- `adapters/flowmodus.rs`：`new(endpoint, model, system)` + `reason()` 填 `system`
+- `config.toml`：补 `gene_lock_path`（默认 `None` ⇒ 身份块整块跳过）—— **必要但不充分**
+
+### 验收（两态对照）
+```
+同一问题「你是谁？只回你的名字」· 同一模型 coder-3b：改前 "Qwen" → 改后 "Dash"
+```
+**副作用（正向）**：工具意识同源恢复 —— `tool/call` 由 **2/524 轮** 变为修复后 **2/2 轮**，
+`calc` 算出 `1234×5678=7006652`（101ms，`outcome_sha` 落账）。
+模型此前 523 轮字面回答 `no calls planned — answered directly` —— **因为从没人告诉它有哪些工具**。
+
+### 陷阱入册（承第 1–21 条）
+- **第 22 条**：共同前缀的测量**必须用相邻轮次**；不同轮次之间的 diff 是无效对照。
+- **第 23 条**：**有界上下文与前缀缓存天然相冲**（滚动窗口 = 删头+追加；前缀缓存要求只追加）。
+  ⇒ 每轮"注入块"是不是追加式，**必须在设计时就回答**。
+- **第 24 条**：**存活 ≠ 在环**。「已就绪」是**端口**的属性、不是**能力**的属性（与"mtime 是签出的属性"同族）。
+  判据：把组件停掉，看有没有东西变化；**且变异必须有对照**（活/停两态各跑一次，差异才是证据）。
+- **第 25 条**：组件 A 的功能被观测到，**证明不了是 A 做的**（必须排除绕过路径）。
+- **第 26 条**：**前台监督进程不得放在有超时风险的调用里**（`up` 会打印"按 Ctrl+C 停止面板"；
+  调用被杀 ⇒ 其子进程一并死亡。实测：一次超时把整个栈带走，`nohup` 分离后恢复）。
+
 
 
 ---
