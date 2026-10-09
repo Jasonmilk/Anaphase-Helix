@@ -357,6 +357,17 @@ impl Pipeline {
 
     // ---- orchestration: composes the six stages (not a giant blob) ----
 
+    /* ⚠️ 读这个函数之前先知道一件事（2026-10-09 实测教训）：**活路径不走这里。**
+     *
+     * `run()` 把六阶段串在一起（execute_calls → record_evidence → check_results →
+     * build_verdict → ledger.append），**但 `run_cycle` 不用它**：
+     * `src/run_cycle/mod.rs` 自己调 `execute_calls` + `record_evidence`，
+     * 而 stage 5-6（判据 + 账本裁定）由 `src/run_cycle/reflection.rs` 的 `arm_reflection` 完成。
+     *
+     * ⇒ 后果：**找"裁定为什么没写"时读这里会读错文件**。本仓实测：因为读了这里，
+     *   连续四次把根因猜错（真正的原因在 reflection 的守卫与调用时机上）。
+     * ⇒ 想查活路径，请从 `run_cycle` 的 `HelixState::Reflection => self.arm_reflection()` 开始。
+     *   （`run()` 仍被测试与其它调用方使用，故保留；此处只做路标，不改行为。） */
     pub async fn run(&mut self, input: PipelineInput) -> Result<PipelineOutcome, String> {
         // stage 1 (pure)
         let calls = parse_llm_calls(&input.llm_content)?;
