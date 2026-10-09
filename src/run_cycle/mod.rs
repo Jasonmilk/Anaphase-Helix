@@ -910,6 +910,10 @@ impl AgentLoop {
                     // attempt → tools → verdict → REPLY → end. Emitted even
                     // when empty (honest zero-length answer), so the chain
                     // never silently loses what Helix actually said.
+                    // 两处出口共用同一判定（各写一遍 = 一物两名；改条件只改这里）。
+                    let bypass_val = (self.context.rail_mode && !self.context.rail_nodes.is_empty())
+                        .then(|| serde_json::json!("rail"))
+                        .unwrap_or(serde_json::Value::Null);
                     let _ = ev.emit(
                         &ts,
                         crate::session_events::EventType::AssistantReply,
@@ -924,11 +928,7 @@ impl AgentLoop {
                              *   rail_mode && !rail_nodes.is_empty()  ⇒ 走的正是 rail 引用作答那条路。
                              * 实测（2026-10-09）：问「用 calc 算 1234×5678」得到 [rail citation] 且 model:null，
                              * 该轮只有 2 行事件（健康轮次 14 行）—— 静默的答非所问。 */
-                            "bypass": if self.context.rail_mode && !self.context.rail_nodes.is_empty() {
-                                serde_json::json!("rail")
-                            } else {
-                                serde_json::Value::Null
-                            },
+                            "bypass": bypass_val,
                         }),
                     );
                     let _ = ev.emit(
@@ -941,12 +941,7 @@ impl AgentLoop {
                             "verdict": self.context.last_verdict,
                             "reply": self.context.reasoning_output,
                             "model": model,
-                            /* 同一个具名（见 AssistantReply 处的注释） */
-                            "bypass": if self.context.rail_mode && !self.context.rail_nodes.is_empty() {
-                                serde_json::json!("rail")
-                            } else {
-                                serde_json::Value::Null
-                            },
+                            "bypass": bypass_val,
                         }),
                     );
                 }
