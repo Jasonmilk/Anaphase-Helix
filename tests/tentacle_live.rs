@@ -166,9 +166,9 @@ async fn tentacle_live_run_cycle() {
     )
     .with_pipeline(pipeline);
 
-    agent.run_cycle("calculate").await.unwrap();
+    let out = agent.run_cycle("calculate").await.unwrap();
 
-    let records = agent.pipeline.as_ref().unwrap().ledger.records();
+    let records = &out.ledger;   /* completion snapshot (2026-10-09) */
     assert_eq!(records.len(), 1, "one verdict for the real chain");
     match &records[0] {
         anaphase::ledger::LedgerRecord::Verdict { status: VerdictStatus::Met, .. } => {}

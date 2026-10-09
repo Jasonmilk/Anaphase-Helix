@@ -59,7 +59,7 @@ async fn run_cycle_full_chain_met() {
     let mut agent = base_agent(Arc::new(StructuredReasoning { output: output.into() }))
         .with_pipeline(build_pipeline(mock, 1000).await);
 
-    agent.run_cycle("calculate").await.unwrap();
+    let out = agent.run_cycle("calculate").await.unwrap();
 
     // stage 1-2: structured plan parsed, deterministic envelope assembled.
     assert_eq!(agent.context.calls.len(), 1);
@@ -74,7 +74,7 @@ async fn run_cycle_full_chain_met() {
     assert!(agent.context.evidence[0].ok);
 
     // stage 5-6: criteria MET verdict written to the ledger.
-    let records = agent.pipeline.as_ref().unwrap().ledger.records();
+    let records = &out.ledger;   /* the completion snapshot, not the live object */
     assert_eq!(records.len(), 1);
     match &records[0] {
         LedgerRecord::Verdict { status: VerdictStatus::Met, job_id, .. } => {
@@ -92,9 +92,9 @@ async fn run_cycle_full_chain_unmet() {
     let mut agent = base_agent(Arc::new(StructuredReasoning { output: output.into() }))
         .with_pipeline(build_pipeline(mock, 1000).await);
 
-    agent.run_cycle("calculate").await.unwrap();
+    let out = agent.run_cycle("calculate").await.unwrap();
 
-    let records = agent.pipeline.as_ref().unwrap().ledger.records();
+    let records = &out.ledger;   /* the completion snapshot */
     assert_eq!(records.len(), 1);
     match &records[0] {
         LedgerRecord::Verdict { status: VerdictStatus::Unmet, retry_due: Some(due), .. } => {
@@ -110,13 +110,13 @@ async fn run_cycle_unstructured_output_skips_pipeline() {
     let mut agent = base_agent(Arc::new(StructuredReasoning { output: "no plan here".into() }))
         .with_pipeline(build_pipeline(MockTentacle::new(), 1000).await);
 
-    agent.run_cycle("hi").await.unwrap();
+    let out = agent.run_cycle("hi").await.unwrap();
 
     assert!(agent.context.calls.is_empty());
     assert!(agent.context.evidence.is_empty());
     assert!(agent.context.job.is_none());
     assert!(
-        agent.pipeline.as_ref().unwrap().ledger.records().is_empty(),
+        out.ledger.is_empty(),
         "no plan -> no ledger record"
     );
 }
@@ -130,19 +130,19 @@ async fn run_cycle_deterministic_replay() {
 
     let mut a = base_agent(Arc::new(StructuredReasoning { output: output.into() }))
         .with_pipeline(build_pipeline(mk_tentacle(), 777).await);
-    a.run_cycle("compute ratio").await.unwrap();
+    let a_out = a.run_cycle("compute ratio").await.unwrap();
 
     let mut b = base_agent(Arc::new(StructuredReasoning { output: output.into() }))
         .with_pipeline(build_pipeline(mk_tentacle(), 777).await);
-    b.run_cycle("compute ratio").await.unwrap();
+    let b_out = b.run_cycle("compute ratio").await.unwrap();
 
     /* ADR-0048 D1 / ADR-0041 §7.5: the join key is now a PER-RUN identity, so the replay
      * comparison compares the BODY and normalises the identity out — and then asserts the two
      * identities DIFFER. Only the second assertion is B18's contract; normalising without it
      * would make this test decoration (measurement rule ⑨: prove it can go red). */
     assert_eq!(
-        common::normalise_period_ids(&a.pipeline.as_ref().unwrap().ledger.to_jsonl()),
-        common::normalise_period_ids(&b.pipeline.as_ref().unwrap().ledger.to_jsonl()),
+        common::normalise_period_ids(&anaphase::ledger::Ledger::to_jsonl_of(&a_out.ledger)),
+        common::normalise_period_ids(&anaphase::ledger::Ledger::to_jsonl_of(&b_out.ledger)),
         "same input + same clock + same mock -> byte-identical ledger, identity normalised out"
     );
     assert_ne!(
@@ -197,9 +197,9 @@ async fn run_config_soft_reflex_threshold_blocks() {
         ReflexArc { safety_rules: vec![] },
     )
     .with_pipeline(build_pipeline(MockTentacle::new(), 1000).await);
-    blocked.run_cycle("do it").await.unwrap();
+    let blocked_out = blocked.run_cycle("do it").await.unwrap();
     assert!(blocked.context.evidence.is_empty(), "blocked before execution");
-    assert!(blocked.pipeline.as_ref().unwrap().ledger.records().is_empty());
+    assert!(blocked_out.ledger.is_empty());
 
     // Raised threshold 0.9: the same p_death passes and executes.
     let mut passed = AgentLoop::new(

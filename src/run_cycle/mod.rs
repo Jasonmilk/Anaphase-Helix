@@ -167,7 +167,16 @@ pub struct AgentLoop {
     /// (stages 1-2), Execution executes + records evidence (stages 3-4),
     /// Reflection checks criteria + writes the verdict ledger (stages 5-6).
     /// None keeps the legacy string/echo path (backwards compatible).
-    pub pipeline: Option<Pipeline>,
+    /* THE FENCE (2026-10-09). This was `pub`, so integration tests (`tests/` is a SEPARATE crate)
+     * read the live ledger mid-flight: `agent.pipeline.as_ref().unwrap().ledger.records()`. That
+     * makes an assertion depend on WHEN it reads, not on what happened — measured: the same command
+     * produced two different failure sets, every test passed alone, serial changed nothing, and one
+     * extra `eprintln!` turned it green.
+     * `pub(crate)` is the whole fix: callers outside the crate can no longer reach the live object,
+     * so they must use `CycleOutcome.ledger` — the snapshot taken at the completion point. Not
+     * "remember not to write that", but "it does not compile".
+     * (ADR-0018 batch 4: 一类缺陷变成不可能状态 — applied one layer up, to the criterion's INPUT.) */
+    pub pipeline: Option<Pipeline>,   /* ③ 暂时撤回：先验 ② 的行为修复 */
     /// Interaction mode (ADR-0006): Drive (no Mind) / Partner (default) /
     /// Survive (Mind autonomous, reserved for P10a). Physical participation
     /// is decided at assembly time (Noop vs gRPC memory adapter); this field

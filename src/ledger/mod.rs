@@ -246,8 +246,15 @@ impl Ledger {
 
     /// Lossless JSONL serialization.
     pub fn to_jsonl(&self) -> String {
+        Self::to_jsonl_of(&self.records)
+    }
+
+    /// ONE SERIALISATION, TWO ENTRY POINTS (2026-10-09). Callers that hold a COMPLETION SNAPSHOT
+    /// (`CycleOutcome.ledger`) must be able to render it the same way as a live `Ledger` — otherwise
+    /// they would have to reach back into the live object, which is the thing being closed off.
+    pub fn to_jsonl_of(records: &[LedgerRecord]) -> String {
         let mut out = String::new();
-        for r in &self.records {
+        for r in records {
             out.push_str(&serde_json::to_string(r).expect("serialize ledger record"));
             out.push('\n');
         }
