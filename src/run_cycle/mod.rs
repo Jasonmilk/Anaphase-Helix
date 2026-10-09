@@ -98,7 +98,7 @@ pub struct EpisodeView {
 /// Outcome of one cognitive period (ADR-0016 D1): the single-cycle
 /// primitive result. The caller owns the looping policy — how many periods
 /// to run and when to stop is a caller decision, never an engine property.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct CycleOutcome {
     /// Period finished (state machine returned to Perception).
     pub done: bool,
@@ -106,11 +106,23 @@ pub struct CycleOutcome {
     pub success: bool,
     /// Finished via an impasse condition.
     pub impasse: bool,
+    /// THE LEDGER AS OF COMPLETION (2026-10-09, human ruling).
+    ///
+    /// WHY A SNAPSHOT AND NOT THE LIVE OBJECT: a criterion that reads `self.pipeline…ledger`
+    /// measures the READING INSTANT, not the result — and the reading instant is not what any
+    /// assertion is about. Measured: `run_cycle_pipeline` gave two different failure sets for the
+    /// same command (9 red vs 3 red), every test passed alone, serial made no difference, and
+    /// adding one `eprintln!` turned it green — the signature of a criterion depending on WHEN it
+    /// reads. A value taken at the completion point cannot depend on that.
+    ///
+    /// This is the `ADR-0018 batch 4` move ("一类缺陷变成不可能状态") applied one layer up:
+    /// the criterion's INPUT. Callers read here; the live internals are closed off (`pub(crate)`).
+    pub ledger: Vec<crate::ledger::LedgerRecord>,
 }
 
 impl Default for CycleOutcome {
     fn default() -> Self {
-        Self { done: false, success: false, impasse: false }
+        Self { done: false, success: false, impasse: false, ledger: Vec::new() }
     }
 }
 
@@ -914,6 +926,14 @@ impl AgentLoop {
                 break;
             }
         }
+        /* THE SNAPSHOT IS TAKEN AT THE COMPLETION POINT — after every mutation, before the caller
+         * can observe anything. Reading a live object later (what callers used to do) made the
+         * criterion depend on the reading instant. */
+        outcome.ledger = self
+            .pipeline
+            .as_ref()
+            .map(|p| p.ledger.records().to_vec())
+            .unwrap_or_default();
         Ok(outcome)
     }
 
