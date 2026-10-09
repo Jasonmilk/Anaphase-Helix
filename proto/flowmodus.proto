@@ -57,7 +57,29 @@ message ReasonResponse {
     // no usage at all; Anaphase then writes no `assistant/usage` row rather than a
     // fabricated zero (ADR-0038).
     Usage usage = 4;
+    // Absent = the caller did not ask for a trace (older callers stay valid).
+    RouteTrace route_trace = 5;
 }
+// WHAT THE ROUTER DECIDED (2026-10-09). Measured: VISION's own rule is "FlowModus 不判断，只呈现",
+// yet 60053's HTTP surface exposes suppliers and status but NOT the decision, and `ReasonResponse`
+// carried only `model` + `usage`. So "did the L1-L5 pipeline actually compute, or did it forward?"
+// was unanswerable from the consumer side — the same shape as "存活 != 在环".
+// EVERY FIELD HERE IS DERIVABLE AT THE RESPONSE SITE. Nothing is fabricated to fill a shape:
+// per-candidate SCORES and the cost estimate are NOT exposed by the router today, so they are NOT
+// fields here — a zero would read as a measurement (ADR-0038's rule about total_tokens).
+// FlowModus authors none of this; it relays its own decision verbatim (不判断，只呈现).
+message RouteTrace {
+    string chosen_supplier = 1;   // decision.supplier_id
+    string chosen_model = 2;      // decision.model_id (same value as ReasonResponse.model)
+    string chosen_tier = 3;       // "free" | "paid"
+    string reason = 4;            // "declared-model" | "auto"  — which branch the router took
+    repeated RouteCandidate candidates = 5;  // the set it considered, in attempt order
+}
+message RouteCandidate {
+    string supplier_id = 1;
+    string model_id = 2;
+}
+
 
 // The upstream's usage facts, DISJOINT — exactly the shape Anaphase stores.
 // `cached_tokens` / `reasoning_tokens` are explicitly optional so "not reported"
