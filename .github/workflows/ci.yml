@@ -1,0 +1,30 @@
+# Anaphase · 真判据 CI（R12，2026-10-10）
+#
+# ★ 为什么需要它：此前本仓在 CI 矩阵里的"绿"来自 GitHub 自带的 `Graph Update: pip in /.`
+#   （依赖图更新，**与测试无关**）⇒ **它其实没有测试 CI**（reviewer D5 的对账结论）。
+#
+# 两道门都用**本仓自己的判据**（不另写第二套）：
+#   ① `cargo test --all-features --no-fail-fast`（实测本地 0 失败组 · 485 用例）
+#   ② `python3 ci/check_line_budget.py`（**本仓的行预算棘轮** —— 它曾在我改动别处时红过，
+#      而当时因为**没有 CI**没人自动发现 ⇒ 这项就是那次事故的守卫）
+name: ci
+on: [push, pull_request]
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install stable --profile minimal && rustup default stable
+      - name: ① 测试（本仓判据）
+        run: |
+          set +e
+          cargo test --all-features --no-fail-fast 2>&1 | tee /tmp/test.log
+          rc=${PIPESTATUS[0]}
+          if [ "$rc" != 0 ]; then echo "--- 末尾 150 行（完整见 artifact）---"; tail -150 /tmp/test.log; fi
+          exit $rc
+      - name: ② 行预算棘轮（本仓判据）
+        run: python3 ci/check_line_budget.py
+      - name: 上传日志
+        if: always()
+        uses: actions/upload-artifact@v4
+        with: { name: test-log, path: /tmp/test.log, if-no-files-found: warn }
