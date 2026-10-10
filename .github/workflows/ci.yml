@@ -46,7 +46,12 @@ jobs:
         working-directory: anaphase-helix
         run: |
           set +e
-          cargo test --all-features --no-fail-fast 2>&1 | tee /tmp/test.log
+          # ★ 判据的【适用范围】声明（2026-10-10）：跨仓判据的被检对象是**开发者工作区**
+          #   （hook 声明点名 18 个名字：12 个顶层仓 + 6 个 commonintents/*）⇒ CI 里必然不完整。
+          #   绝不让 CI 用"自设 PARTIAL 变量"让测试跳过（那正是 a checker must not sign its own pass）。
+          #   故：本判据在 CI 中【显式不适用】，但必须【具名打印】，且本地（完整工作区）仍严格判它。
+          echo "::warning title=判据适用范围::跨仓判据（the_declared_hook_repo_list_covers_every_repo_in_the_workspace）在 CI 中不适用：被检对象是开发者工作区（18 个名字），CI 里不完整 ⇒ 交由本地判（K34）"
+          cargo test --all-features --no-fail-fast -- --skip the_declared_hook_repo_list_covers_every_repo_in_the_workspace 2>&1 | tee /tmp/test.log
           rc=${PIPESTATUS[0]}
           if [ "$rc" != 0 ]; then echo "--- 末尾 150 行（完整见 artifact）---"; tail -150 /tmp/test.log; fi
           # ★★ 耐久修法（reviewer Ⓑ，2026-10-10）：**把失败尾部同时写进 job summary** ——
