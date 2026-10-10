@@ -35,10 +35,12 @@ jobs:
           #   logs 需 admin(403) · artifacts 需凭据(401) · job summary 的 API output.summary 为 null
           #   ⇒ 而 **annotations 公开可读** ⇒ 失败行写成 ::error ⇒ 读数由工具自己出，不靠人肉粘贴。
           if [ "$rc" != 0 ]; then
-            grep -aE "^test .* FAILED|^failures:$|panicked at|^error(\[|:)|No such file|NotFound|Could not find|cannot find" /tmp/test.log \
-              | head -12 | while IFS= read -r _l; do
-                  echo "::error title=失败具名::$(printf %s "$_l" | tr -d "\r" | cut -c1-400)"
-                done
+            # ① 测试名 + 失败位置 ② **断言原文**（`panicked at` 之后那几行才是根因）
+            { grep -aE "^test .* FAILED|^failures:$|panicked at|^error(\[|:)|No such file|NotFound|Could not find|cannot find|^assertion" /tmp/test.log | head -12
+              grep -aA4 "panicked at" /tmp/test.log | grep -avE "^--|^\s*$" | head -14
+            } | awk '!seen[$0]++' | head -24 | while IFS= read -r _l; do
+                echo "::error title=失败具名::$(printf %s "$_l" | tr -d "\r" | cut -c1-400)"
+              done
           fi
           exit $rc
       - name: ② 行预算棘轮（本仓判据）
