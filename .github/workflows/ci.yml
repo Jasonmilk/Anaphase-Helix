@@ -15,9 +15,9 @@ jobs:
                            #   ⇒ 不钉住 = 9 天后由【外部变更】决定我们的红绿（"今天绿"可能纯因环境）
                            #   冻结是默认；预演 26 应是一次【有意】的实验，不是被动接受
     steps:
+      - uses: actions/checkout@v4
       - name: ⓪ 系统依赖（prost-build 需要 protoc ⇒ 这是 K32 古红的根因）
         run: sudo apt-get update -qq && sudo apt-get install -y -qq protobuf-compiler
-      - uses: actions/checkout@v4
       - run: rustup toolchain install stable --profile minimal && rustup default stable
       - name: ① 测试（本仓判据）
         run: |
@@ -30,6 +30,15 @@ jobs:
           #   而 **job summary 是公开可读的**（网页上直接看）⇒ **从此不依赖任何凭据**。
           if [ "$rc" != 0 ]; then
             { echo '## 失败尾部（前 120 行）'; echo '```'; tail -120 /tmp/*.log 2>/dev/null | head -120; echo '```'; } >> "$GITHUB_STEP_SUMMARY" || true
+          fi
+          # ★ 失败必须【在机器读得到的地方具名】（2026-10-10 已在 helix-mind 验证有效）：
+          #   logs 需 admin(403) · artifacts 需凭据(401) · job summary 的 API output.summary 为 null
+          #   ⇒ 而 **annotations 公开可读** ⇒ 失败行写成 ::error ⇒ 读数由工具自己出，不靠人肉粘贴。
+          if [ "$rc" != 0 ]; then
+            grep -aE "^test .* FAILED|^failures:$|panicked at|^error(\[|:)|No such file|NotFound|Could not find|cannot find" /tmp/test.log \
+              | head -12 | while IFS= read -r _l; do
+                  echo "::error title=失败具名::$(printf %s "$_l" | tr -d "\r" | cut -c1-400)"
+                done
           fi
           exit $rc
       - name: ② 行预算棘轮（本仓判据）
