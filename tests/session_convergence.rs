@@ -378,3 +378,50 @@ fn the_read_only_projection_carries_the_whole_rejection_ledger() {
     assert!(timeline[1].starts_with("revoke（2026-10-09T03:00:00Z / human /"), "{timeline:?}");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// ★ K15 自治段（2026-10-10）：**观察态判据** —— 让"一个会话落几个文件"这件事**可见**。
+///
+/// **为什么是观察态而不是断言目标值**：把文件命名键从 `period_id` 改为 `episode_id` **是持久化接口的改动（行为面）**
+/// ⇒ 按本仓的授权三级守则属**② 升级**（需半页 + 授权）。
+/// ⇒ 故此处**只观察、不锁定**：若断言"今天必须是 2 个文件"，L1 落地时这条测试会**变红**，
+/// 那就把"行为的改变"伪装成"测试回归" —— 正相反，我们**要让它可见**。
+/// ⇒ 因此只断言**两个世界都成立的不变量**，并把读数打印出来。
+///
+/// 观察链（现状，实测于 2026-10-10）：
+///   `derive_episode_id(first_input)` → **1 个**（会话锚：同首条输入同 id，`ADR-0006`）
+///   `derive_job_id(ask)`            → **每问 1 个**（内容锚：同输入同 id）
+///   `try_allocate_period_id(...)`   → **每问 1 个**（落盘命名键）⇒ **N 问 ⇒ N 个 `{period_id}.events.jsonl`**
+#[test]
+fn observation_one_conversation_currently_maps_to_one_file_per_turn() {
+    use anaphase::contract::{derive_episode_id, derive_job_id};
+    use anaphase::session_events::identity::try_allocate_period_id;
+
+    let first_input = "帮我看看这个方案";
+    let asks = ["帮我看看这个方案", "那第二个问题呢"];
+
+    // ① 会话锚：同一个会话 ⇒ 同一个 episode（ADR-0006 的"经历分组键"）
+    let ep = derive_episode_id(first_input);
+    assert_eq!(ep, derive_episode_id(first_input), "episode 锚必须是确定性的");
+    assert!(ep.starts_with("ep-"), "episode 锚的形状: {ep}");
+
+    // ② 落盘锚：每问一个 period ⇒ 每问一个文件（**这就是 K15 要改的那一维**）
+    let periods: Vec<String> = asks
+        .iter()
+        .map(|a| try_allocate_period_id(&derive_job_id(a), 1_000).expect("allocate"))
+        .collect();
+    assert_eq!(periods.len(), 2);
+    assert_ne!(periods[0], periods[1], "现状：每问一个新 period ⇒ 每问一个新文件");
+
+    // ③ 不变量（两个世界都成立）：**每个 period 恰好对应一个可命名的落盘文件**
+    for p in &periods {
+        assert!(anaphase::session_events::is_period_id(p), "period 形状: {p}");
+    }
+
+    // ④ ★ 读数（不锁定）：一个会话当前落 **2** 个文件；L1 的目标是 **1** 个（同 episode 追加）
+    eprintln!(
+        "[K15 观察] episode={ep} · 提问 {} 次 ⇒ period {} 个 ⇒ 文件 {} 个（**目标(升级段): 1 个，按 episode 追加**）",
+        asks.len(),
+        periods.len(),
+        periods.len()
+    );
+}
