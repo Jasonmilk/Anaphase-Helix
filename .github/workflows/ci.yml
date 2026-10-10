@@ -25,6 +25,20 @@ jobs:
           repository: Jasonmilk/helix-mind
           ref: rs
           path: helix-mind
+      - name: ⓪·2 物化【完整工作区】的其余兄弟仓（跨仓判据的被检对象是 workspace 本身）
+        uses: actions/checkout@v4
+        with: { repository: Jasonmilk/Cellrix,   ref: rs, path: Cellrix }
+      - uses: actions/checkout@v4
+        with: { repository: Jasonmilk/FlowModus, ref: rs, path: FlowModus }
+      - uses: actions/checkout@v4
+        with: { repository: Jasonmilk/Tuck,      ref: rs, path: Tuck }
+      - uses: actions/checkout@v4
+        with: { repository: Jasonmilk/phyt-DNA,  ref: v2,  path: phyt-DNA }
+      - name: ⓪·3 工作区自检（缺仓 ⇒ 立刻具名，别让判据在残缺工作区上假装通过）
+        run: |
+          for d in anaphase-helix helix-mind Cellrix FlowModus Tuck phyt-DNA; do
+            if [ -d "$d/.git" ]; then echo "  ✅ $d"; else echo "::error title=工作区缺仓::$d 未被检出 —— 跨仓判据此时不可信"; exit 1; fi
+          done
       - name: ⓪ 系统依赖（prost-build 需要 protoc ⇒ 这是 K32 古红的根因）
         run: sudo apt-get update -qq && sudo apt-get install -y -qq protobuf-compiler
       - run: rustup toolchain install stable --profile minimal && rustup default stable
