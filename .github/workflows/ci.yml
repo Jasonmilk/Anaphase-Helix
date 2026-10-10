@@ -21,6 +21,12 @@ jobs:
           cargo test --all-features --no-fail-fast 2>&1 | tee /tmp/test.log
           rc=${PIPESTATUS[0]}
           if [ "$rc" != 0 ]; then echo "--- 末尾 150 行（完整见 artifact）---"; tail -150 /tmp/test.log; fi
+          # ★★ 耐久修法（reviewer Ⓑ，2026-10-10）：**把失败尾部同时写进 job summary** ——
+          #   CI logs 要 admin（403）· artifact 下载要凭据（401）⇒ **两者我都读不到**。
+          #   而 **job summary 是公开可读的**（网页上直接看）⇒ **从此不依赖任何凭据**。
+          if [ "$rc" != 0 ]; then
+            { echo '## 失败尾部（前 120 行）'; echo '```'; tail -120 /tmp/*.log 2>/dev/null | head -120; echo '```'; } >> "$GITHUB_STEP_SUMMARY" || true
+          fi
           exit $rc
       - name: ② 行预算棘轮（本仓判据）
         run: python3 ci/check_line_budget.py
