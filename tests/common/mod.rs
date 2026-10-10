@@ -176,6 +176,7 @@ pub async fn spawn_mock_tentacle(
     let svc = TentacleServiceServer::new(mock);
     let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
     let handle = tokio::spawn(async move {
+
         let result = tonic::transport::Server::builder()
             .add_service(svc)
             .serve_with_incoming_shutdown(TcpListenerStream::new(listener), async {

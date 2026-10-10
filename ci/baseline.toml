@@ -606,3 +606,9 @@ target = "src/adapters/security_gate.rs"
 cap    = 8
 k_id   = "K16-M2"
 reason = "the decision path's URL had to be DERIVED from an existing deployment fact (tuck_endpoint, whose own comment already calls it the audit leg + fail-closed gate) instead of gaining a config field: AnaphaseConfig has no Default and 6+ bare literals in tests/, so one new field breaks them all at once. gate_url is 8 lines of production code; its three tests live in security_gate_tests.rs, which the budget excludes as a test path."
+
+[[fix_window]]
+target = "src/ledger/"
+cap    = 4
+k_id   = "K25-LEDGER-SNAPSHOT"
+reason = "the outcome snapshot stores the pipeline's ledger records on the cycle outcome so the completion point is observable instead of re-read from a live object (624d3cf). That is 3 lines of ledger-shaped code in a directory whose ratchet was set before the snapshot existed."

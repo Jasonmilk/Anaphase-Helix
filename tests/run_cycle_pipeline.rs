@@ -29,7 +29,19 @@ use std::sync::{Arc, Mutex};
 
 /// Build a pipeline wired to a fresh MockTentacle with an injected clock.
 async fn build_pipeline(mock: MockTentacle, clock_now: u64) -> Pipeline {
-    let (endpoint, _captured, _tx, _handle) = spawn_mock_tentacle(mock).await;
+    let (endpoint, _captured, tx, _handle) = spawn_mock_tentacle(mock).await;
+    /* ★ K25 根因修复（2026-10-09，已用 20/20 变异实验确认）：
+     * `_tx` 的**下划线**只表示"我不打算用它"，**不阻止它在本函数返回时被 drop**；
+     * 而 shutdown 发送端一旦被 drop，oneshot 接收端就**立即** resolve
+     * ⇒ `serve_with_incoming_shutdown` 收到停机信号 ⇒ 服务器**停止 accept**（已建连接仍可服务）
+     * ⇒ 之后每次工具调用都在传输层失败；而那个错误被 run_cycle 降级成 `warn!`，
+     *   而**测试里没有日志订阅者**（`tracing_subscriber::fmt::init()` 只在 src/main.rs）
+     *   ⇒ **完全静音** ⇒ 表现为"工具调用没有执行"的疑似 flaky。
+     * ⇒ 故让 mock 活到进程结束（它的寿命本就该等于进程寿命）。
+     * 回归判据：把这一行删掉 ⇒ `cargo test --test run_cycle_pipeline` 立刻回到 ~95% 红（实测 20 次里 19 次有红）。
+     * 注意：**不要**改 spawn_mock_tentacle 的返回值 —— `tests/mock_tentacle.rs:66` 正当地用
+     * `shutdown_tx.send(())` 来造传输错误；把真发送端换成占位会弄坏它（我试过，它立刻红）。 */
+    std::mem::forget(tx);
     let tentacle = anaphase::adapters::tentacle::GrpcTentacleAdapter::new(&endpoint)
         .await
         .unwrap();
@@ -40,18 +52,26 @@ async fn build_pipeline(mock: MockTentacle, clock_now: u64) -> Pipeline {
 
 /// K25 取证仪器（**常驻**：就绪时零成本；不修任何东西，只让红的那一刻有话说）。
 /// 上限 5s（上一版 2s 太短 —— 我用一个有上限的仪器去断言"永不到"，那是无效推理）。
-async fn wait_for_evidence(a: &anaphase::run_cycle::AgentLoop, cap: &common::CapturedTraceIds, what: &str) -> Option<u128> {
+async fn wait_for_evidence(a: &anaphase::run_cycle::AgentLoop, cap: &common::CapturedTraceIds, ring: &std::sync::Arc<std::sync::Mutex<anaphase::events::EventRing>>, what: &str) -> Option<u128> {
     let t0 = std::time::Instant::now();
     loop {
         if !a.context.evidence.is_empty() { return Some(t0.elapsed().as_millis()); }
-        if t0.elapsed().as_millis() >= 5000 {
+        if t0.elapsed().as_millis() >= 30000 {
             // ★ A/B 判别：mock 那一侧收到了几次调用？
             //   cap=0 ⇒ 调用【从未离开】(A) · cap>0 ⇒ 到了工具层却没产 evidence ⇒ 要看向应与记账(B)
             eprintln!(
-                "[K25] {what}: evidence 5s 未就绪 ⇒ mock_captured={} calls={} verdict={:?} state={:?} reasoning[:60]={:?}",
+                "[K25] {what}: evidence 30s 未就绪 ⇒ mock_captured={} calls={} verdict={:?} state={:?} reasoning[:60]={:?}",
                 cap.all().len(),
                 a.context.calls.len(), a.context.last_verdict, a.current_state,
                 a.context.reasoning_output.chars().take(60).collect::<String>());
+            // ★ 第三件探针：pipeline 自己发的事件。`begin calls=N` 与 `gate <presence>` 由
+            //   execute_calls 在【进入派发循环时】写出 ⇒ 读它就能分辨
+            //   "没进循环" / "进了但被门拦" / "进了但执行器静默失败"。
+            {
+                let ev = ring.lock().unwrap();
+                let rows: Vec<String> = ev.events().iter().map(|e| format!("s{}:{}={}", e.stage, e.phase, e.detail)).collect();
+                eprintln!("[K25] {what}: pipeline 事件环 {} 条 ⇒ {}", rows.len(), rows.join(" | "));
+            }
             return None;
         }
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
@@ -79,8 +99,10 @@ async fn run_cycle_full_chain_met() {
     let mock = MockTentacle::new().with_tool("numbers", r#"{"series":[1.0,2.0,3.0,4.0]}"#);
     // ★ K25 仪器：把 mock 侧的观测点留下来（Arc ⇒ 与交给 pipeline 的是同一个观测点）
     let cap = mock.captured_trace_ids.clone();
+    let pl = build_pipeline(mock, 1000).await;
+    let ring = pl.events.clone();   // ★ 与 cap 同一技巧：交给 agent 之前先留下观测点
     let mut agent = base_agent(Arc::new(StructuredReasoning { output: output.into() }))
-        .with_pipeline(build_pipeline(mock, 1000).await);
+        .with_pipeline(pl);
 
     let out = agent.run_cycle("calculate").await.unwrap();
 
@@ -93,7 +115,7 @@ async fn run_cycle_full_chain_met() {
     assert_eq!(job.created_at, "1970-01-01T00:16:40Z", "clock 1000 -> RFC3339");
 
     // stage 3-4: executed via the pipeline, evidence recorded.
-    if let Some(ms) = wait_for_evidence(&agent, &cap, "full_chain").await {
+    if let Some(ms) = wait_for_evidence(&agent, &cap, &ring, "full_chain").await {
         eprintln!("[K25] full_chain: 就绪 {ms}ms");
     }
     assert_eq!(agent.context.evidence.len(), 1);
@@ -231,6 +253,8 @@ async fn run_config_soft_reflex_threshold_blocks() {
     // ★ K25 仪器：同受害点一，留下 mock 侧观测点
     let m = MockTentacle::new().with_tool("numbers", r#"{"series":[1.0,2.0,3.0]}"#);
     let cap = m.captured_trace_ids.clone();
+    let pl = build_pipeline(m, 1000).await;
+    let ring = pl.events.clone();
     let mut passed = AgentLoop::new(
         Arc::new(NoopMemoryAdapter),
         Arc::new(StructuredReasoning { output: output.into() }),
@@ -241,9 +265,9 @@ async fn run_config_soft_reflex_threshold_blocks() {
         ReflexArc { safety_rules: vec![] },
     )
     .with_run_config(RunCycleConfig { soft_reflex_threshold: 0.9, ..RunCycleConfig::default() })
-    .with_pipeline(build_pipeline(m, 1000).await);
+    .with_pipeline(pl);
     passed.run_cycle("do it").await.unwrap();
-    if let Some(ms) = wait_for_evidence(&passed, &cap, "threshold-raised").await {
+    if let Some(ms) = wait_for_evidence(&passed, &cap, &ring, "threshold-raised").await {
         eprintln!("[K25] threshold-raised: 就绪 {ms}ms");
     }
     assert_eq!(passed.context.evidence.len(), 1, "threshold raised -> executes");
