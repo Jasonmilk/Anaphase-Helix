@@ -161,3 +161,8 @@ summary  = "Outcome snapshot (outcome.ledger = pipeline ledger records) added ~3
 id       = "K26-EXECUTION-FAILED-ROW"
 recorded = "2026-10-09"
 summary  = "An execution-time failure in Pipeline::execute_calls was recorded ONLY as a warn! (downgraded in run_cycle/mod.rs to Ok(Failure)), so the run looked like one where nothing was attempted — a missing node, against run_cycle/mod.rs:722's DECLARED ROW rule. Measured cost: that warn! is invisible in test binaries (no subscriber), and a session of K25 diagnosis was spent partly on grepping a log line that could never print. The fix adds a named LedgerRecord::ExecutionFailed row; it costs source NOCL in a ratcheted file."
+
+[[pit]]
+id       = "K15-A-ROUTE-GROUPING"
+recorded = "2026-10-10"
+summary  = "K15's A-route grouping (ADR-0053 attachment 1: `Conversation` + `group_into_conversations`, a pure read-semantics function in the query layer) grew `src/session_events/query.rs` by ~30 NOCL past its ratchet. The growth is the feature: grouping must live in the query layer, not in the UI (otherwise K15 flips from blocking DSH to being blocked by DSH)."
