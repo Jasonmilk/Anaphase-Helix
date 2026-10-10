@@ -9,6 +9,19 @@
 **The silicon-based operating system & physical brain for digital lifeforms.
 Perceive, reason, act, remember, and immunize — the body that houses the soul.**
 
+## ▸ 从这里开始（**按需指针**：先看你要回答的**问题**，只取那一份）
+
+> **状态是【量出来】的，不是存在这里的。** 本文件的徽章与计数是**快照**，会腐
+> （实测一例：徽章长期写着 `240/240`，而当前判据已是 **483 条用例**）⇒ **以自证命令为准**。
+
+| 我要回答的问题 | 读这一份 |
+|---|---|
+| **这仓现在健康吗？怎么自证？** | `cargo test --all-features --no-fail-fast` |
+| **判据与决定的正文？** | `docs/decisions/`（索引见 `docs/decisions/README.md`） |
+| **遇到怪事 / 想知道是否已知？** | `helix-mind/docs/helixECO/KNOWN_ISSUES.md` —— **唯一**跨仓登记册（区分【待裁决】与【没人做】） |
+| **生态入口在哪？** | `helix-mind/docs/helixECO/HANDOFF.md` —— ≤40 行指针，**状态是量出来的、不存** |
+| **坑与豁免（行预算）？** | `ci/pits.toml`（坑登记，**先登记后修**）+ `ci/baseline.toml`（允许量，**一个目标一条**） |
+
 ## Overview
 
 Anaphase-Helix is the **digital exoskeleton** for the Helix digital lifeform.
