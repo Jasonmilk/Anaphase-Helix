@@ -37,6 +37,27 @@ async fn build_pipeline(mock: MockTentacle, clock_now: u64) -> Pipeline {
     Pipeline::new(tentacle, Box::new(FakeClock(clock_now)), config)
 }
 
+
+/// K25 取证仪器（**常驻**：就绪时零成本；不修任何东西，只让红的那一刻有话说）。
+/// 上限 5s（上一版 2s 太短 —— 我用一个有上限的仪器去断言"永不到"，那是无效推理）。
+async fn wait_for_evidence(a: &anaphase::run_cycle::AgentLoop, cap: &common::CapturedTraceIds, what: &str) -> Option<u128> {
+    let t0 = std::time::Instant::now();
+    loop {
+        if !a.context.evidence.is_empty() { return Some(t0.elapsed().as_millis()); }
+        if t0.elapsed().as_millis() >= 5000 {
+            // ★ A/B 判别：mock 那一侧收到了几次调用？
+            //   cap=0 ⇒ 调用【从未离开】(A) · cap>0 ⇒ 到了工具层却没产 evidence ⇒ 要看向应与记账(B)
+            eprintln!(
+                "[K25] {what}: evidence 5s 未就绪 ⇒ mock_captured={} calls={} verdict={:?} state={:?} reasoning[:60]={:?}",
+                cap.all().len(),
+                a.context.calls.len(), a.context.last_verdict, a.current_state,
+                a.context.reasoning_output.chars().take(60).collect::<String>());
+            return None;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+}
+
 /// Agent with default adapters + a structured reasoning stub.
 fn base_agent(reason: Arc<dyn ReasoningAdapter>) -> AgentLoop {
     AgentLoop::new(
@@ -56,6 +77,8 @@ fn base_agent(reason: Arc<dyn ReasoningAdapter>) -> AgentLoop {
 async fn run_cycle_full_chain_met() {
     let output = r#"{"calls":[{"tool":"numbers","args":{},"expect":"numbers"}],"impasse":false}"#;
     let mock = MockTentacle::new().with_tool("numbers", r#"{"series":[1.0,2.0,3.0,4.0]}"#);
+    // ★ K25 仪器：把 mock 侧的观测点留下来（Arc ⇒ 与交给 pipeline 的是同一个观测点）
+    let cap = mock.captured_trace_ids.clone();
     let mut agent = base_agent(Arc::new(StructuredReasoning { output: output.into() }))
         .with_pipeline(build_pipeline(mock, 1000).await);
 
@@ -70,6 +93,9 @@ async fn run_cycle_full_chain_met() {
     assert_eq!(job.created_at, "1970-01-01T00:16:40Z", "clock 1000 -> RFC3339");
 
     // stage 3-4: executed via the pipeline, evidence recorded.
+    if let Some(ms) = wait_for_evidence(&agent, &cap, "full_chain").await {
+        eprintln!("[K25] full_chain: 就绪 {ms}ms");
+    }
     assert_eq!(agent.context.evidence.len(), 1);
     assert!(agent.context.evidence[0].ok);
 
@@ -202,6 +228,9 @@ async fn run_config_soft_reflex_threshold_blocks() {
     assert!(blocked_out.ledger.is_empty());
 
     // Raised threshold 0.9: the same p_death passes and executes.
+    // ★ K25 仪器：同受害点一，留下 mock 侧观测点
+    let m = MockTentacle::new().with_tool("numbers", r#"{"series":[1.0,2.0,3.0]}"#);
+    let cap = m.captured_trace_ids.clone();
     let mut passed = AgentLoop::new(
         Arc::new(NoopMemoryAdapter),
         Arc::new(StructuredReasoning { output: output.into() }),
@@ -212,11 +241,11 @@ async fn run_config_soft_reflex_threshold_blocks() {
         ReflexArc { safety_rules: vec![] },
     )
     .with_run_config(RunCycleConfig { soft_reflex_threshold: 0.9, ..RunCycleConfig::default() })
-    .with_pipeline(
-        build_pipeline(MockTentacle::new().with_tool("numbers", r#"{"series":[1.0,2.0,3.0]}"#), 1000)
-            .await,
-    );
+    .with_pipeline(build_pipeline(m, 1000).await);
     passed.run_cycle("do it").await.unwrap();
+    if let Some(ms) = wait_for_evidence(&passed, &cap, "threshold-raised").await {
+        eprintln!("[K25] threshold-raised: 就绪 {ms}ms");
+    }
     assert_eq!(passed.context.evidence.len(), 1, "threshold raised -> executes");
 }
 

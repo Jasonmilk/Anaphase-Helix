@@ -50,6 +50,17 @@ pub struct MockTentacle {
 }
 
 impl MockTentacle {
+    /// 克隆一个"仍能观察捕获"的副本，供测试在**把 mock 交给 pipeline 之后**继续读它。
+    /// （CapturedTraceIds 内部是 Arc ⇒ 克隆是同一个观测点，不是副本。）
+    pub fn clone_for_capture(&self) -> Self {
+        Self {
+            tool_data: self.tool_data.clone(),
+            failing_tools: self.failing_tools.clone(),
+            captured_trace_ids: self.captured_trace_ids.clone(),
+            captured_bloom: self.captured_bloom.clone(),
+        }
+    }
+
     pub fn new() -> Self {
         Self::default()
     }
@@ -165,13 +176,18 @@ pub async fn spawn_mock_tentacle(
     let svc = TentacleServiceServer::new(mock);
     let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
     let handle = tokio::spawn(async move {
-        tonic::transport::Server::builder()
+        let result = tonic::transport::Server::builder()
             .add_service(svc)
             .serve_with_incoming_shutdown(TcpListenerStream::new(listener), async {
                 let _ = shutdown_rx.await;
             })
-            .await
-            .unwrap();
+            .await;
+        // ★ K25 / H5（2026-10-09）：原本这里是 `.unwrap()`，而调用方把 JoinHandle 丢成 `_handle`
+        //   ⇒ 该任务一旦 panic，**没有任何人看得见**（无声死亡），而受害者症状正是"工具调用没有执行"。
+        //   ⇒ 改为具名打印：错误不再被吞，是否真发生由此可测（先出声，再判定）。
+        if let Err(e) = result {
+            eprintln!("[K25-H5] mock tentacle server 退出（此前会被静默吞掉）: {e}");
+        }
     });
     (format!("http://{}", addr), captured, shutdown_tx, handle)
 }
