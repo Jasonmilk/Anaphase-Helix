@@ -151,3 +151,8 @@ summary  = "TWO honest boundaries were hit at once, and both looked like tooling
 id       = "K16-M2"
 recorded = "2026-10-09"
 summary  = "The door on `do` was never installed on the production path: `with_security_gate` is called only from tests, `PipelineConfig` defaults the field to None, and main.rs never called the setter — so every tool call executed ungated. Measured and written into `src/security.rs` on 2026-09-20, before this fix."
+
+[[pit]]
+id       = "K25-LEDGER-SNAPSHOT"
+recorded = "2026-10-09"
+summary  = "Outcome snapshot (outcome.ledger = pipeline ledger records) added ~3 NOCL to src/ledger/, pushing it past its ratchet. The snapshot is what makes the completion point observable; the growth is the feature, not drift."
