@@ -227,9 +227,15 @@ pub async fn spawn_mock_tentacle(
      * 由它 await 真 handle 并**具名打印**异常结束——包括 panic（JoinError::is_panic）。
      * 返回给调用方的是看守者的 handle；调用方丢弃它也无妨（任务会继续跑完）。 */
     let watched = handle;
+    // ★ 返回给调用方的**是看守者的** handle：调用方丢弃它也无妨（看守者会跑完），
+    //   **与本 ADR 修的 `_handle` 不是同类问题** —— 那个丢的是"真任务的唯一见证人"，
+    //   这个丢的是"见证人的收据"（见证人自己已经在跑了）。
     let handle = tokio::spawn(async move {
         if let Err(e) = watched.await {
-            eprintln!("[K25] mock tentacle 任务异常结束: {e}（panic={}）", e.is_panic());
+            // ★ 哨兵自己不能是哑巴：用 tracing 而不是 eprintln。
+            //   eprintln 在 CI 的默认输出里往往等于没有；而 `common::init_logs()` 已装好
+            //   subscriber ⇒ warn! 会走同一条可被采集的通道（静音仪器不能当证据的正向兑现）。
+            tracing::warn!("mock tentacle 任务异常结束: {e}（panic={}）", e.is_panic());
         }
     });
     (format!("http://{}", addr), captured, shutdown_tx, handle)
