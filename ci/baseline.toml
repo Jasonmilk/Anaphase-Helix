@@ -612,3 +612,21 @@ target = "src/ledger/"
 cap    = 4
 k_id   = "K25-LEDGER-SNAPSHOT"
 reason = "the outcome snapshot stores the pipeline's ledger records on the cycle outcome so the completion point is observable instead of re-read from a live object (624d3cf). That is 3 lines of ledger-shaped code in a directory whose ratchet was set before the snapshot existed."
+
+[[fix_window]]
+target = "src/ledger/mod.rs"
+cap    = 28
+k_id   = "K26-EXECUTION-FAILED-ROW"
+reason = "the new LedgerRecord::ExecutionFailed kind + its constructor, so an execution-time failure leaves a NAMED row instead of only a warn! (run_cycle/mod.rs:722: a refusal is a declared row, not a missing node). Measured after the final implementation: 237 -> 265 = +28 NOCL; the earlier +18 allowance covered the pre-K26 shape only, so the cap follows the real number."
+
+[[fix_window]]
+target = "src/pipeline/"
+cap    = 14
+k_id   = "K26-EXECUTION-FAILED-ROW"
+reason = "the call site: Pipeline::execute_calls records the failure at the tool-call hop (where tool/index are in scope — the caller cannot know which call failed) and still returns the same Err. No skip condition is needed: the security-gate path returns earlier and has already written its blocked row."
+
+[[fix_window]]
+target = "src/run_cycle/reflection.rs"
+cap    = 3
+k_id   = "K26-EXECUTION-FAILED-ROW"
+reason = "the downstream consumer: its match on LedgerRecord gained the arm for the new kind, mirroring the existing Blocked arm in the same match."
