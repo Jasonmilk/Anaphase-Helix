@@ -240,7 +240,23 @@ impl Pipeline {
                     labels,
                     derive_seen_bloom(&call.tool, &params), // ADR-0007 D'-1: real entropy fingerprint, not the "" placeholder
                 )
-                .await?;
+                .await
+                /* ★ 722 的 DECLARED ROW（2026-10-09）：这一跳失败时此前【只】返回 Err ⇒
+                 * run_cycle 把它降级成 warn!，而测试二进制里没有订阅者 ⇒ 完全静音 ⇒
+                 * 看起来像"这个调用从未存在"（missing node）。失败必须留下【具名的行】。
+                 * 闸门拦截在更早处就已 return（并写过 blocked 行）⇒ 此处只处理真正的调用失败，
+                 * 故**不需要任何 skip 条件**（少一个静默假设）。 */
+                .map_err(|e| {
+                    self.ledger.append(LedgerRecord::execution_failed(
+                        &job.job_id,
+                        &call.tool,
+                        i as u32,
+                        "transport",
+                        &e.to_string(),
+                        identity_labels.get("identity").map(|s| s.as_str()),
+                    ));
+                    e
+                })?;
             let duration_ms = started.elapsed().as_millis() as u64;
             // P0-G (2026-09-16): an undeclared `expect` is resolved to `ok`
             // at dispatch — the historical distribution is 30/30 `ok`, and a
@@ -393,6 +409,11 @@ impl Pipeline {
             // Blocked records are appended inside execute_calls and short-circuit
             // with an Err before stage 6 — unreachable here by construction.
             LedgerRecord::Blocked { .. } => unreachable!("blocked records only arise from the security gate path"),
+            // Same shape as Blocked: execution-failure records are appended inside
+            // execute_calls and short-circuit with an Err before stage 6.
+            LedgerRecord::ExecutionFailed { .. } => {
+                unreachable!("execution-failure records short-circuit with an Err before stage 6")
+            }
         };
         self.ledger.append(verdict);
 
