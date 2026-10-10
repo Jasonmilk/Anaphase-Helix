@@ -503,3 +503,64 @@ fn the_tombstone_writer_appends_without_destroying_history() {
     assert_eq!(after.matches("period/tombstone").count(), 1, "idempotent: a fact repeated is not a new fact");
     let _ = fs::remove_dir_all(&dir);
 }
+
+/// ★ K15 A 路线的**纯判据**（`ADR-0053` 附件一）：`group_into_conversations` 的分组输出。
+///
+/// **纯**：手工构造 `PeriodSummary`（不读盘、不起服务、不碰 UI）⇒ 断言**分组结果**。
+/// 三个语义各一条：① 续接并入根 ② 截断者自成一组且**被具名** ③ 排序确定。
+#[test]
+fn k15_a_route_groups_periods_by_conversation() {
+    use crate::session_events::query::{group_into_conversations, PeriodSummary};
+
+    fn row(pid: &str, parent: Option<&str>, conv: Option<&str>, first: &str, last: &str) -> PeriodSummary {
+        PeriodSummary {
+            period_id: pid.to_string(),
+            job_id: format!("run-{pid}"),
+            first_ts: first.to_string(),
+            last_ts: last.to_string(),
+            count: 1,
+            preview: String::new(),
+            reply: String::new(),
+            parent: parent.map(|s| s.to_string()),
+            conversation_id: conv.map(|s| s.to_string()),
+            model: None,
+            name: None,
+            status: None,
+            gist: None,
+            rejection_log: Vec::new(),
+            rejected: false,
+        }
+    }
+
+    let rows = vec![
+        // 会话 A：根 r1 + 续接 c1（c1 继承根 r1）
+        row("r1", None, Some("r1"), "2026-10-01T00:00:00Z", "2026-10-01T00:00:10Z"),
+        row("c1", Some("r1"), Some("r1"), "2026-10-01T00:01:00Z", "2026-10-01T00:01:10Z"),
+        // 会话 B：根 r2（更新 ⇒ 应排在 A 前面）
+        row("r2", None, Some("r2"), "2026-10-02T00:00:00Z", "2026-10-02T00:00:10Z"),
+        // 截断者：根不在窗口内 ⇒ conversation_id = None ⇒ 自成一组且被具名
+        row("t1", Some("outside"), None, "2026-09-01T00:00:00Z", "2026-09-01T00:00:10Z"),
+    ];
+    let groups = group_into_conversations(rows);
+
+    // ② 截断者自成一组（共 3 组：r1 / r2 / 截断）
+    assert_eq!(groups.len(), 3, "应有 3 组，实得 {:?}", groups.iter().map(|g| g.root.clone()).collect::<Vec<_>>());
+    // ① 续接 c1 并入根 r1 的组，且组内按时间升序
+    let g_a = groups.iter().find(|g| g.root.as_deref() == Some("r1")).expect("r1 组");
+    assert_eq!(g_a.periods.iter().map(|p| p.period_id.as_str()).collect::<Vec<_>>(), vec!["r1", "c1"],
+               "续接必须并入根，且按 first_ts 升序");
+    // ② 截断组被具名（不是被猜成一个新会话）
+    let g_t = groups.iter().find(|g| g.window_truncated()).expect("截断组");
+    assert_eq!(g_t.periods.len(), 1);
+    assert_eq!(g_t.periods[0].period_id, "t1");
+    // ③ 排序确定：最新会话（r2）在前
+    assert_eq!(groups[0].root.as_deref(), Some("r2"), "组应按最新一条 last_ts 降序");
+    // ③' 同一输入两次 ⇒ 同一输出（确定性）
+    let again = group_into_conversations(vec![
+        row("r1", None, Some("r1"), "2026-10-01T00:00:00Z", "2026-10-01T00:00:10Z"),
+        row("c1", Some("r1"), Some("r1"), "2026-10-01T00:01:00Z", "2026-10-01T00:01:10Z"),
+        row("r2", None, Some("r2"), "2026-10-02T00:00:00Z", "2026-10-02T00:00:10Z"),
+        row("t1", Some("outside"), None, "2026-09-01T00:00:00Z", "2026-09-01T00:00:10Z"),
+    ]);
+    assert_eq!(groups, again, "纯函数：相同输入 ⇒ 相同输出");
+}

@@ -423,3 +423,53 @@ pub fn list_periods(dir: &std::path::Path, limit: usize) -> io::Result<Vec<Perio
     }
     Ok(out)
 }
+
+/// ★ K15 A 路线（`ADR-0053` 附件一，2026-10-10）：**一个会话 = 一组 period**。
+///
+/// **为什么它住在查询层（而不是 UI）**：分组是**读取语义**，不是展示选择。
+/// 若把它放进 Cellrix 侧栏 ⇒ **K15 会从"挡 DSH"反转成"被 DSH 挡"**（地基被放进了 UI 里）。
+/// ⇒ 故此处是**纯函数**：**输入 = `list_periods()` 的行，输出 = 分组**，**不碰 UI、不碰网络、可单测**。
+///
+/// **语义（三条，全部取自既有字段，不新增概念）**：
+/// 1. `conversation_id = Some(root)` ⇒ 该 period 属于 root 这一组（**根命名自己，续接继承根** —— 既有判据）。
+/// 2. `conversation_id = None` ⇒ **被请求窗口截断**（根不在窗口内）⇒ 它**自成一组**，
+///    且该组标 `window_truncated = true` ⇒ **缺席被具名，绝不被猜**（与字段注释同一纪律）。
+/// 3. **排序**：组按**最新一条**的 `last_ts` **降序**（新会话在前）；组内按 `first_ts` **升序**（按时间）。
+///    ⇒ 排序是**确定的**（相同的输入 ⇒ 相同的输出），否则 UI 每次刷新都会跳。
+#[derive(Debug, Clone, PartialEq)]
+pub struct Conversation {
+    /// 本会话的根。`None` = 被窗口截断（见上）。
+    pub root: Option<String>,
+    /// 组内 period，**按 `first_ts` 升序**。
+    pub periods: Vec<PeriodSummary>,
+}
+
+impl Conversation {
+    /// 本组是否因**窗口**而看不到根（不是数据的性质，是我们看得多远的性质）。
+    pub fn window_truncated(&self) -> bool {
+        self.root.is_none()
+    }
+}
+
+/// 把 `list_periods()` 的行**按会话分组**（纯函数 —— 见 `Conversation` 的文档注释）。
+pub fn group_into_conversations(rows: Vec<PeriodSummary>) -> Vec<Conversation> {
+    let mut groups: std::collections::BTreeMap<Option<String>, Vec<PeriodSummary>> =
+        std::collections::BTreeMap::new();
+    for r in rows {
+        groups.entry(r.conversation_id.clone()).or_default().push(r);
+    }
+    let mut out: Vec<Conversation> = groups
+        .into_iter()
+        .map(|(root, mut periods)| {
+            periods.sort_by(|a, b| a.first_ts.cmp(&b.first_ts));
+            Conversation { root, periods }
+        })
+        .collect();
+    // 组间：最新一条 last_ts 降序（max 而非首条 —— 组内已按 first_ts 排）
+    out.sort_by(|a, b| {
+        let ka = a.periods.iter().map(|p| p.last_ts.clone()).max().unwrap_or_default();
+        let kb = b.periods.iter().map(|p| p.last_ts.clone()).max().unwrap_or_default();
+        kb.cmp(&ka)
+    });
+    out
+}
