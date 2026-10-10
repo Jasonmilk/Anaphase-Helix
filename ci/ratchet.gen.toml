@@ -32,7 +32,7 @@ target = "ci/scan_mutants.py"
 ncloc  = 266
 [[ratchet]]
 target = "src/"
-ncloc  = 4493
+ncloc  = 4531
 [[ratchet]]
 target = "src/adapters/"
 ncloc  = 1419
@@ -80,7 +80,7 @@ target = "src/ci144/server.rs"
 ncloc  = 129
 [[ratchet]]
 target = "src/config.rs"
-ncloc  = 367
+ncloc  = 403
 [[ratchet]]
 target = "src/contract/"
 ncloc  = 502
@@ -134,7 +134,7 @@ target = "src/lifecycle.rs"
 ncloc  = 148
 [[ratchet]]
 target = "src/main.rs"
-ncloc  = 1020
+ncloc  = 1022
 [[ratchet]]
 target = "src/pipeline/"
 ncloc  = 287
@@ -149,16 +149,16 @@ target = "src/reflex.rs"
 ncloc  = 22
 [[ratchet]]
 target = "src/run_cycle/"
-ncloc  = 1407
+ncloc  = 1463
 [[ratchet]]
 target = "src/run_cycle/memory_retrieval.rs"
 ncloc  = 81
 [[ratchet]]
 target = "src/run_cycle/mod.rs"
-ncloc  = 678
+ncloc  = 732
 [[ratchet]]
 target = "src/run_cycle/reasoning.rs"
-ncloc  = 256
+ncloc  = 258
 [[ratchet]]
 target = "src/run_cycle/reflection.rs"
 ncloc  = 215
@@ -176,7 +176,10 @@ target = "src/security.rs"
 ncloc  = 68
 [[ratchet]]
 target = "src/session_events/"
-ncloc  = 1714
+ncloc  = 2216
+[[ratchet]]
+target = "src/session_events/convergence.rs"
+ncloc  = 489
 [[ratchet]]
 target = "src/session_events/crystallize.rs"
 ncloc  = 107
@@ -188,7 +191,7 @@ target = "src/session_events/identity.rs"
 ncloc  = 168
 [[ratchet]]
 target = "src/session_events/mod.rs"
-ncloc  = 43
+ncloc  = 45
 [[ratchet]]
 target = "src/session_events/naming.rs"
 ncloc  = 47
@@ -197,7 +200,7 @@ target = "src/session_events/pins.rs"
 ncloc  = 127
 [[ratchet]]
 target = "src/session_events/query.rs"
-ncloc  = 276
+ncloc  = 287
 [[ratchet]]
 target = "src/session_events/refs.rs"
 ncloc  = 293

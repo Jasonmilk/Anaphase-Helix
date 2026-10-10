@@ -51,6 +51,10 @@ impl AgentLoop {
                             format!("{status:?}")
                         }
                         crate::ledger::LedgerRecord::Blocked { .. } => "blocked".to_string(),
+                        // K26：执行期失败的具名行（class 是稳定指纹）
+                        crate::ledger::LedgerRecord::ExecutionFailed { class, .. } => {
+                            format!("execution_failed:{class}")
+                        }
                     };
                     pipeline.ledger.append(verdict);
                     pipeline.emit_event(&job_id, 6, "end", &format!("verdict={status}"));

@@ -23,6 +23,10 @@ use crate::contract::{
 use crate::evidence::EvidenceRecord;
 use crate::hitl::HITLApprover;
 use crate::ledger::unix_secs_to_rfc3339;
+use crate::session_events::convergence::{
+    answer_lodes as cv_answer_lodes, answer_lode as cv_answer_lode,
+    answer_sediment as cv_answer_sediment,
+};
 use crate::pipeline::Pipeline;
 use crate::reflex::ReflexArc;
 use crate::states::HelixState;
@@ -94,7 +98,7 @@ pub struct EpisodeView {
 /// Outcome of one cognitive period (ADR-0016 D1): the single-cycle
 /// primitive result. The caller owns the looping policy — how many periods
 /// to run and when to stop is a caller decision, never an engine property.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct CycleOutcome {
     /// Period finished (state machine returned to Perception).
     pub done: bool,
@@ -102,11 +106,23 @@ pub struct CycleOutcome {
     pub success: bool,
     /// Finished via an impasse condition.
     pub impasse: bool,
+    /// THE LEDGER AS OF COMPLETION (2026-10-09, human ruling).
+    ///
+    /// WHY A SNAPSHOT AND NOT THE LIVE OBJECT: a criterion that reads `self.pipeline…ledger`
+    /// measures the READING INSTANT, not the result — and the reading instant is not what any
+    /// assertion is about. Measured: `run_cycle_pipeline` gave two different failure sets for the
+    /// same command (9 red vs 3 red), every test passed alone, serial made no difference, and
+    /// adding one `eprintln!` turned it green — the signature of a criterion depending on WHEN it
+    /// reads. A value taken at the completion point cannot depend on that.
+    ///
+    /// This is the `ADR-0018 batch 4` move ("一类缺陷变成不可能状态") applied one layer up:
+    /// the criterion's INPUT. Callers read here; the live internals are closed off (`pub(crate)`).
+    pub ledger: Vec<crate::ledger::LedgerRecord>,
 }
 
 impl Default for CycleOutcome {
     fn default() -> Self {
-        Self { done: false, success: false, impasse: false }
+        Self { done: false, success: false, impasse: false, ledger: Vec::new() }
     }
 }
 
@@ -151,7 +167,16 @@ pub struct AgentLoop {
     /// (stages 1-2), Execution executes + records evidence (stages 3-4),
     /// Reflection checks criteria + writes the verdict ledger (stages 5-6).
     /// None keeps the legacy string/echo path (backwards compatible).
-    pub pipeline: Option<Pipeline>,
+    /* THE FENCE (2026-10-09). This was `pub`, so integration tests (`tests/` is a SEPARATE crate)
+     * read the live ledger mid-flight: `agent.pipeline.as_ref().unwrap().ledger.records()`. That
+     * makes an assertion depend on WHEN it reads, not on what happened — measured: the same command
+     * produced two different failure sets, every test passed alone, serial changed nothing, and one
+     * extra `eprintln!` turned it green.
+     * `pub(crate)` is the whole fix: callers outside the crate can no longer reach the live object,
+     * so they must use `CycleOutcome.ledger` — the snapshot taken at the completion point. Not
+     * "remember not to write that", but "it does not compile".
+     * (ADR-0018 batch 4: 一类缺陷变成不可能状态 — applied one layer up, to the criterion's INPUT.) */
+    pub pipeline: Option<Pipeline>,   /* ③ 暂时撤回：先验 ② 的行为修复 */
     /// Interaction mode (ADR-0006): Drive (no Mind) / Partner (default) /
     /// Survive (Mind autonomous, reserved for P10a). Physical participation
     /// is decided at assembly time (Noop vs gRPC memory adapter); this field
@@ -184,6 +209,9 @@ pub struct AgentLoop {
     /// Source: config `[anaphase] memory_inject_chars` (protocol default
     /// const below, ADR-0023); main overrides from config.
     pub memory_inject_chars: usize,
+    /// ADR-0049 D6: 会话收敛的旋钮（状态/骨架/下钻）。**缺省 = 协议默认**，
+    /// main 从 `[anaphase]` 覆盖。`enabled=false` = 回到旧行为。
+    pub convergence: crate::session_events::ConvergenceConfig,
     /// O-6 (ADR-0024): judge-point backend — complexity assessment for the
     /// Amygdala -> suggested_mode chain. Rules by default (zero tokens);
     /// SmallLlm (3B-class) when configured. Always returns 1/2/3.
@@ -319,6 +347,11 @@ pub struct AgentContext {
     /// the reader (which refuses non-ids) dropped their threads and the sidebar saw them as roots.
     /// Absent resolution means ABSENT parent: a wrong parent is worse than a missing one.
     pub resume_period: Option<String>,
+    /// THIS PERIOD'S JOIN KEY (ADR-0048 D1): allocated at the cycle entry, unique per run, and the
+    /// value the Tuck chain (`x-tuck-trace`), the body trace and the ledger all key on. It replaced
+    /// the input digest — measured 2026-10-09, 462 periods came from 56 digests and one covered 219
+    /// runs. `None` = the identity layer refused; the key is then ABSENT, never a colliding digest.
+    pub period_id: Option<String>,
     pub reasoning_output: String,
     /// Private reasoning (thinking) accumulated from the streaming sink
     /// (ADR-0029). Persisted as `assistant/think` (redacted, display-only).
@@ -461,6 +494,7 @@ impl AgentLoop {
             rails: None,
             rails_config: crate::config::RailsConfig::default(),
             memory_inject_chars: DEFAULT_INJECT_CHARS,
+            convergence: crate::session_events::ConvergenceConfig::default(),
             judge: std::sync::Arc::new(crate::judge::RulesJudge {
                 // config source, not literals (DNA principle 11 / ADR-0002):
                 // MindConfig protocol defaults feed the rules judge; main
@@ -641,7 +675,7 @@ impl AgentLoop {
             let mut guard = ring.lock().unwrap();
             guard.emit(
                 &crate::ledger::unix_secs_to_rfc3339(self.clock.now()),
-                &crate::contract::derive_job_id(&self.context.user_input),
+                self.context.period_id.as_deref().unwrap_or_default(),
                 0,
                 phase,
                 detail,
@@ -683,6 +717,19 @@ impl AgentLoop {
     }
 
     pub async fn run_cycle(&mut self, user_input: &str) -> Result<CycleOutcome, String> {
+        /* PERIOD IDENTITY AT THE CYCLE ENTRY (ADR-0048 D1/D2). It is allocated HERE — before the
+         * gate check, before the first state transition — so EVERY cycle event, stage event and
+         * cross-source join in this run carries one key. It replaced the input digest: measured
+         * (M0.5, 2026-10-09), 462 periods came from 56 digests and one digest covered 219 runs, so
+         * the Tuck chain, the ledger and the body trace merged 219 executions into one. Allocation
+         * failure leaves the key EMPTY (never the digest): a fallback would make "missing" and
+         * "colliding" the same value downstream. */
+        self.context.period_id = crate::session_events::try_allocate_period_id(
+            &crate::contract::derive_job_id(user_input),
+            self.clock.now(),
+        )
+        .map_err(|e| warn!("[Period] no identity this cycle: {}", e))
+        .ok();
         /* THE SINK (ADR-0048 §235): every path that reaches reasoning asks the judge HERE, so the
          * check cannot be forgotten by a caller — §206 measured that a declaration enforced at two
          * of four call sites is fail-closed only "where someone remembered". The cost model is the
@@ -863,6 +910,10 @@ impl AgentLoop {
                     // attempt → tools → verdict → REPLY → end. Emitted even
                     // when empty (honest zero-length answer), so the chain
                     // never silently loses what Helix actually said.
+                    // 两处出口共用同一判定（各写一遍 = 一物两名；改条件只改这里）。
+                    let bypass_val = (self.context.rail_mode && !self.context.rail_nodes.is_empty())
+                        .then(|| serde_json::json!("rail"))
+                        .unwrap_or(serde_json::Value::Null);
                     let _ = ev.emit(
                         &ts,
                         crate::session_events::EventType::AssistantReply,
@@ -870,6 +921,14 @@ impl AgentLoop {
                             "text": self.context.reasoning_output,
                             "chars": self.context.reasoning_output.chars().count(),
                             "model": model,
+                            /* ★ 具名：为什么【没有】模型（第 13 条：缺失必须具名）。
+                             * `model: null` 有两个完全不同的意思 —— "按设计绕过了 LLM" 与 "上游没报模型" ——
+                             * 而读者无法区分（第 16 条同族：一槽两义）。
+                             * 条件【与旁路自身的条件逐字相同】（reasoning.rs:94），不是新规则：
+                             *   rail_mode && !rail_nodes.is_empty()  ⇒ 走的正是 rail 引用作答那条路。
+                             * 实测（2026-10-09）：问「用 calc 算 1234×5678」得到 [rail citation] 且 model:null，
+                             * 该轮只有 2 行事件（健康轮次 14 行）—— 静默的答非所问。 */
+                            "bypass": bypass_val,
                         }),
                     );
                     let _ = ev.emit(
@@ -882,12 +941,21 @@ impl AgentLoop {
                             "verdict": self.context.last_verdict,
                             "reply": self.context.reasoning_output,
                             "model": model,
+                            "bypass": bypass_val,
                         }),
                     );
                 }
                 break;
             }
         }
+        /* THE SNAPSHOT IS TAKEN AT THE COMPLETION POINT — after every mutation, before the caller
+         * can observe anything. Reading a live object later (what callers used to do) made the
+         * criterion depend on the reading instant. */
+        outcome.ledger = self
+            .pipeline
+            .as_ref()
+            .map(|p| p.ledger.records().to_vec())
+            .unwrap_or_default();
         Ok(outcome)
     }
 
@@ -995,8 +1063,8 @@ impl AgentLoop {
                 )
                 .await;
                 match verdict {
-                    safety_gate::GateVerdict::Refused(condition) => Ok(condition),
-                    safety_gate::GateVerdict::Cleared => {
+                    safety_gate::ToolGateOutcome::Refused(condition) => Ok(condition),
+                    safety_gate::ToolGateOutcome::Cleared => {
                         // Execute tool
                         match self.tool.execute(command, &[action_str.clone()]).await {
                             Ok(result) => {
@@ -1035,6 +1103,54 @@ impl AgentLoop {
     /// (gRPC execute) + stage 4 (evidence record). The HITL execution gate
     /// (DNA principle 4) and the tool audit gate (principle 5) still apply per
     /// planned call — low-risk tools pass through with zero extra delay.
+    /// ADR-0049 D4 — the D6 drill-down, answered locally from the append-only store.
+    /// `None` means "not a reading instruction": the caller keeps its normal path.
+    fn answer_read_instruction(&self) -> Option<String> {
+        let call = self.context.calls.first()?;
+        let dir = self.session_events_dir.as_ref()?;
+        let cfg = &self.convergence;
+        let now = self.clock.now();
+        let arg = call.args.get("0").and_then(|v| v.as_str()).unwrap_or("");
+        // 理由：`!reject <id> <理由…>` —— 位置参数 1..n 拼回一句人话。
+        let reason = (1..call.args.len())
+            .filter_map(|i| call.args.get(&i.to_string()).and_then(|v| v.as_str()))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let leaf = self.context.resume_period.as_deref().unwrap_or(arg);
+        match call.tool.as_str() {
+            "lodes" => Some(cv_answer_lodes(dir, Some(leaf), cfg, now)),
+            "lode" => Some(cv_answer_lode(dir, arg, cfg, now)),
+            "sediment" => Some(cv_answer_sediment(dir, leaf, cfg, now)),
+            /* 一次**具名用户动作**的落点。不是模型判断 —— 3B 上"自己决定该吸收还是驳回"
+             * 会通过简单测试、在真实使用里才崩，那是装饰性绿灯。 */
+            "reject" => Some(crate::session_events::convergence::answer_reject(
+                dir,
+                arg,
+                &reason,
+                "human",
+                // when 来自**注入的时钟**（不是 SystemTime::now）：侧车因此不参与字节级回放。
+                &crate::ledger::unix_secs_to_rfc3339(now),
+            )),
+            "revoke" => Some(crate::session_events::convergence::answer_revoke(
+                dir,
+                arg,
+                &reason,
+                "human",
+                &crate::ledger::unix_secs_to_rfc3339(now),
+            )),
+            "settle" => match crate::session_events::convergence::write_state(
+                dir, arg, crate::session_events::PeriodStatus::Converged)
+            {
+                Ok(()) => Some(format!("已定型 {arg}（status=converged，显式）")),
+                Err(e) => Some(format!("(定型失败：{e})")),
+            },
+            "body" => crate::session_events::convergence::retrieve_body(dir, arg).map(|b| {
+                format!("[full round {arg} — read from its append-only event stream]\n{b}")
+            }),
+            _ => None,
+        }
+    }
+
     async fn execute_structured(&mut self) -> Result<TransitionCondition, String> {
         for c in &self.context.calls {
             /* THE ARGS MUST REACH THE JUDGEMENT (ADR-0048 §225 F3): this was `&[]` verbatim —
@@ -1053,8 +1169,8 @@ impl AgentLoop {
             )
             .await
             {
-                safety_gate::GateVerdict::Cleared => {}
-                safety_gate::GateVerdict::Refused(condition) => return Ok(condition),
+                safety_gate::ToolGateOutcome::Cleared => {}
+                safety_gate::ToolGateOutcome::Refused(condition) => return Ok(condition),
             }
         }
         let job = match &self.context.job {

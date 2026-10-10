@@ -50,6 +50,17 @@ pub struct MockTentacle {
 }
 
 impl MockTentacle {
+    /// 克隆一个"仍能观察捕获"的副本，供测试在**把 mock 交给 pipeline 之后**继续读它。
+    /// （CapturedTraceIds 内部是 Arc ⇒ 克隆是同一个观测点，不是副本。）
+    pub fn clone_for_capture(&self) -> Self {
+        Self {
+            tool_data: self.tool_data.clone(),
+            failing_tools: self.failing_tools.clone(),
+            captured_trace_ids: self.captured_trace_ids.clone(),
+            captured_bloom: self.captured_bloom.clone(),
+        }
+    }
+
     pub fn new() -> Self {
         Self::default()
     }
@@ -148,6 +159,37 @@ impl TentacleService for MockTentacle {
     }
 }
 
+/// ★ K25 根因修复（2026-10-09）：把 mock 的 shutdown 发送端**持到测试二进制结束**。
+///
+/// 为什么必须有它：`spawn_mock_tentacle` 返回的 sending 端一旦被 drop，oneshot 接收端就
+/// **立即** resolve ⇒ `serve_with_incoming_shutdown` 收到停机信号 ⇒ 服务器**停止 accept**
+/// （已建连接仍可服务、但会被 tear down）⇒ 之后唯一过网的阶段（s3 execute_calls）在传输层失败。
+/// 而 `_tx` 的下划线只表示"我不打算用它"，**不阻止它在函数返回时被 drop** —— 这就是真因。
+///
+/// 语义选择（有意）：**"活到我用完"**，而不是 `std::mem::forget` 的"永不关"——名字即意图。
+/// 判据（本轮实测）：修复前 `--test run_cycle_pipeline` 20 次约 25–28 个失败（~95% 红）；
+/// 修复后并行 20/20、串行 20/20 全绿；删掉调用 ⇒ 8 次立刻回到 36 个失败。
+///
+/// ⚠️ **新增调用者必须持有它**（`tests/stage_events.rs` 曾漏这一处 ⇒ 同名间歇红）。
+pub fn keep_mock_alive(tx: tokio::sync::oneshot::Sender<()>) {
+    use std::sync::{Mutex, OnceLock};
+    static LIVE: OnceLock<Mutex<Vec<tokio::sync::oneshot::Sender<()>>>> = OnceLock::new();
+    LIVE.get_or_init(|| Mutex::new(Vec::new())).lock().unwrap().push(tx);
+}
+
+/// ★ K25（2026-10-09）：让测试里的日志**不再静音**。
+///
+/// 根因排查时我用 `grep 'Pipeline execution failed'` 得到 0 次，并把它当成"该分支未走"的证据 ——
+/// **那是无效推理**：`tracing_subscriber::fmt::init()` 只出现在 `src/main.rs`，
+/// **测试二进制里根本没有订阅者**，所以任何 `warn!`/`info!` 都不输出。
+/// ⇒ 正确的兑现不是"记住仪器可能静音"，而是**让仪器不再静音**（幂等，可重复调用）。
+pub fn init_logs() {
+    let _ = tracing_subscriber::fmt()
+        .with_test_writer()
+        .with_max_level(tracing::Level::INFO)
+        .try_init();
+}
+
 /// Spawn the mock Tentacle server on an ephemeral port.
 /// Returns (endpoint, captured_trace_ids, shutdown_tx, join_handle)
 /// following the mind_integration pattern.
@@ -165,13 +207,36 @@ pub async fn spawn_mock_tentacle(
     let svc = TentacleServiceServer::new(mock);
     let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
     let handle = tokio::spawn(async move {
-        tonic::transport::Server::builder()
+
+        let result = tonic::transport::Server::builder()
             .add_service(svc)
             .serve_with_incoming_shutdown(TcpListenerStream::new(listener), async {
                 let _ = shutdown_rx.await;
             })
-            .await
-            .unwrap();
+            .await;
+        // ★ K25 / H5（2026-10-09）：原本这里是 `.unwrap()`，而调用方把 JoinHandle 丢成 `_handle`
+        //   ⇒ 该任务一旦 panic，**没有任何人看得见**（无声死亡），而受害者症状正是"工具调用没有执行"。
+        //   ⇒ 改为具名打印：错误不再被吞，是否真发生由此可测（先出声，再判定）。
+        if let Err(e) = result {
+            eprintln!("[K25-H5] mock tentacle server 退出（此前会被静默吞掉）: {e}");
+        }
+    });
+    /* ★ K25（2026-10-09）第 3 件尾巴：把"死亡无人知晓"一笔清掉。
+     * 原先返回 `handle`，调用方多写成 `_handle` ⇒ 服务器任务若 panic 或异常结束，
+     * **没有任何人知道**（H5 的沉默形态）。这里在**源头**加一个看守者：
+     * 由它 await 真 handle 并**具名打印**异常结束——包括 panic（JoinError::is_panic）。
+     * 返回给调用方的是看守者的 handle；调用方丢弃它也无妨（任务会继续跑完）。 */
+    let watched = handle;
+    // ★ 返回给调用方的**是看守者的** handle：调用方丢弃它也无妨（看守者会跑完），
+    //   **与本 ADR 修的 `_handle` 不是同类问题** —— 那个丢的是"真任务的唯一见证人"，
+    //   这个丢的是"见证人的收据"（见证人自己已经在跑了）。
+    let handle = tokio::spawn(async move {
+        if let Err(e) = watched.await {
+            // ★ 哨兵自己不能是哑巴：用 tracing 而不是 eprintln。
+            //   eprintln 在 CI 的默认输出里往往等于没有；而 `common::init_logs()` 已装好
+            //   subscriber ⇒ warn! 会走同一条可被采集的通道（静音仪器不能当证据的正向兑现）。
+            tracing::warn!("mock tentacle 任务异常结束: {e}（panic={}）", e.is_panic());
+        }
     });
     (format!("http://{}", addr), captured, shutdown_tx, handle)
 }
@@ -227,4 +292,32 @@ pub async fn connect_tentacle(
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
     panic!("tentacle gRPC server not ready at {endpoint}");
+}
+
+/// ADR-0048 D1 + ADR-0041 §7.5: the cross-source join key is a PER-RUN identity
+/// (`run-<digest>-p<16hex>`), so a byte-level replay comparison must compare the BODY and
+/// normalise the identity out. Normalising alone would be decoration — every caller ALSO
+/// asserts the two identities differ, which is the property B18 exists to create; with the
+/// old digest key those two assertions could not both hold, so this pair is the contract.
+pub fn normalise_period_ids(s: &str) -> String {
+    fn flush(out: &mut String, tok: &mut String) {
+        if anaphase::session_events::is_period_id(tok) {
+            out.push_str("<PERIOD>");
+        } else {
+            out.push_str(tok);
+        }
+        tok.clear();
+    }
+    let mut out = String::with_capacity(s.len());
+    let mut tok = String::new();
+    for ch in s.chars() {
+        if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+            tok.push(ch);
+        } else {
+            flush(&mut out, &mut tok);
+            out.push(ch);
+        }
+    }
+    flush(&mut out, &mut tok);
+    out
 }

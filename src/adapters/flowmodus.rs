@@ -41,6 +41,11 @@ pub struct GrpcFlowModusAdapter {
     client: FlowModusClient<Channel>,
     /// The model to ask for, from `reasoning_model`. Empty = let FlowModus route.
     model: String,
+    /// L0 identity + L1 tool awareness — sent as its OWN role on the wire, exactly as the HTTP
+    /// adapter sends it as a system message. Without this the block was assembled by
+    /// `build_identity_block` and then DROPPED here: measured 2026-10-09, asked "who are you",
+    /// the model answered "Qwen" because on this channel nothing ever told it otherwise.
+    system: String,
     /// What the last round trip actually was (ADR-0036 + 0038). Same shape as the
     /// HTTP adapter, for the same reason: this is response metadata already on the
     /// wire, and it is the ONLY source for `assistant/usage` and for the routed
@@ -49,7 +54,7 @@ pub struct GrpcFlowModusAdapter {
 }
 
 impl GrpcFlowModusAdapter {
-    pub async fn new(endpoint: &str, model: &str) -> Result<Self, Box<dyn std::error::Error>> {
+    pub async fn new(endpoint: &str, model: &str, system: Option<String>) -> Result<Self, Box<dyn std::error::Error>> {
         // tonic 的 Channel::from_shared 需要带 scheme（http://）的地址；
         // 调用方剥离 grpc:// 后只剩 host:port，这里补上（0 硬编码：只有缺 scheme 才补）。
         let addr = if endpoint.contains("://") {
@@ -64,6 +69,7 @@ impl GrpcFlowModusAdapter {
         Ok(Self {
             client,
             model: model.to_string(),
+            system: system.unwrap_or_default(),
             last_meta: std::sync::Arc::new(std::sync::Mutex::new(UpstreamMeta::default())),
         })
     }
@@ -76,6 +82,7 @@ impl ReasoningAdapter for GrpcFlowModusAdapter {
             prompt: prompt.to_string(),
             cognitive_mode: mode.to_string(),
             model: self.model.clone(),
+            system: self.system.clone(),
             max_tokens: 2048,
         });
         let response = self

@@ -29,13 +29,46 @@ use std::sync::{Arc, Mutex};
 
 /// Build a pipeline wired to a fresh MockTentacle with an injected clock.
 async fn build_pipeline(mock: MockTentacle, clock_now: u64) -> Pipeline {
-    let (endpoint, _captured, _tx, _handle) = spawn_mock_tentacle(mock).await;
+    common::init_logs();   // ★ K25：让 warn!/info! 在测试里出声（幂等）
+    let (endpoint, _captured, tx, _handle) = spawn_mock_tentacle(mock).await;
+    common::keep_mock_alive(tx);
     let tentacle = anaphase::adapters::tentacle::GrpcTentacleAdapter::new(&endpoint)
         .await
         .unwrap();
     let config = PipelineConfig::from_codex("knowledge_base/fixture-codex.json").unwrap();
     Pipeline::new(tentacle, Box::new(FakeClock(clock_now)), config)
 }
+
+
+/// K25 取证仪器（**常驻**：就绪时零成本；不修任何东西，只让红的那一刻有话说）。
+/// 上限 5s（上一版 2s 太短 —— 我用一个有上限的仪器去断言"永不到"，那是无效推理）。
+async fn wait_for_evidence(a: &anaphase::run_cycle::AgentLoop, cap: &common::CapturedTraceIds, ring: &std::sync::Arc<std::sync::Mutex<anaphase::events::EventRing>>, what: &str) -> Option<u128> {
+    let t0 = std::time::Instant::now();
+    loop {
+        if !a.context.evidence.is_empty() { return Some(t0.elapsed().as_millis()); }
+        if t0.elapsed().as_millis() >= 30000 {
+            // ★ A/B 判别：mock 那一侧收到了几次调用？
+            //   cap=0 ⇒ 调用【从未离开】(A) · cap>0 ⇒ 到了工具层却没产 evidence ⇒ 要看向应与记账(B)
+            eprintln!(
+                "[K25] {what}: evidence 30s 未就绪 ⇒ mock_captured={} calls={} verdict={:?} state={:?} reasoning[:60]={:?}",
+                cap.all().len(),
+                a.context.calls.len(), a.context.last_verdict, a.current_state,
+                a.context.reasoning_output.chars().take(60).collect::<String>());
+            // ★ 第三件探针：pipeline 自己发的事件。`begin calls=N` 与 `gate <presence>` 由
+            //   execute_calls 在【进入派发循环时】写出 ⇒ 读它就能分辨
+            //   "没进循环" / "进了但被门拦" / "进了但执行器静默失败"。
+            {
+                let ev = ring.lock().unwrap();
+                let rows: Vec<String> = ev.events().iter().map(|e| format!("s{}:{}={}", e.stage, e.phase, e.detail)).collect();
+                eprintln!("[K25] {what}: pipeline 事件环 {} 条 ⇒ {}", rows.len(), rows.join(" | "));
+            }
+            return None;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+}
+
+
 
 /// Agent with default adapters + a structured reasoning stub.
 fn base_agent(reason: Arc<dyn ReasoningAdapter>) -> AgentLoop {
@@ -56,10 +89,14 @@ fn base_agent(reason: Arc<dyn ReasoningAdapter>) -> AgentLoop {
 async fn run_cycle_full_chain_met() {
     let output = r#"{"calls":[{"tool":"numbers","args":{},"expect":"numbers"}],"impasse":false}"#;
     let mock = MockTentacle::new().with_tool("numbers", r#"{"series":[1.0,2.0,3.0,4.0]}"#);
+    // ★ K25 仪器：把 mock 侧的观测点留下来（Arc ⇒ 与交给 pipeline 的是同一个观测点）
+    let cap = mock.captured_trace_ids.clone();
+    let pl = build_pipeline(mock, 1000).await;
+    let ring = pl.events.clone();   // ★ 与 cap 同一技巧：交给 agent 之前先留下观测点
     let mut agent = base_agent(Arc::new(StructuredReasoning { output: output.into() }))
-        .with_pipeline(build_pipeline(mock, 1000).await);
+        .with_pipeline(pl);
 
-    agent.run_cycle("calculate").await.unwrap();
+    let out = agent.run_cycle("calculate").await.unwrap();
 
     // stage 1-2: structured plan parsed, deterministic envelope assembled.
     assert_eq!(agent.context.calls.len(), 1);
@@ -70,11 +107,14 @@ async fn run_cycle_full_chain_met() {
     assert_eq!(job.created_at, "1970-01-01T00:16:40Z", "clock 1000 -> RFC3339");
 
     // stage 3-4: executed via the pipeline, evidence recorded.
+    if let Some(ms) = wait_for_evidence(&agent, &cap, &ring, "full_chain").await {
+        eprintln!("[K25] full_chain: 就绪 {ms}ms");
+    }
     assert_eq!(agent.context.evidence.len(), 1);
     assert!(agent.context.evidence[0].ok);
 
     // stage 5-6: criteria MET verdict written to the ledger.
-    let records = agent.pipeline.as_ref().unwrap().ledger.records();
+    let records = &out.ledger;   /* the completion snapshot, not the live object */
     assert_eq!(records.len(), 1);
     match &records[0] {
         LedgerRecord::Verdict { status: VerdictStatus::Met, job_id, .. } => {
@@ -92,9 +132,9 @@ async fn run_cycle_full_chain_unmet() {
     let mut agent = base_agent(Arc::new(StructuredReasoning { output: output.into() }))
         .with_pipeline(build_pipeline(mock, 1000).await);
 
-    agent.run_cycle("calculate").await.unwrap();
+    let out = agent.run_cycle("calculate").await.unwrap();
 
-    let records = agent.pipeline.as_ref().unwrap().ledger.records();
+    let records = &out.ledger;   /* the completion snapshot */
     assert_eq!(records.len(), 1);
     match &records[0] {
         LedgerRecord::Verdict { status: VerdictStatus::Unmet, retry_due: Some(due), .. } => {
@@ -110,13 +150,13 @@ async fn run_cycle_unstructured_output_skips_pipeline() {
     let mut agent = base_agent(Arc::new(StructuredReasoning { output: "no plan here".into() }))
         .with_pipeline(build_pipeline(MockTentacle::new(), 1000).await);
 
-    agent.run_cycle("hi").await.unwrap();
+    let out = agent.run_cycle("hi").await.unwrap();
 
     assert!(agent.context.calls.is_empty());
     assert!(agent.context.evidence.is_empty());
     assert!(agent.context.job.is_none());
     assert!(
-        agent.pipeline.as_ref().unwrap().ledger.records().is_empty(),
+        out.ledger.is_empty(),
         "no plan -> no ledger record"
     );
 }
@@ -130,16 +170,24 @@ async fn run_cycle_deterministic_replay() {
 
     let mut a = base_agent(Arc::new(StructuredReasoning { output: output.into() }))
         .with_pipeline(build_pipeline(mk_tentacle(), 777).await);
-    a.run_cycle("compute ratio").await.unwrap();
+    let a_out = a.run_cycle("compute ratio").await.unwrap();
 
     let mut b = base_agent(Arc::new(StructuredReasoning { output: output.into() }))
         .with_pipeline(build_pipeline(mk_tentacle(), 777).await);
-    b.run_cycle("compute ratio").await.unwrap();
+    let b_out = b.run_cycle("compute ratio").await.unwrap();
 
+    /* ADR-0048 D1 / ADR-0041 §7.5: the join key is now a PER-RUN identity, so the replay
+     * comparison compares the BODY and normalises the identity out — and then asserts the two
+     * identities DIFFER. Only the second assertion is B18's contract; normalising without it
+     * would make this test decoration (measurement rule ⑨: prove it can go red). */
     assert_eq!(
-        a.pipeline.as_ref().unwrap().ledger.to_jsonl(),
-        b.pipeline.as_ref().unwrap().ledger.to_jsonl(),
-        "same input + same clock + same mock -> byte-identical ledger"
+        common::normalise_period_ids(&anaphase::ledger::Ledger::to_jsonl_of(&a_out.ledger)),
+        common::normalise_period_ids(&anaphase::ledger::Ledger::to_jsonl_of(&b_out.ledger)),
+        "same input + same clock + same mock -> byte-identical ledger, identity normalised out"
+    );
+    assert_ne!(
+        a.context.period_id, b.context.period_id,
+        "one input, two runs -> two identities (B18); equal ids here means the digest came back"
     );
 }
 
@@ -189,11 +237,16 @@ async fn run_config_soft_reflex_threshold_blocks() {
         ReflexArc { safety_rules: vec![] },
     )
     .with_pipeline(build_pipeline(MockTentacle::new(), 1000).await);
-    blocked.run_cycle("do it").await.unwrap();
+    let blocked_out = blocked.run_cycle("do it").await.unwrap();
     assert!(blocked.context.evidence.is_empty(), "blocked before execution");
-    assert!(blocked.pipeline.as_ref().unwrap().ledger.records().is_empty());
+    assert!(blocked_out.ledger.is_empty());
 
     // Raised threshold 0.9: the same p_death passes and executes.
+    // ★ K25 仪器：同受害点一，留下 mock 侧观测点
+    let m = MockTentacle::new().with_tool("numbers", r#"{"series":[1.0,2.0,3.0]}"#);
+    let cap = m.captured_trace_ids.clone();
+    let pl = build_pipeline(m, 1000).await;
+    let ring = pl.events.clone();
     let mut passed = AgentLoop::new(
         Arc::new(NoopMemoryAdapter),
         Arc::new(StructuredReasoning { output: output.into() }),
@@ -204,11 +257,11 @@ async fn run_config_soft_reflex_threshold_blocks() {
         ReflexArc { safety_rules: vec![] },
     )
     .with_run_config(RunCycleConfig { soft_reflex_threshold: 0.9, ..RunCycleConfig::default() })
-    .with_pipeline(
-        build_pipeline(MockTentacle::new().with_tool("numbers", r#"{"series":[1.0,2.0,3.0]}"#), 1000)
-            .await,
-    );
+    .with_pipeline(pl);
     passed.run_cycle("do it").await.unwrap();
+    if let Some(ms) = wait_for_evidence(&passed, &cap, &ring, "threshold-raised").await {
+        eprintln!("[K25] threshold-raised: 就绪 {ms}ms");
+    }
     assert_eq!(passed.context.evidence.len(), 1, "threshold raised -> executes");
 }
 
@@ -519,5 +572,63 @@ async fn a_reply_that_asks_for_a_tool_is_refused_even_in_prose_plus_tool_shape()
     assert!(
         !agent.context.reasoning_output.contains("\"tool\""),
         "a tool request must never reach the human as an answer"
+    );
+}
+
+/// B18 (ADR-0048 D1) — the **ledger** leg: two runs of ONE input must reach the ledger with two
+/// DIFFERENT keys.
+///
+/// WHY THIS ASSERTS THE ENVELOPE KEY: the ledger row's key is not invented in Reflection — it is
+/// `self.context.job.job_id`, read at `src/run_cycle/reflection.rs:30` and handed straight to
+/// `build_verdict(&job_id)`. The envelope is assembled in Reasoning (stage 2), before Execution,
+/// so asserting it needs no tool call, no mock server and no timing — while the ledger key is the
+/// SAME VALUE by that line. The equality itself is already pinned by
+/// `run_cycle_full_chain_met` (`assert_eq!(job_id, &job.job_id)`).
+///
+/// The obvious alternative — driving a tool call so a verdict row exists, then reading it — was
+/// tried and rejected: the in-process `MockTentacle` fails intermittently (measured: 2-6 of 15
+/// tests in this file red per run at default threads vs 1 at `--test-threads=1`; the same family
+/// hits `run_cycle_full_chain_met`/`_unmet`/`run_cycle_deterministic_replay`). That flake is
+/// PRE-EXISTING and out of scope, and a test that inherits it is not a contract test — so the
+/// assertion is on the deterministic source of the same value instead.
+///
+/// /// Mutation: revert the join key in `arm_reasoning` to `derive_job_id(&self.context.user_input)`
+/// /// ⇒ both envelopes carry the same digest ⇒ `assert_ne!(ka, kb)` goes red (measured).
+#[tokio::test]
+async fn two_runs_of_one_input_assemble_distinct_ledger_keys() {
+    let output = r#"{"calls":[{"tool":"numbers","args":{},"expect":"numbers"}],"impasse":false}"#;
+    let run = |mock: MockTentacle| {
+        let reason: Arc<dyn ReasoningAdapter> =
+            Arc::new(StructuredReasoning { output: output.into() });
+        async move {
+            let mut agent = base_agent(reason).with_pipeline(build_pipeline(mock, 1000).await);
+            agent.run_cycle("one input, two runs").await.unwrap();
+            agent
+                .context
+                .job
+                .as_ref()
+                .expect("the tt_job envelope is assembled in Reasoning (stage 2)")
+                .job_id
+                .clone()
+        }
+    };
+
+    let ka = run(MockTentacle::new().with_tool("numbers", r#"{"series":[1.0]}"#)).await;
+    let kb = run(MockTentacle::new().with_tool("numbers", r#"{"series":[1.0]}"#)).await;
+
+    assert_ne!(
+        ka, kb,
+        "B18: one input, two runs must reach the ledger with two keys, got {ka} and {kb}"
+    );
+    for k in [&ka, &kb] {
+        assert!(
+            anaphase::session_events::is_period_id(k),
+            "the ledger key must be an allocated period id, not a digest: {k}"
+        );
+    }
+    assert_ne!(
+        ka,
+        anaphase::contract::derive_job_id("one input, two runs"),
+        "the input digest is the OLD key and must not be used"
     );
 }

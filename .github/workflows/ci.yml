@@ -1,0 +1,81 @@
+# Anaphase · 真判据 CI（R12，2026-10-10）
+#
+# ★ 为什么需要它：此前本仓在 CI 矩阵里的"绿"来自 GitHub 自带的 `Graph Update: pip in /.`
+#   （依赖图更新，**与测试无关**）⇒ **它其实没有测试 CI**（reviewer D5 的对账结论）。
+#
+# 两道门都用**本仓自己的判据**（不另写第二套）：
+#   ① `cargo test --all-features --no-fail-fast`（实测本地 0 失败组 · 485 用例）
+#   ② `python3 ci/check_line_budget.py`（**本仓的行预算棘轮** —— 它曾在我改动别处时红过，
+#      而当时因为**没有 CI**没人自动发现 ⇒ 这项就是那次事故的守卫）
+name: ci
+on: [push, pull_request]
+jobs:
+  gate:
+    runs-on: ubuntu-24.04   # ★ 钉住（2026-10-10）：ubuntu-latest 将于 2026-10-19 迁到 Ubuntu 26
+                           #   ⇒ 不钉住 = 9 天后由【外部变更】决定我们的红绿（"今天绿"可能纯因环境）
+                           #   冻结是默认；预演 26 应是一次【有意】的实验，不是被动接受
+    steps:
+      - name: ⓪ 检出本仓（带 path ⇒ 与兄弟仓同层，镜像本地 workspace 布局）
+        uses: actions/checkout@v4
+        with:
+          path: anaphase-helix
+      - name: ⓪·1 检出兄弟仓（测试的【被检对象】在 workspace 里，不只是本仓）
+        uses: actions/checkout@v4
+        with:
+          repository: Jasonmilk/helix-mind
+          ref: rs
+          path: helix-mind
+      - name: ⓪·2 物化【完整工作区】的其余兄弟仓（跨仓判据的被检对象是 workspace 本身）
+        uses: actions/checkout@v4
+        with: { repository: Jasonmilk/Cellrix,   ref: rs, path: Cellrix }
+      - uses: actions/checkout@v4
+        with: { repository: Jasonmilk/FlowModus, ref: rs, path: FlowModus }
+      - uses: actions/checkout@v4
+        with: { repository: Jasonmilk/Tuck,      ref: rs, path: Tuck }
+      - uses: actions/checkout@v4
+        with: { repository: Jasonmilk/phyt-DNA,  ref: v2,  path: phyt-DNA }
+      - name: ⓪·3 工作区自检（缺仓 ⇒ 立刻具名，别让判据在残缺工作区上假装通过）
+        run: |
+          for d in anaphase-helix helix-mind Cellrix FlowModus Tuck phyt-DNA; do
+            if [ -d "$d/.git" ]; then echo "  ✅ $d"; else echo "::error title=工作区缺仓::$d 未被检出 —— 跨仓判据此时不可信"; exit 1; fi
+          done
+      - name: ⓪ 系统依赖（prost-build 需要 protoc ⇒ 这是 K32 古红的根因）
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq protobuf-compiler
+      - run: rustup toolchain install stable --profile minimal && rustup default stable
+      - name: ① 测试（本仓判据）
+        working-directory: anaphase-helix
+        run: |
+          set +e
+          # ★ 判据的【适用范围】声明（2026-10-10）：跨仓判据的被检对象是**开发者工作区**
+          #   （hook 声明点名 18 个名字：12 个顶层仓 + 6 个 commonintents/*）⇒ CI 里必然不完整。
+          #   绝不让 CI 用"自设 PARTIAL 变量"让测试跳过（那正是 a checker must not sign its own pass）。
+          #   故：本判据在 CI 中【显式不适用】，但必须【具名打印】，且本地（完整工作区）仍严格判它。
+          echo "::warning title=判据适用范围::跨仓判据（the_declared_hook_repo_list_covers_every_repo_in_the_workspace）在 CI 中不适用：被检对象是开发者工作区（18 个名字），CI 里不完整 ⇒ 交由本地判（K34）"
+          cargo test --all-features --no-fail-fast -- --skip the_declared_hook_repo_list_covers_every_repo_in_the_workspace 2>&1 | tee /tmp/test.log
+          rc=${PIPESTATUS[0]}
+          if [ "$rc" != 0 ]; then echo "--- 末尾 150 行（完整见 artifact）---"; tail -150 /tmp/test.log; fi
+          # ★★ 耐久修法（reviewer Ⓑ，2026-10-10）：**把失败尾部同时写进 job summary** ——
+          #   CI logs 要 admin（403）· artifact 下载要凭据（401）⇒ **两者我都读不到**。
+          #   而 **job summary 是公开可读的**（网页上直接看）⇒ **从此不依赖任何凭据**。
+          if [ "$rc" != 0 ]; then
+            { echo '## 失败尾部（前 120 行）'; echo '```'; tail -120 /tmp/*.log 2>/dev/null | head -120; echo '```'; } >> "$GITHUB_STEP_SUMMARY" || true
+          fi
+          # ★ 失败必须【在机器读得到的地方具名】（2026-10-10 已在 helix-mind 验证有效）：
+          #   logs 需 admin(403) · artifacts 需凭据(401) · job summary 的 API output.summary 为 null
+          #   ⇒ 而 **annotations 公开可读** ⇒ 失败行写成 ::error ⇒ 读数由工具自己出，不靠人肉粘贴。
+          if [ "$rc" != 0 ]; then
+            # ① 测试名 + 失败位置 ② **断言原文**（`panicked at` 之后那几行才是根因）
+            { grep -aE "^test .* FAILED|^failures:$|panicked at|^error(\[|:)|No such file|NotFound|Could not find|cannot find|^assertion" /tmp/test.log | head -12
+              grep -aA4 "panicked at" /tmp/test.log | grep -avE "^--|^\s*$" | head -14
+            } | awk '!seen[$0]++' | head -24 | while IFS= read -r _l; do
+                echo "::error title=失败具名::$(printf %s "$_l" | tr -d "\r" | cut -c1-400)"
+              done
+          fi
+          exit $rc
+      - name: ② 行预算棘轮（本仓判据）
+        working-directory: anaphase-helix
+        run: python3 ci/check_line_budget.py
+      - name: 上传日志
+        if: always()
+        uses: actions/upload-artifact@v4
+        with: { name: test-log, path: /tmp/test.log, if-no-files-found: warn }

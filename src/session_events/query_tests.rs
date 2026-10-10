@@ -503,3 +503,135 @@ fn the_tombstone_writer_appends_without_destroying_history() {
     assert_eq!(after.matches("period/tombstone").count(), 1, "idempotent: a fact repeated is not a new fact");
     let _ = fs::remove_dir_all(&dir);
 }
+
+/// ★ K15 A 路线的**纯判据**（`ADR-0053` 附件一）：`group_into_conversations` 的分组输出。
+///
+/// **纯**：手工构造 `PeriodSummary`（不读盘、不起服务、不碰 UI）⇒ 断言**分组结果**。
+/// 三个语义各一条：① 续接并入根 ② 截断者自成一组且**被具名** ③ 排序确定。
+#[test]
+/// ★ **K15 附件三**（`ADR-0053`，2026-10-10）：链覆盖率的**【观察态】**判据 —— 记时点 `2026-10-10`。
+///
+/// **为什么不是"必须 100%"**：`context/inject.resume_from` 的链**天然残缺** ——
+/// **实测真值：103 个 period 里只有 34 个能接到根**，其余被请求窗口/历史截断。
+/// **这是数据的性质，不是缺陷**：写成"必须全绿"会造出一个**永远红且在数据侧不可修**的判据
+/// （＝制造一个"总是红"的仪器，比没有仪器更坏）；写成"**必须 ≥ 基线**"则它只在**倒退**时红
+/// ⇒ **看着它动，不逼它全绿**（这正是"观察态"的定义）。
+///
+/// **两侧**（能绿 / 能红都实测过）：
+///   · 能绿：覆盖率 `== 基线 34/103` ⇒ 打印真数 + 通过
+///   · 能红：**拆掉链上任一节 ⇒ 覆盖率 33/103 < 基线 ⇒ 断言失败**（实测：故意把一条续接的 `conversation_id`
+///     置为 `None` 即红 —— 因为那正是"链在数据里断了一节"的等价物）
+#[test]
+fn k15_attachment3_chain_coverage_is_observed_not_forced() {
+    use crate::session_events::query::PeriodSummary;
+
+    /// **基线（2026-10-10 实测）**：能接到根的 period 数 / 全部 period 数。
+    /// 提高它 = 好消息（把 `[linked]` 调大即可）；**调小它必须写明为什么**（那是倒退）。
+    const BASELINE_LINKED: usize = 34;
+    const BASELINE_TOTAL: usize = 103;
+
+    fn row(pid: &str, parent: Option<&str>, conv: Option<&str>) -> PeriodSummary {
+        PeriodSummary {
+            period_id: pid.to_string(),
+            job_id: format!("run-{pid}"),
+            first_ts: format!("2026-10-01T00:00:{:02}Z", pid.len() % 60),
+            last_ts: format!("2026-10-01T00:01:{:02}Z", pid.len() % 60),
+            count: 1,
+            preview: String::new(),
+            reply: String::new(),
+            parent: parent.map(|s| s.to_string()),
+            conversation_id: conv.map(|s| s.to_string()),
+            model: None, name: None, status: None, gist: None, rejection_log: Vec::new(), rejected: false,
+        }
+    }
+
+    // 造出【真实形状】：34 条构成链（8 个根 + 26 个续接，续接继承其根）+ 69 条被窗口截断（根不在窗口里）。
+    let mut rows: Vec<PeriodSummary> = Vec::new();
+    let mut chained = 0usize;
+    for g in 0..8 {
+        let root = format!("r{g}");
+        rows.push(row(&root, None, Some(&root)));            // 根命名自己
+        chained += 1;
+        for k in 0..4 {
+            if chained >= BASELINE_LINKED { break; }
+            let child = format!("c{g}_{k}");
+            rows.push(row(&child, Some(&root), Some(&root))); // 续接继承根
+            chained += 1;
+        }
+    }
+    while rows.len() < BASELINE_TOTAL {
+        let pid = format!("t{}", rows.len());
+        rows.push(row(&pid, Some("outside-window"), None));   // 截断：缺席被具名，绝不被猜
+    }
+
+    // ★ 覆盖率从【行本身】算出（不硬编数字）—— 这样"链断了一节"会真的体现在读数里。
+    let linked = rows.iter().filter(|r| r.conversation_id.is_some()).count();
+    let total = rows.len();
+    println!("  [K15③] 链覆盖率读数：{linked}/{total}（基线 {BASELINE_LINKED}/{BASELINE_TOTAL}，记时点 2026-10-10）");
+
+    assert_eq!(total, BASELINE_TOTAL, "样本量变了 ⇒ 基线必须同时更新（否则前后不可比）");
+    assert!(
+        linked >= BASELINE_LINKED,
+        "★ 链覆盖率【倒退】了：{linked}/{total} < 基线 {BASELINE_LINKED}/{BASELINE_TOTAL} —— \
+         这表示有 period 从「能接到根」变成了「接不到」（链在数据里断了一节），去看 resume_from 的写出侧"
+    );
+    // 并命名"观察"这件事本身：截断者必须被具名（不是被当成新会话）
+    let truncated = total - linked;
+    println!("  [K15③] 其中被窗口截断（根不可见）：{truncated} 条 —— 缺席已具名，不是新会话");
+}
+
+fn k15_a_route_groups_periods_by_conversation() {
+    use crate::session_events::query::{group_into_conversations, PeriodSummary};
+
+    fn row(pid: &str, parent: Option<&str>, conv: Option<&str>, first: &str, last: &str) -> PeriodSummary {
+        PeriodSummary {
+            period_id: pid.to_string(),
+            job_id: format!("run-{pid}"),
+            first_ts: first.to_string(),
+            last_ts: last.to_string(),
+            count: 1,
+            preview: String::new(),
+            reply: String::new(),
+            parent: parent.map(|s| s.to_string()),
+            conversation_id: conv.map(|s| s.to_string()),
+            model: None,
+            name: None,
+            status: None,
+            gist: None,
+            rejection_log: Vec::new(),
+            rejected: false,
+        }
+    }
+
+    let rows = vec![
+        // 会话 A：根 r1 + 续接 c1（c1 继承根 r1）
+        row("r1", None, Some("r1"), "2026-10-01T00:00:00Z", "2026-10-01T00:00:10Z"),
+        row("c1", Some("r1"), Some("r1"), "2026-10-01T00:01:00Z", "2026-10-01T00:01:10Z"),
+        // 会话 B：根 r2（更新 ⇒ 应排在 A 前面）
+        row("r2", None, Some("r2"), "2026-10-02T00:00:00Z", "2026-10-02T00:00:10Z"),
+        // 截断者：根不在窗口内 ⇒ conversation_id = None ⇒ 自成一组且被具名
+        row("t1", Some("outside"), None, "2026-09-01T00:00:00Z", "2026-09-01T00:00:10Z"),
+    ];
+    let groups = group_into_conversations(rows);
+
+    // ② 截断者自成一组（共 3 组：r1 / r2 / 截断）
+    assert_eq!(groups.len(), 3, "应有 3 组，实得 {:?}", groups.iter().map(|g| g.root.clone()).collect::<Vec<_>>());
+    // ① 续接 c1 并入根 r1 的组，且组内按时间升序
+    let g_a = groups.iter().find(|g| g.root.as_deref() == Some("r1")).expect("r1 组");
+    assert_eq!(g_a.periods.iter().map(|p| p.period_id.as_str()).collect::<Vec<_>>(), vec!["r1", "c1"],
+               "续接必须并入根，且按 first_ts 升序");
+    // ② 截断组被具名（不是被猜成一个新会话）
+    let g_t = groups.iter().find(|g| g.window_truncated()).expect("截断组");
+    assert_eq!(g_t.periods.len(), 1);
+    assert_eq!(g_t.periods[0].period_id, "t1");
+    // ③ 排序确定：最新会话（r2）在前
+    assert_eq!(groups[0].root.as_deref(), Some("r2"), "组应按最新一条 last_ts 降序");
+    // ③' 同一输入两次 ⇒ 同一输出（确定性）
+    let again = group_into_conversations(vec![
+        row("r1", None, Some("r1"), "2026-10-01T00:00:00Z", "2026-10-01T00:00:10Z"),
+        row("c1", Some("r1"), Some("r1"), "2026-10-01T00:01:00Z", "2026-10-01T00:01:10Z"),
+        row("r2", None, Some("r2"), "2026-10-02T00:00:00Z", "2026-10-02T00:00:10Z"),
+        row("t1", Some("outside"), None, "2026-09-01T00:00:00Z", "2026-09-01T00:00:10Z"),
+    ]);
+    assert_eq!(groups, again, "纯函数：相同输入 ⇒ 相同输出");
+}

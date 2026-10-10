@@ -20,7 +20,8 @@ use common::{spawn_mock_tentacle, MockTentacle, StructuredReasoning};
 use std::sync::Arc;
 
 async fn build_pipeline(mock: MockTentacle, clock_now: u64) -> Pipeline {
-    let (endpoint, _captured, _tx, _handle) = spawn_mock_tentacle(mock).await;
+    let (endpoint, _captured, tx, _handle) = spawn_mock_tentacle(mock).await;
+    common::keep_mock_alive(tx);   // ★ K25：`_tx` 会在本函数返回时被 drop ⇒ 服务器提前停机（见 common）
     let tentacle = anaphase::adapters::tentacle::GrpcTentacleAdapter::new(&endpoint)
         .await
         .unwrap();
@@ -108,7 +109,17 @@ async fn deterministic_replay_same_clock_same_trail() {
     b.run_cycle("numbers").await.expect("b runs");
     let ea = a.pipeline.as_ref().unwrap().events.lock().unwrap().to_jsonl();
     let eb = b.pipeline.as_ref().unwrap().events.lock().unwrap().to_jsonl();
-    assert_eq!(ea, eb, "same input + same clock -> byte-identical event trail");
+    /* ADR-0048 D1 / ADR-0041 §7.5: compare the trail with the per-run IDENTITY normalised
+     * out, THEN assert the identities differ — B18's contract is the second line. */
+    assert_eq!(
+        common::normalise_period_ids(&ea),
+        common::normalise_period_ids(&eb),
+        "same input + same clock -> byte-identical event trail, identity normalised out"
+    );
+    assert_ne!(
+        a.context.period_id, b.context.period_id,
+        "one input, two runs -> two identities (B18); equal ids here means the digest came back"
+    );
 }
 
 #[tokio::test]

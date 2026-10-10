@@ -1,6 +1,8 @@
 //! Reasoning body trace (ProveTrack join): the round trip is appended
-//! redacted + truncated, keyed by the derived job id — joinable with the
-//! Tuck audit chain and the ledger in Cellrix's ProveTrack view.
+//! redacted + truncated, keyed by THIS PERIOD'S allocated id (`ADR-0048` D1, B18) —
+//! joinable with the Tuck audit chain and the ledger in Cellrix's ProveTrack view.
+//! It used to be keyed by the derived job id; that is an input digest, so two runs of
+//! one input shared a key (measured 2026-10-09: 462 periods onto 56 digests, 219:1 worst).
 
 use std::sync::Arc;
 
@@ -41,11 +43,23 @@ async fn reasoning_round_trip_is_recorded_redacted() {
     let entry: anaphase::trace::ReasoningEntry =
         serde_json::from_str(content.trim()).unwrap();
 
-    // The trace id is the derived job id — the join key with chain + ledger.
+    // ADR-0048 D1 (B18): the join key is the ALLOCATED period id, not the input digest.
+    // Under the digest, two runs of one input shared a key — measured on the live store
+    // (M0.5): 462 periods came from 56 digests, one of them covering 219 runs.
+    assert!(
+        anaphase::session_events::is_period_id(&entry.trace_id),
+        "the join key must be an allocated period id: {}",
+        entry.trace_id
+    );
     assert_eq!(
+        Some(&entry.trace_id),
+        agent.context.period_id.as_ref(),
+        "the body trace must key on THIS period's identity"
+    );
+    assert_ne!(
         entry.trace_id,
         anaphase::contract::derive_job_id(input),
-        "join key mismatch"
+        "the input digest is the OLD key and must not be used"
     );
     assert_eq!(entry.seq, 0);
     // Credentials never touch disk — the 2026-09-07 audit's lesson.

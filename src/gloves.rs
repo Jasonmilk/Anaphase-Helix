@@ -328,10 +328,10 @@ mod tests {
     #[test]
     fn cellrix_probe_target_precedence() {
         let mut cfg = crate::config::AnaphaseConfig::default();
-        cfg.cellrix_endpoint = Some("http://127.0.0.1:18932".to_string());
+        cfg.cellrix_endpoint = Some("http://127.0.0.1:50050".to_string());
         assert_eq!(
             cellrix_probe_target(&cfg).as_deref(),
-            Some("http://127.0.0.1:18932"),
+            Some("http://127.0.0.1:50050"),
             "explicit endpoint wins over cap_http"
         );
 

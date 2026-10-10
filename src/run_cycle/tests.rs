@@ -173,6 +173,25 @@ use std::sync::Arc;
         );
     }
 
+    /// ADR-0048 D1: normalise the per-run period id out of a JSONL trail. The replay assertion
+    /// then tests what it always meant (the same body under the same clock), while the paired
+    /// `assert_ne!` keeps B18's contract — the identities MUST differ, or the digest came back.
+    fn normalise_period_ids(s: &str) -> String {
+        let mut out = String::with_capacity(s.len());
+        let mut tok = String::new();
+        for ch in s.chars() {
+            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+                tok.push(ch);
+            } else {
+                out.push_str(if crate::session_events::is_period_id(&tok) { "<PERIOD>" } else { &tok });
+                tok.clear();
+                out.push(ch);
+            }
+        }
+        out.push_str(if crate::session_events::is_period_id(&tok) { "<PERIOD>" } else { &tok });
+        out
+    }
+
     #[tokio::test]
     async fn black_box_replays_byte_identical_under_fake_clock() {
         // ADR-0021 (fix): the black box REUSES the ledger Clock — under
@@ -193,7 +212,18 @@ use std::sync::Arc;
         let _ = b.run_cycle("!tool numbers --n 3").await.unwrap();
         let ea = a.events.as_ref().unwrap().lock().unwrap().to_jsonl();
         let eb = b.events.as_ref().unwrap().lock().unwrap().to_jsonl();
-        assert_eq!(ea, eb, "same FakeClock -> byte-identical black box replay");
+        /* ADR-0048 D1 / ADR-0041 §7.5: the trail now carries a PER-RUN identity, so the replay
+         * comparison normalises it out and then asserts the two identities DIFFER — the second
+         * line is B18's contract (with the old digest key it could not hold). */
+        assert_eq!(
+            normalise_period_ids(&ea),
+            normalise_period_ids(&eb),
+            "same FakeClock -> byte-identical black box replay, identity normalised out"
+        );
+        assert_ne!(
+            a.context.period_id, b.context.period_id,
+            "one input, two runs -> two identities (B18); equal ids means the digest came back"
+        );
         assert!(
             ea.contains("1970-01-01T00:16:40Z"),
             "FakeClock(1000) ts lands in the JSONL (deterministic)"
@@ -1216,3 +1246,62 @@ async fn every_block_path_rings_the_bell() {
         "the hard-rule block must also ring the bell, or only the newest path is audible"
     );
 }
+
+    /// The join-key SPY (ADR-0048 / B18): records the trace id handed to the
+    /// reasoning adapter — the value that becomes `x-tuck-trace` at the gateway,
+    /// so it is the one the Tuck chain, the ledger and the body trace all key on.
+    struct JoinKeySpy(Arc<std::sync::Mutex<Vec<String>>>);
+
+    #[async_trait]
+    impl crate::adapters::ReasoningAdapter for JoinKeySpy {
+        async fn reason(&self, _input: &str, _mode: &str, trace_id: &str) -> Result<String, String> {
+            self.0.lock().unwrap().push(trace_id.to_string());
+            Ok("{\"calls\":[],\"impasse\":false}".to_string())
+        }
+    }
+
+    /// B18 (ADR-0048 D1): the cross-source join key is the PERIOD id, not the
+    /// input digest. Two runs of ONE input must hand the adapter two DIFFERENT
+    /// keys. Before this they handed it the same one — measured on the live store
+    /// (M0.5, 2026-10-09), 462 periods shared only 56 digests and one digest
+    /// covered 219 runs, so the Tuck chain / ledger / body trace merged 219
+    /// executions into a single line.
+    ///
+    /// /// Mutation: in `arm_reasoning`, revert `let trace_id = self.context.period_id…`
+    /// /// to `crate::contract::derive_job_id(&self.context.user_input)` ⇒ both keys
+    /// /// become the same digest ⇒ `assert_ne!(keys[0], keys[1])` goes red.
+    #[tokio::test]
+    async fn two_runs_of_one_input_hand_the_adapter_distinct_join_keys() {
+        let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let mut agent = AgentLoop::new(
+            Arc::new(NoopMemoryAdapter),
+            Arc::new(JoinKeySpy(seen.clone())),
+            Arc::new(NoopToolAdapter),
+            Arc::new(NoopSafetyAdapter),
+            Arc::new(NoopUiAdapter),
+            Arc::new(NoopFearAdapter),
+            ReflexArc {
+                safety_rules: vec![],
+            },
+        );
+        agent.run_cycle("one input, two runs").await.unwrap();
+        agent.run_cycle("one input, two runs").await.unwrap();
+
+        let keys = seen.lock().unwrap().clone();
+        assert_eq!(keys.len(), 2, "two runs => two adapter calls: {keys:?}");
+        assert_ne!(
+            keys[0], keys[1],
+            "B18: one input, two runs must yield two join keys, got {keys:?}"
+        );
+        for k in &keys {
+            assert!(
+                crate::session_events::is_period_id(k),
+                "the join key must be an ALLOCATED period id, not a digest: {k}"
+            );
+        }
+        assert_ne!(
+            keys[0],
+            crate::contract::derive_job_id("one input, two runs"),
+            "the input digest is the OLD key and must not be used at all"
+        );
+    }

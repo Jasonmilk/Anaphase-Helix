@@ -14,7 +14,7 @@ mod tests {
     use super::*;
 
     fn outcome(done: bool, success: bool, impasse: bool) -> CycleOutcome {
-        CycleOutcome { done, success, impasse }
+        CycleOutcome { done, success, impasse, ledger: Vec::new() }
     }
 
     /// The invariant the loop relies on, asserted rather than assumed.

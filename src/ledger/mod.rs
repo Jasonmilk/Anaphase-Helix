@@ -42,6 +42,24 @@ pub enum LedgerRecord {
         reason: String,
         identity_label: Option<String>,
     },
+    /// A dispatched call that failed at the execution/transport layer (no evidence produced).
+    ///
+    /// **Its own kind, not `Blocked`**: `Blocked` means something *refused* the call; nothing
+    /// refused this one — it was dispatched and the channel failed (reusing the name would be
+    /// one name for two meanings, K19's disease).
+    /// **Why it exists** (`run_cycle/mod.rs:722`): that failure used to be a `warn!` only, so the
+    /// run looked like one where nothing was attempted — a missing node. Measured cost: that
+    /// `warn!` is invisible in test binaries (no subscriber) and misled a K25 session.
+    ExecutionFailed {
+        job_id: String,
+        tool: String,
+        index: u32,
+        /// Stable, greppable class (e.g. `"transport"`) — deliberately NOT the raw text, so a
+        /// consumer can count classes without parsing prose; the text goes in `detail`.
+        class: String,
+        detail: String,
+        identity_label: Option<String>,
+    },
 }
 
 impl LedgerRecord {
@@ -70,6 +88,25 @@ impl LedgerRecord {
             check_reports,
             retry_due: Some(retry_due),
             parent_id,
+        }
+    }
+
+    /// A dispatched call that failed at the execution/transport layer. See the variant doc.
+    pub fn execution_failed(
+        job_id: &str,
+        tool: &str,
+        index: u32,
+        class: &str,
+        detail: &str,
+        identity_label: Option<&str>,
+    ) -> Self {
+        LedgerRecord::ExecutionFailed {
+            job_id: job_id.to_string(),
+            tool: tool.to_string(),
+            index,
+            class: class.to_string(),
+            detail: detail.to_string(),
+            identity_label: identity_label.map(|s| s.to_string()),
         }
     }
 
@@ -246,8 +283,15 @@ impl Ledger {
 
     /// Lossless JSONL serialization.
     pub fn to_jsonl(&self) -> String {
+        Self::to_jsonl_of(&self.records)
+    }
+
+    /// ONE SERIALISATION, TWO ENTRY POINTS (2026-10-09). Callers that hold a COMPLETION SNAPSHOT
+    /// (`CycleOutcome.ledger`) must be able to render it the same way as a live `Ledger` — otherwise
+    /// they would have to reach back into the live object, which is the thing being closed off.
+    pub fn to_jsonl_of(records: &[LedgerRecord]) -> String {
         let mut out = String::new();
-        for r in &self.records {
+        for r in records {
             out.push_str(&serde_json::to_string(r).expect("serialize ledger record"));
             out.push('\n');
         }

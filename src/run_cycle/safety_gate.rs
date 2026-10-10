@@ -49,7 +49,7 @@ pub(super) enum OnAuditError {
 /// Not `Copy`: `TransitionCondition` carries `Clone` only, and it is the thing a
 /// refusal hands back.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) enum GateVerdict {
+pub(super) enum ToolGateOutcome {
     /// Both checks cleared. The caller may run the tool.
     Cleared,
     /// Do not run the tool, and report this transition. Read this together with
@@ -73,32 +73,32 @@ pub(super) async fn admit(
     tool: &str,
     actions: &[String],
     on_audit_error: OnAuditError,
-) -> GateVerdict {
+) -> ToolGateOutcome {
     match hitl.check_approval(tool, actions) {
         /* THE FOUR ANSWERS KEEP FOUR NAMES (ADR-0048 §226) — in the LOG, because the verdict's
-         * payload type cannot carry them yet: `GateVerdict::Refused(TransitionCondition)` holds a
+         * payload type cannot carry them yet: `ToolGateOutcome::Refused(TransitionCondition)` holds a
          * state-machine condition, not a reason. So the folding is one layer deeper than the
          * boolean was: the closed set now flows out of the approver, and the next pipe to widen is
-         * this payload (a third `GateVerdict` variant carrying a reason). Recorded, not papered. */
+         * this payload (a third `ToolGateOutcome` variant carrying a reason). Recorded, not papered. */
         crate::hitl::ApprovalOutcome::AllowedOnce => {}
         crate::hitl::ApprovalOutcome::Rejected => {
             warn!("[SafetyGate] HITL rejected {tool:?} (hitl-rejected: a human refused)");
-            return GateVerdict::Refused(TransitionCondition::Failure);
+            return ToolGateOutcome::Refused(TransitionCondition::Failure);
         }
         crate::hitl::ApprovalOutcome::Cancelled => {
             warn!("[SafetyGate] HITL cancelled {tool:?} (hitl-cancelled: withdrawn mid-question)");
-            return GateVerdict::Refused(TransitionCondition::Failure);
+            return ToolGateOutcome::Refused(TransitionCondition::Failure);
         }
         crate::hitl::ApprovalOutcome::Unavailable => {
             warn!("[SafetyGate] HITL unavailable for {tool:?}, blocked (fail-closed) (hitl-unavailable: no channel could answer)");
-            return GateVerdict::Refused(TransitionCondition::Failure);
+            return ToolGateOutcome::Refused(TransitionCondition::Failure);
         }
     }
     match safety.audit("execute", tool).await {
-        Ok(true) => GateVerdict::Cleared,
+        Ok(true) => ToolGateOutcome::Cleared,
         Ok(false) => {
             warn!("[SafetyGate] Safety audit rejected {tool:?}");
-            GateVerdict::Refused(TransitionCondition::Failure)
+            ToolGateOutcome::Refused(TransitionCondition::Failure)
         }
         Err(e) => match on_audit_error {
             // The message says ALLOWING in capitals on purpose: this is the one
@@ -109,11 +109,11 @@ pub(super) async fn admit(
                     "[SafetyGate] Safety audit unavailable for {tool:?}: ALLOWING and reporting \
                      success without running it (K-033, legacy path): {e}"
                 );
-                GateVerdict::Refused(TransitionCondition::Success)
+                ToolGateOutcome::Refused(TransitionCondition::Success)
             }
             OnAuditError::Block => {
                 warn!("[SafetyGate] Safety audit unavailable for {tool:?}, blocked (fail-closed): {e}");
-                GateVerdict::Refused(TransitionCondition::Failure)
+                ToolGateOutcome::Refused(TransitionCondition::Failure)
             }
         },
     }

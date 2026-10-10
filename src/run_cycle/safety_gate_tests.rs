@@ -14,7 +14,7 @@
 //! `*_tests.rs` from the line budget, and an inline test module in a production
 //! file is budgeted as production.
 
-use super::safety_gate::{admit, GateVerdict, OnAuditError};
+use super::safety_gate::{admit, ToolGateOutcome, OnAuditError};
 use super::TransitionCondition;
 use crate::adapters::SafetyAdapter;
 use crate::hitl::HITLApprover;
@@ -66,7 +66,7 @@ async fn every_gate_branch_answers_what_it_answers_today() {
         hitl: Result<bool, String>,
         audit: Result<bool, String>,
         policy: OnAuditError,
-        expected: GateVerdict,
+        expected: ToolGateOutcome,
     }
     use OnAuditError::{Block, ReportSuccess};
 
@@ -76,35 +76,35 @@ async fn every_gate_branch_answers_what_it_answers_today() {
             hitl: Ok(true),
             audit: Ok(true),
             policy: ReportSuccess,
-            expected: GateVerdict::Cleared,
+            expected: ToolGateOutcome::Cleared,
         },
         Row {
             label: "low risk, audit clears (block policy: same)",
             hitl: Ok(true),
             audit: Ok(true),
             policy: Block,
-            expected: GateVerdict::Cleared,
+            expected: ToolGateOutcome::Cleared,
         },
         Row {
             label: "HITL refuses (high risk)",
             hitl: Ok(false),
             audit: Ok(true),
             policy: ReportSuccess,
-            expected: GateVerdict::Refused(TransitionCondition::Failure),
+            expected: ToolGateOutcome::Refused(TransitionCondition::Failure),
         },
         Row {
             label: "HITL has no channel (high risk, fail-closed)",
             hitl: Err("no channel".into()),
             audit: Ok(true),
             policy: ReportSuccess,
-            expected: GateVerdict::Refused(TransitionCondition::Failure),
+            expected: ToolGateOutcome::Refused(TransitionCondition::Failure),
         },
         Row {
             label: "audit refuses",
             hitl: Ok(true),
             audit: Ok(false),
             policy: ReportSuccess,
-            expected: GateVerdict::Refused(TransitionCondition::Failure),
+            expected: ToolGateOutcome::Refused(TransitionCondition::Failure),
         },
         // ---------------------------------------------------------- K-033 pair
         Row {
@@ -112,14 +112,14 @@ async fn every_gate_branch_answers_what_it_answers_today() {
             hitl: Ok(true),
             audit: Err("audit backend down".into()),
             policy: ReportSuccess,
-            expected: GateVerdict::Refused(TransitionCondition::Success),
+            expected: ToolGateOutcome::Refused(TransitionCondition::Success),
         },
         Row {
             label: "K-033 structured: audit cannot run, so the period FAILS",
             hitl: Ok(true),
             audit: Err("audit backend down".into()),
             policy: Block,
-            expected: GateVerdict::Refused(TransitionCondition::Failure),
+            expected: ToolGateOutcome::Refused(TransitionCondition::Failure),
         },
     ];
 
@@ -163,7 +163,7 @@ async fn pc1_a_low_risk_tool_is_not_consulted_and_a_high_risk_one_is() {
         0,
         "a low-risk tool must not reach the approver at all"
     );
-    assert_eq!(low, GateVerdict::Cleared);
+    assert_eq!(low, ToolGateOutcome::Cleared);
 
     // PC-1 proper: the same instrument, on a path it cannot miss.
     let high = admit(&counting, &safety, HIGH_RISK, &no_args(), OnAuditError::Block).await;
@@ -174,7 +174,7 @@ async fn pc1_a_low_risk_tool_is_not_consulted_and_a_high_risk_one_is() {
          the risk classifier changed or the instrument is broken -- and the `0` \
          asserted above means nothing until this one is non-zero"
     );
-    assert_eq!(high, GateVerdict::Refused(TransitionCondition::Failure));
+    assert_eq!(high, ToolGateOutcome::Refused(TransitionCondition::Failure));
 }
 
 /// **PC-2.** The control for the control: prove PC-1 is reading the counter and
@@ -271,6 +271,6 @@ async fn the_two_policies_disagree_and_that_is_the_recorded_defect() {
         "if these ever agree, K-033 has been resolved — update the pit record, \
          and replace this test with one that asserts the single shared answer"
     );
-    assert_eq!(legacy, GateVerdict::Refused(TransitionCondition::Success));
-    assert_eq!(structured, GateVerdict::Refused(TransitionCondition::Failure));
+    assert_eq!(legacy, ToolGateOutcome::Refused(TransitionCondition::Success));
+    assert_eq!(structured, ToolGateOutcome::Refused(TransitionCondition::Failure));
 }

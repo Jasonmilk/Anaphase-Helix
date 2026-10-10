@@ -135,6 +135,19 @@ pub struct PeriodSummary {
     pub model: Option<String>,
     /// Human-chosen experience name (`{job_id}.name` sidecar), if any.
     pub name: Option<String>,
+    /* ── ADR-0049 的**只读投影**（人类 2026-10-09：面板要让 Helix 第一次看见自己）──
+     * 三个字段都只**读**侧车，不生产、不写盘；它们挂在**既有** `/v1/sessions` 面上，
+     * 因此面板不需要新的「面」。 */
+    /// 显式状态（`.state`）。`None` = 没被显式设过（面板据龄期显示 draft/converged）。
+    pub status: Option<String>,
+    /// 沉底轮次的原位摘要（`.gist`）。
+    pub gist: Option<String>,
+    /// 驳回的**整本流水账**（`.rejection.log` 的全部行，含撤销）。
+    /// **不是当前状态** —— 当前状态是最后一行；面板必须显示整本，否则
+    /// 「反悔不是擦除」这条纪律会在展示层被丢掉。`rejected` 是它的派生。
+    pub rejection_log: Vec<String>,
+    /// 当前是否处于驳回态（= 日志最后一行是 `reject`）。派生自 `rejection_log`。
+    pub rejected: bool,
 }
 
 /// How many periods are TOMBSTONED (D0) in this store. A named count, because "the list is shorter"
@@ -310,6 +323,8 @@ pub fn list_periods(dir: &std::path::Path, limit: usize) -> io::Result<Vec<Perio
             existing_ids.push(period_id.clone());
             continue;
         }
+        let cdir = dir;
+        let period_key = if period_id.is_empty() { job_id.clone() } else { period_id.clone() };
         out.push(PeriodSummary {
             conversation_id: None,   /* filled after the window is known — see below */
             // Identity first, replay handle second: a client keys on
@@ -328,6 +343,11 @@ pub fn list_periods(dir: &std::path::Path, limit: usize) -> io::Result<Vec<Perio
             reply,
             parent,
             model,
+            status: crate::session_events::convergence::read_state(cdir, &period_key)
+                .map(|st| st.as_str().to_string()),
+            gist: crate::session_events::convergence::read_gist(cdir, &period_key),
+            rejection_log: crate::session_events::convergence::read_rejection_log(cdir, &period_key),
+            rejected: crate::session_events::convergence::read_rejection(cdir, &period_key).is_some(),
         });
     }
     // A parent pointer must point at a period that EXISTS. A value that does not
@@ -402,4 +422,54 @@ pub fn list_periods(dir: &std::path::Path, limit: usize) -> io::Result<Vec<Perio
         }
     }
     Ok(out)
+}
+
+/// ★ K15 A 路线（`ADR-0053` 附件一，2026-10-10）：**一个会话 = 一组 period**。
+///
+/// **为什么它住在查询层（而不是 UI）**：分组是**读取语义**，不是展示选择。
+/// 若把它放进 Cellrix 侧栏 ⇒ **K15 会从"挡 DSH"反转成"被 DSH 挡"**（地基被放进了 UI 里）。
+/// ⇒ 故此处是**纯函数**：**输入 = `list_periods()` 的行，输出 = 分组**，**不碰 UI、不碰网络、可单测**。
+///
+/// **语义（三条，全部取自既有字段，不新增概念）**：
+/// 1. `conversation_id = Some(root)` ⇒ 该 period 属于 root 这一组（**根命名自己，续接继承根** —— 既有判据）。
+/// 2. `conversation_id = None` ⇒ **被请求窗口截断**（根不在窗口内）⇒ 它**自成一组**，
+///    且该组标 `window_truncated = true` ⇒ **缺席被具名，绝不被猜**（与字段注释同一纪律）。
+/// 3. **排序**：组按**最新一条**的 `last_ts` **降序**（新会话在前）；组内按 `first_ts` **升序**（按时间）。
+///    ⇒ 排序是**确定的**（相同的输入 ⇒ 相同的输出），否则 UI 每次刷新都会跳。
+#[derive(Debug, Clone, PartialEq)]
+pub struct Conversation {
+    /// 本会话的根。`None` = 被窗口截断（见上）。
+    pub root: Option<String>,
+    /// 组内 period，**按 `first_ts` 升序**。
+    pub periods: Vec<PeriodSummary>,
+}
+
+impl Conversation {
+    /// 本组是否因**窗口**而看不到根（不是数据的性质，是我们看得多远的性质）。
+    pub fn window_truncated(&self) -> bool {
+        self.root.is_none()
+    }
+}
+
+/// 把 `list_periods()` 的行**按会话分组**（纯函数 —— 见 `Conversation` 的文档注释）。
+pub fn group_into_conversations(rows: Vec<PeriodSummary>) -> Vec<Conversation> {
+    let mut groups: std::collections::BTreeMap<Option<String>, Vec<PeriodSummary>> =
+        std::collections::BTreeMap::new();
+    for r in rows {
+        groups.entry(r.conversation_id.clone()).or_default().push(r);
+    }
+    let mut out: Vec<Conversation> = groups
+        .into_iter()
+        .map(|(root, mut periods)| {
+            periods.sort_by(|a, b| a.first_ts.cmp(&b.first_ts));
+            Conversation { root, periods }
+        })
+        .collect();
+    // 组间：最新一条 last_ts 降序（max 而非首条 —— 组内已按 first_ts 排）
+    out.sort_by(|a, b| {
+        let ka = a.periods.iter().map(|p| p.last_ts.clone()).max().unwrap_or_default();
+        let kb = b.periods.iter().map(|p| p.last_ts.clone()).max().unwrap_or_default();
+        kb.cmp(&ka)
+    });
+    out
 }

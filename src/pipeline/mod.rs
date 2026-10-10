@@ -240,7 +240,23 @@ impl Pipeline {
                     labels,
                     derive_seen_bloom(&call.tool, &params), // ADR-0007 D'-1: real entropy fingerprint, not the "" placeholder
                 )
-                .await?;
+                .await
+                /* ★ 722 的 DECLARED ROW（2026-10-09）：这一跳失败时此前【只】返回 Err ⇒
+                 * run_cycle 把它降级成 warn!，而测试二进制里没有订阅者 ⇒ 完全静音 ⇒
+                 * 看起来像"这个调用从未存在"（missing node）。失败必须留下【具名的行】。
+                 * 闸门拦截在更早处就已 return（并写过 blocked 行）⇒ 此处只处理真正的调用失败，
+                 * 故**不需要任何 skip 条件**（少一个静默假设）。 */
+                .map_err(|e| {
+                    self.ledger.append(LedgerRecord::execution_failed(
+                        &job.job_id,
+                        &call.tool,
+                        i as u32,
+                        "transport",
+                        &e.to_string(),
+                        identity_labels.get("identity").map(|s| s.as_str()),
+                    ));
+                    e
+                })?;
             let duration_ms = started.elapsed().as_millis() as u64;
             // P0-G (2026-09-16): an undeclared `expect` is resolved to `ok`
             // at dispatch — the historical distribution is 30/30 `ok`, and a
@@ -357,6 +373,19 @@ impl Pipeline {
 
     // ---- orchestration: composes the six stages (not a giant blob) ----
 
+    /* ⚠️ 读这个函数之前先知道一件事（2026-10-09 实测教训）：**活路径不走这里。**
+     *
+     * `run()` 把六阶段串在一起（`execute_calls` → `record_evidence` → `check_results` →
+     * `build_verdict` → `ledger.append`），**但活路径不用它**：
+     * 活路径 = `run_cycle::AgentLoop::execute_structured`（stage 3-4：调 `execute_calls` + `record_evidence`）
+     * → `run_cycle::AgentLoop::arm_reflection`（stage 5-6：判据 + 账本裁定）。
+     * ★ 本注释只写**符号名**、不写行号 —— 行号会随重构腐掉，而符号名可以用编辑器直接跳
+     *   （K20 的教训：这条注释存在的理由就是"读者会读错文件"，那就更不能让它自己先腐）。
+     *
+     * ⇒ 后果：**找"裁定为什么没写"时读这里会读错文件**。本仓实测：因为读了这里，
+     *   连续四次把根因猜错（真正的原因在 reflection 的守卫与调用时机上）。
+     * ⇒ 想查活路径，请从 `run_cycle` 的 `HelixState::Reflection => self.arm_reflection()` 开始。
+     *   （`run()` 仍被测试与其它调用方使用，故保留；此处只做路标，不改行为。） */
     pub async fn run(&mut self, input: PipelineInput) -> Result<PipelineOutcome, String> {
         // stage 1 (pure)
         let calls = parse_llm_calls(&input.llm_content)?;
@@ -382,6 +411,11 @@ impl Pipeline {
             // Blocked records are appended inside execute_calls and short-circuit
             // with an Err before stage 6 — unreachable here by construction.
             LedgerRecord::Blocked { .. } => unreachable!("blocked records only arise from the security gate path"),
+            // Same shape as Blocked: execution-failure records are appended inside
+            // execute_calls and short-circuit with an Err before stage 6.
+            LedgerRecord::ExecutionFailed { .. } => {
+                unreachable!("execution-failure records short-circuit with an Err before stage 6")
+            }
         };
         self.ledger.append(verdict);
 

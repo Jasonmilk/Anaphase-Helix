@@ -128,6 +128,25 @@ impl GateTransport for ReqwestTransport {
     }
 }
 
+/// The gate's decision path, derived from the **Tuck** deployment fact.
+///
+/// Why derived rather than a new config field (2026-10-09, K16 M2):
+/// `AnaphaseConfig` has **no `Default` and 6+ bare struct literals in `tests/`**, so adding any
+/// field would break them all at once (the same shape as adding a proto field — trap #27).
+/// And it would be a *second* place naming Tuck. `tuck_endpoint` is already documented as the
+/// "audit leg + fail-closed gate" (`config.rs:455`), so this reuses it: **one name, one truth**.
+///
+/// Precedence: explicit `gate_url` (env, for deployments whose path differs) > derived from
+/// `tuck_endpoint`. `None` means **no gate installed** — which is *not* the same as a gate that
+/// permits everything (that difference is the whole point; see this module's header).
+pub fn gate_url(tuck_endpoint: Option<&str>, gate_url: Option<&str>) -> Option<String> {
+    if let Some(u) = gate_url.map(str::trim).filter(|u| !u.is_empty()) {
+        return Some(u.to_string());
+    }
+    let base = tuck_endpoint.map(str::trim).filter(|u| !u.is_empty())?;
+    Some(format!("{}/v1/security/gate", base.trim_end_matches('/')))
+}
+
 /// Asks a door-keeper over HTTP. The URL is the **full** decision endpoint and comes
 /// from configuration — the path is a deployment fact, not a constant in this file
 /// (DNA principle 11: 0 hardcoding).

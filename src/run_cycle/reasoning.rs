@@ -26,11 +26,43 @@ use tracing::{debug, info, trace, warn};
 impl AgentLoop {
     /// One entry in the state machine: Reasoning.
     pub(super) async fn arm_reasoning(&mut self) -> Result<TransitionCondition, String> {
+            let job_id = crate::contract::derive_job_id(&self.context.user_input);
+            /* THE JOIN KEY (ADR-0048 D1) is THIS period's allocated identity, set at the cycle
+             * entry (`run_cycle`) so even the PRE-Reasoning cycle events carry it — measured: with
+             * the allocation here, the first four black-box events read `trace_id:""`. It replaced
+             * the input digest: measured (M0.5, 2026-10-09), 462 periods came from 56 digests and
+             * ONE digest covered 219 runs, so the Tuck chain, the ledger and this body trace merged
+             * those runs into one line. On allocation failure the key is EMPTY, never the digest —
+             * a fallback would make "missing" indistinguishable from a real value. `job_id` keeps
+             * its own job: readable base name + deterministic replay handle (ADR-0041 §7.2). */
+            let trace_id = self.context.period_id.clone().unwrap_or_default();
+            self.session_events = self.context.period_id.as_ref().and_then(|period_id| {
+                self.session_events_dir.as_ref().and_then(|dir| {
+                    crate::session_events::SessionEventStream::open(
+                        dir.clone(),
+                        period_id,
+                        &job_id,
+                        self.session_events_redact.clone(),
+                    )
+                    .ok()
+                })
+            });
             // O-1 (ADR-0016 D1): structured commands never reach the LLM —
             // the plan already exists, assemble the job and go.
             if self.context.structured {
+                /* ADR-0049 D4: READING INSTRUCTIONS ARE NOT TOOL CALLS (lodestone-spec:ADR-0002
+                 * D6: `lodes` / `lode <slug>` / `body <slug>` / `sediment`). They are answered
+                 * HERE, from the append-only store, at 0 tokens and with no egress — handing them
+                 * to the pipeline would turn "read my own history" into a remote call. Checked
+                 * against the live fixture manifests (`calc`/`numbers`/`rate`/`weather`/
+                 * `web_search`): the four command words collide with no tool name. */
+                if let Some(answer) = self.answer_read_instruction() {
+                    self.context.reasoning_output = answer;
+                    self.context.calls.clear();
+                    return Ok(TransitionCondition::NoToolNeeded);
+                }
                 if let Some(p) = self.pipeline.as_ref() {
-                    let job_id = crate::contract::derive_job_id(&self.context.user_input);
+                    let job_id = trace_id.clone();
                     // stage events (ADR-0019): stage1 = call parsing
                     // (structured triage happened in Perception — 0 tokens),
                     // stage2 = tt_job assembly (Reasoning tail).
@@ -117,16 +149,26 @@ impl AgentLoop {
 \n[memory: Helix's past experiences — true history, answer from them]\n{}", prompt, inject)
                 }
             };
-            // Explicit continuation (2026-09-07): resume a previous
-            // experience as true history — the new period continues the
-            // conversation instead of meeting a stranger.
-            let prompt = match self.context.resume.as_ref() {
-                Some(r) => format!(
-                    "{}
-\n[previous episode — true history of this conversation's last round]\n{}",
+            /* ADR-0049 D3 (lodestone-spec:ADR-0002 D6 L0): the continuation carries the CHAIN'S
+             * SKELETON — one bounded line per round — not a truncated copy of the last round.
+             * Measured before this (experiment A, 21 rounds): the prompt was still 288 chars and
+             * carried round 20 only, so anything said in round 1 was gone AND unreachable. The
+             * elision is NAMED and `!body <id>` is the way back. */
+            let skel = self.session_events_dir.as_ref().and_then(|d| {
+                let leaf = self.context.resume_period.as_deref()?;
+                crate::session_events::convergence::skeleton_for_prompt(
+                    d, leaf, &self.convergence, self.clock.now())
+            });
+            let prompt = match (skel, self.context.resume.as_ref()) {
+                (Some(sk), _) => format!(
+                    "{}\n[conversation so far — one line per round, oldest first; `!body <id>` retrieves any round in full]\n{}",
+                    prompt, sk
+                ),
+                (None, Some(r)) => format!(
+                    "{}\n[previous episode — true history of this conversation's last round]\n{}",
                     prompt, r
                 ),
-                None => prompt,
+                (None, None) => prompt,
             };
             // P10a (ADR-0031): fold the cognitive craft note (zero-token
             // deterministic orchestration from Mind) into the prompt —
@@ -138,45 +180,6 @@ impl AgentLoop {
 \n[think-first (deterministic, 0 tokens)]\n{}", prompt, note.synthesis),
                 None => prompt,
             };
-            // One derived trace id for this round: carried to the gateway
-            // (x-tuck-trace -> Tuck chain), to the body trace, and to the
-            // pipeline events — one join key across all three (ProveTrack).
-            let trace_id = crate::contract::derive_job_id(&self.context.user_input);
-            // Session event stream (ProveTrack turn timeline): open the
-            // per-period stream and emit the period header — turn/start,
-            // user/message, context/inject (summary only). `job_id` stays
-            // the join key shared with the body trace and the Tuck audit
-            // chain; `period_id` is what makes THIS run a distinct period
-            // (K-006) — two runs of one input must not share a file.
-            // `period_id` is what makes THIS run a distinct period (K-006):
-            // two runs of one input must not share a file. The allocator
-            // rejects a job id it cannot digest rather than repairing it
-            // (B17'), and a rejection here means the identity layer has no
-            // valid id to allocate — so the period stream stays unopened
-            // rather than being opened under a wrong key.
-            match crate::session_events::try_allocate_period_id(
-                &trace_id,
-                self.clock.now(),
-            ) {
-                Ok(period_id) => {
-                    self.session_events = self
-                        .session_events_dir
-                        .as_ref()
-                        .and_then(|dir| {
-                            crate::session_events::SessionEventStream::open(
-                                dir.clone(),
-                                &period_id,
-                                &trace_id,
-                                self.session_events_redact.clone(),
-                            )
-                            .ok()
-                        });
-                }
-                Err(e) => {
-                    warn!("[SessionEvents] no period stream this cycle: {}", e);
-                    self.session_events = None;
-                }
-            }
             let detail = self.memory_choice_detail();
             if let Some(ev) = self.session_events.as_mut() {
                 let ts = crate::ledger::unix_secs_to_rfc3339(self.clock.now());
@@ -378,7 +381,7 @@ impl AgentLoop {
                                 // pipeline is wired (job_id derived from
                                 // input, created_at from the injected clock).
                                 if let Some(p) = self.pipeline.as_ref() {
-                                    let job_id = crate::contract::derive_job_id(&self.context.user_input);
+                                    let job_id = trace_id.clone();
                                     // stage events (ADR-0019): stage1 =
                                     // parse_llm_calls completed, stage2 =
                                     // tt_job assembly (Reasoning tail).

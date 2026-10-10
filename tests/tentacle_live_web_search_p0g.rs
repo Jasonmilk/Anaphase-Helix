@@ -60,9 +60,9 @@ async fn run_web_search_loop(
     // ProveTrack turn timeline: per-period event stream in a scratch dir.
     agent.session_events_dir = Some(events_dir.to_path_buf());
 
-    let _ = agent.run_cycle(&format!("用 web_search 搜索 {query}")).await;
+    let out = agent.run_cycle(&format!("用 web_search 搜索 {query}")).await.expect("cycle");
 
-    let records = agent.pipeline.as_ref().unwrap().ledger.records().to_vec();
+    let records = out.ledger.clone();   /* completion snapshot (2026-10-09) */
     let _ = child.kill();
     let _ = child.wait();
     (records, format!("run-{:016x}", anaphase::contract::fnv64(&format!("用 web_search 搜索 {query}"))))

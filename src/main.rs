@@ -933,7 +933,10 @@ async fn build_agent(config: &config::Config) -> BuiltAgent {
                 // — but **parsing** is shared (ADR-0045). The `&endpoint[7..]`
                 // hardcoded prefix length is gone: it encoded `len("grpc://")`
                 // in a second place, next to the parser that already knew it.
-                match GrpcFlowModusAdapter::new(endpoint, config.anaphase.reasoning_model.as_deref().unwrap_or("")).await {
+                match /* The identity block was assembled above and previously went nowhere on this channel: the
+                 * gRPC constructor had no slot for it. It is passed here exactly as the HTTP adapter
+                 * receives it, so both channels carry the same identity (2026-10-09). */
+                GrpcFlowModusAdapter::new(endpoint, config.anaphase.reasoning_model.as_deref().unwrap_or(""), Some(identity_system.clone())).await {
                     Ok(adapter) => Arc::new(adapter),
                     Err(e) => {
                         eprintln!("Warning: Failed to connect to FlowModus at {}: {}. Falling back to Noop reasoning.", endpoint, e);
@@ -974,6 +977,8 @@ async fn build_agent(config: &config::Config) -> BuiltAgent {
         // O-5 (ADR-0023): cognitive-injection budget from config (protocol
         // default 800 lives in config.rs, not here).
         agent.memory_inject_chars = config.anaphase.memory_inject_chars;
+        agent.convergence =
+            anaphase::session_events::ConvergenceConfig::from_config(&config.anaphase);
         agent.trace = config
             .anaphase
             .reasoning_trace_path
@@ -1069,6 +1074,24 @@ async fn build_agent(config: &config::Config) -> BuiltAgent {
                 anaphase::pipeline::resolve_pipeline(config.anaphase.tentacle_endpoint.clone(), pcfg)
                     .await
             {
+                /* ★ K16 M2（2026-10-09）：把「做」那道门**装上**，但**仍是不改变行为的观察态**。
+                 * 地址不新增配置字段，而是从 `tuck_endpoint` 派生（那个字段的注释本就写着
+                 * "audit leg + fail-closed gate"）：`AnaphaseConfig` 无 `Default`、且有 6+ 处裸字面量
+                 * ⇒ 加字段会一次打破它们全部（第 27 条），且会成为**第二处**命名 Tuck 的地方。
+                 * 未配置 Tuck ⇒ `gate_url` 返回 `None` ⇒ **装不上门**（而不是装一道全都放行的门 ——
+                 * 那种缺席看不见，比 `None` 更糟，见 `src/security.rs` 头注）。 */
+                let gate_url = anaphase::adapters::security_gate::gate_url(
+                    config.anaphase.tuck_endpoint.as_deref(),
+                    std::env::var("ANAPHASE_SECURITY_GATE_URL").ok().as_deref(),
+                );
+                if let Some(u) = gate_url {
+                    pipeline = pipeline.with_security_gate(Some(std::sync::Arc::new(
+                        anaphase::adapters::security_gate::HttpSecurityGate::new(
+                            &u,
+                            anaphase::adapters::security_gate::DEFAULT_GATE_TIMEOUT,
+                        ),
+                    )));
+                }
                 // ADR-0021: the pipeline shares the mode-agnostic ring (one
                 // stream, one ?after cursor). Its own ring is replaced by the
                 // shared one BEFORE the restore, so history lands in the single

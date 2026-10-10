@@ -220,14 +220,16 @@ reason = "sees the impasse as it happens and reports it at the source, because t
 
 [[fix_window]]
 target = "src/main.rs"
-cap    = 7
-k_id   = "B22,B17"
+cap    = 24
+k_id   = "B22,B17,K16-M2"
+reason = "K16 M2 (2026-10-09): the door on `do` is now INSTALLED on the production path — `resolve_pipeline` used to be the end of the line, and `security.rs` had recorded since 2026-09-20 that no gate was installed anywhere (`with_security_gate` was called only from tests). The wiring is observation-only: Tuck answers `pass` and NAMES `gate=none` when no admission table is loaded, so behaviour is unchanged (that naming is the point: an absent door must not look like a door that passed). The 17 lines are the wiring plus the comment explaining why the endpoint is DERIVED from `tuck_endpoint` rather than given a new config field (`AnaphaseConfig` has no `Default` and 6+ bare literals in tests/ — adding a field breaks them all at once)."
 reason = "the HTTP channel carries the whole verdict instead of only `done`, so an impasse is distinguishable from a normal end; and the startup line that reports an ungoverned engine"
 
 # B17 is a FEATURE, not a fix, and the ratio rule said so before I did: appending
 # governance to a 198-line health.rs is a 60% increase, far past the tenth that a
 # fix is allowed. So it lives in its own file, which seeds at birth, and this
 # entry covers only what the rest of the tree had to grow to surface it.
+
 [[fix_window]]
 target = "src/health.rs"
 cap    = 1
@@ -237,6 +239,7 @@ reason = "the health payload gains one governance key, kept separate from `ok`"
 # A directory entry, so B17's new file does not eat the split allowance. The two
 # numbers stay separable: 40 for this, 60 for ADR-0042, and the estimate-versus-
 # actual comparison the split allowance exists to produce is still available.
+
 [[fix_window]]
 target = "src/"
 cap    = 40
@@ -247,6 +250,7 @@ reason = "src/governance.rs (56 NCLOC) plus the payload key and startup line, me
 # `governance.rs` because that file is a file, not a directory: a `mod` inside it
 # resolves to `src/governance/governance_tests.rs`, which does not exist. Same
 # reason `verdict_tests` is declared from its own module root.
+
 [[fix_window]]
 target = "src/lib.rs"
 cap    = 3
@@ -261,6 +265,7 @@ reason = "declares the new governance module and its test module"
 # line of economy, which it got by compacting an accessor rather than by widening
 # the cap. A second growth spurt here means the seed is stale and should be re-taken
 # deliberately, not nudged.
+
 [[fix_window]]
 target = "src/governance.rs"
 cap    = 4
@@ -271,6 +276,7 @@ reason = "the two precondition accessors the contract assertions read, added aft
 # Ceiling here is 10% of 757 = 75, so 3 is comfortable; that is not the point. The
 # point is that CI-6 was the only file in the repo with no budget, and the first
 # thing it did on gaining one was report itself.
+
 [[fix_window]]
 target = "ci/check_line_budget.py"
 cap    = 3
@@ -281,6 +287,7 @@ reason = "hoisting the over-300 advisory above the early PASS return, because it
 # line would need a waiver or a split; this is that line, and the waiver above is
 # that waiver. The cap is the measured growth, and the ceiling is 10% of 300 = 30,
 # so 18 is inside the ratio rather than argued around it.
+
 [[fix_window]]
 target = "ci/check_guards.py"
 cap    = 18
@@ -406,6 +413,7 @@ reason  = "the MemoryRetrieval state arm, a pure move. Its single break is insid
 # H2b: the deny-list becomes a named constant with its own constructor, and the comment
 # that contradicted the implementation is gone. Six lines of real code, all of it in
 # reflex.rs, which is why main.rs loses two rather than gaining three.
+
 [[fix_window]]
 target = "src/reflex.rs"
 cap    = 10
@@ -426,6 +434,7 @@ k_id    = "K-044"
 # instead of standing on its own pit. The two numbers stay separable on purpose — the
 # same reason B17's governance.rs got its own directory entry rather than eating the
 # ADR-0042 allowance. Ratio ceiling here is max(36, 10% of 1246) = 124.
+
 [[fix_window]]
 target = "src/adapters/"
 cap    = 104
@@ -435,6 +444,7 @@ reason = "security_gate.rs (103 NCLOC of production code) plus its one-line modu
 # The module declaration itself. One line, and it cannot be merged into another item
 # without writing two items on one line, which would trade a real NCLOC for a style
 # violation. Ratio ceiling for an 183-line file is max(36, 18) = 36.
+
 [[fix_window]]
 target = "src/adapters/mod.rs"
 cap    = 14
@@ -449,6 +459,7 @@ reason = "one `pub mod` line registering the new HTTP security gate"
 # K-112 keeps the same target rather than opening a second window: `load_fix_windows`
 # returns {target: (cap, k_id)}, so a second entry for one target REPLACES the first.
 # Both pits' lines therefore ride one cap, which is why `k_id` is a list.
+
 [[fix_window]]
 target = "src/pipeline/mod.rs"
 cap    = 22
@@ -459,9 +470,10 @@ reason = "B7 (+13): the `None` arm that blocks high-risk calls when no door-keep
 # out-of-order stream is now refused at the door. The ledger-side half is
 # `next_attempt()`, which derives the retry parent the pipeline previously passed as
 # `None`; ratio ceiling here is max(36, 219 // 10) = 36, so a cap of 2 is inside it.
+
 [[fix_window]]
 target = "src/ledger/mod.rs"
-cap    = 18
+cap    = 28
 k_id   = "K-113"
 reason = "`next_attempt()` derives the retry parent and attempt count from the ledger, so the lineage M1.5 counts by is actually written instead of every attempt looking like a first (+2), and `job_state()` is the read side of that lineage: without a consumer the field changes no decision, which is the same as not writing it (+16). Measured 219 -> 237; the cap sits at the measurement so any further line in this file trips the ratchet again"
 
@@ -473,12 +485,12 @@ reason = "`next_attempt()` derives the retry parent and attempt count from the l
 # pits' lines, and why `k_id` is a list rather than one id.
 # Measured 363 -> 395 (+32): K-045's +11 plus K-059's +21.
 # Ratio ceiling: mind.rs max(36, 363 // 10) = 36, so a cap of 33 is inside it.
+
 [[fix_window]]
 target = "src/adapters/mind.rs"
 cap    = 33
 k_id   = "K-045, K-059"
 reason = "K-045 (+11): copy `effective_mode`/`mode_negotiation` out of the response into MindProvenance, plus the helper that names an unreadable mode as unknown instead of defaulting to a real one. K-059 (+21): `build_query_request`/`exploratory_intent`/`derive_suggested_mode`/`derive_budget_tier` become `pub` so the grant wiring is asserted by `tests/mind_grant_policy.rs`; those assertions moved out of `#[cfg(test)]` because `src/` is ratcheted and `tests/` is not. Measured 363 -> 395; the cap sits one line above the measurement so a later edit has to come back and say so"
-
 
 [[fix_window]]
 target = "src/session_events/types_and_stream.rs"
@@ -498,6 +510,7 @@ reason = "K-115 (+3): the measured injection beside the configured budget, compu
 # adds another line has to come back and say so, which is the same convention the B7
 # window follows. Under FIX_CAP_FLOOR the ceiling here is 36, so 19 is an ordinary
 # fix window and not a way around the cap.
+
 [[fix_window]]
 target = "src/hitl.rs"
 cap    = 19
@@ -510,6 +523,7 @@ reason = "the approval outcome closed set: `ApprovalOutcome` (AllowedOnce / Reje
 # from the cognitive mode adds exactly 2 more (2026-09-24: 52 -> 59). Cap 7 covers
 # the whole overage and nothing else: the pre-existing 5 because this window is
 # what makes them honest, and the 2 this fix costs.
+
 [[fix_window]]
 target = "src/adapters/flowmodus.rs"
 cap    = 26
@@ -569,3 +583,68 @@ ncloc   = 293
 counter = 2
 k_id    = "K-122"
 reason  = "M1 refs three-tier, new/heavily changed this session; first-sign per K-122"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 2026-10-09 · 一次自觉的 re-base（ADR-0049 / 坑 K-126）—— 凭什么，记在这里
+#
+# 本仓 ci/baseline.toml:19 引用了「关账档登记」，而**关账档不在任何仓里**：
+#   工作区根 `~/Developer/Jasonmilk/DSH-关账档-2026-10-11.md`（同目录另有
+#   `DSH-冻结档-2026-10-10.md`）。那个引用在仓内 `git log` 里回答不了问题 ——
+#   所以「凭什么 emit」这件事写在这里，仓内可查。
+#
+# 冻结窗口：2026-10-04 → 2026-10-11（零余量，任何一行增长即红）。
+# 本次 emit 发生在窗口内，是三段各自成笔的链条：
+#   ① K-126 已具名归因（单独 commit c86a4c2/f69b44f，先记坑再落文件）；
+#   ② ADR-0049 需要新模块 + 触碰 src/config.rs —— 该目录与该文件均为零余量，
+#      `--emit-ratchet` 是这套机制里**唯一被设计出来移动上界的通道**
+#      （check_line_budget.py:「the emit is the only path that moves a ceiling up」）；
+#   ③ emit 写入的是**全部** target 的实测值（`merged = dict(current)`），
+#      所以做了**逐条比对**，见下表 —— 无一条漂移被顺手吸收（K-123 的形状）。
+#
+# 逐条比对（emit 前 → emit 后，全部 9 条都有归属）：
+#   src/session_events/convergence.rs   新增 268  ← ADR-0049 新模块本身
+#   src/session_events/                 1714→1984 (+270) = 268 + mod.rs 导出(+2)
+#   src/session_events/mod.rs             43→45   (+2) ← 导出 convergence
+#   src/config.rs                        367→397  (+30) ← 5 个收敛配置项 + 常量 + 默认函数
+#   src/run_cycle/mod.rs                 678→708  (+30) ← AgentLoop.convergence + 读数指令 helper
+#   src/run_cycle/reasoning.rs           256→258  (+2)  ← 注入改骨架 + 读数指令分支
+#   src/run_cycle/                       1407→1439 (+32) = 上面两个直接子项之和
+#   src/main.rs                         1020→1022 (+2)  ← from_config 覆盖
+#   src/                                  4493→4525 (+32) = config.rs(+30) + main.rs(+2)
+#   （目录条目 = **直接子项之和**；逐层相加与实测一致，故上表可核对。）
+# ─────────────────────────────────────────────────────────────────────────────
+
+[[fix_window]]
+target = "src/adapters/security_gate.rs"
+cap    = 8
+k_id   = "K16-M2"
+reason = "the decision path's URL had to be DERIVED from an existing deployment fact (tuck_endpoint, whose own comment already calls it the audit leg + fail-closed gate) instead of gaining a config field: AnaphaseConfig has no Default and 6+ bare literals in tests/, so one new field breaks them all at once. gate_url is 8 lines of production code; its three tests live in security_gate_tests.rs, which the budget excludes as a test path."
+
+[[fix_window]]
+target = "src/ledger/"
+cap    = 28
+k_id   = "K25-LEDGER-SNAPSHOT"
+reason = "the outcome snapshot stores the pipeline's ledger records on the cycle outcome so the completion point is observable instead of re-read from a live object (624d3cf). That is 3 lines of ledger-shaped code in a directory whose ratchet was set before the snapshot existed." K26-EXECUTION-FAILED-ROW contributes the new LedgerRecord::ExecutionFailed kind + constructor (measured after the final implementation).
+
+[[fix_window]]
+target = "src/pipeline/"
+cap    = 14
+k_id   = "K26-EXECUTION-FAILED-ROW"
+reason = "the call site: Pipeline::execute_calls records the failure at the tool-call hop (where tool/index are in scope — the caller cannot know which call failed) and still returns the same Err. No skip condition is needed: the security-gate path returns earlier and has already written its blocked row."
+
+[[fix_window]]
+target = "src/run_cycle/reflection.rs"
+cap    = 3
+k_id   = "K26-EXECUTION-FAILED-ROW"
+reason = "the downstream consumer: its match on LedgerRecord gained the arm for the new kind, mirroring the existing Blocked arm in the same match."
+[[fix_window]]
+target = "src/session_events/query.rs"
+cap    = 30
+k_id   = "K15-A-ROUTE-GROUPING"
+reason = "ADR-0053 attachment 1: the conversation grouping (`Conversation` + `group_into_conversations`) is pure read semantics and must live in the query layer — putting it in the UI would invert K15 from blocking DSH into being blocked by DSH. Measured after the final implementation: 287 -> 317 = +30 NOCL."
+
+[[fix_window]]
+target = "src/session_events/"
+cap    = 30
+k_id   = "K15-A-ROUTE-GROUPING"
+reason = "The same attachment-1 change: the directory total follows the file (2216 -> 2246). One allowance per target — this is the directory's."
