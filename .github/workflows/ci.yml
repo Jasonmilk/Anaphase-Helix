@@ -15,7 +15,10 @@ jobs:
                            #   ⇒ 不钉住 = 9 天后由【外部变更】决定我们的红绿（"今天绿"可能纯因环境）
                            #   冻结是默认；预演 26 应是一次【有意】的实验，不是被动接受
     steps:
-      - uses: actions/checkout@v4
+      - name: ⓪ 检出本仓（带 path ⇒ 与兄弟仓同层，镜像本地 workspace 布局）
+        uses: actions/checkout@v4
+        with:
+          path: anaphase-helix
       - name: ⓪·1 检出兄弟仓（测试的【被检对象】在 workspace 里，不只是本仓）
         uses: actions/checkout@v4
         with:
@@ -26,6 +29,7 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -y -qq protobuf-compiler
       - run: rustup toolchain install stable --profile minimal && rustup default stable
       - name: ① 测试（本仓判据）
+        working-directory: anaphase-helix
         run: |
           set +e
           cargo test --all-features --no-fail-fast 2>&1 | tee /tmp/test.log
@@ -50,6 +54,7 @@ jobs:
           fi
           exit $rc
       - name: ② 行预算棘轮（本仓判据）
+        working-directory: anaphase-helix
         run: python3 ci/check_line_budget.py
       - name: 上传日志
         if: always()
