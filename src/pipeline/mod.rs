@@ -375,10 +375,12 @@ impl Pipeline {
 
     /* ⚠️ 读这个函数之前先知道一件事（2026-10-09 实测教训）：**活路径不走这里。**
      *
-     * `run()` 把六阶段串在一起（execute_calls → record_evidence → check_results →
-     * build_verdict → ledger.append），**但 `run_cycle` 不用它**：
-     * `src/run_cycle/mod.rs` 自己调 `execute_calls` + `record_evidence`，
-     * 而 stage 5-6（判据 + 账本裁定）由 `src/run_cycle/reflection.rs` 的 `arm_reflection` 完成。
+     * `run()` 把六阶段串在一起（`execute_calls` → `record_evidence` → `check_results` →
+     * `build_verdict` → `ledger.append`），**但活路径不用它**：
+     * 活路径 = `run_cycle::AgentLoop::execute_structured`（stage 3-4：调 `execute_calls` + `record_evidence`）
+     * → `run_cycle::AgentLoop::arm_reflection`（stage 5-6：判据 + 账本裁定）。
+     * ★ 本注释只写**符号名**、不写行号 —— 行号会随重构腐掉，而符号名可以用编辑器直接跳
+     *   （K20 的教训：这条注释存在的理由就是"读者会读错文件"，那就更不能让它自己先腐）。
      *
      * ⇒ 后果：**找"裁定为什么没写"时读这里会读错文件**。本仓实测：因为读了这里，
      *   连续四次把根因猜错（真正的原因在 reflection 的守卫与调用时机上）。
