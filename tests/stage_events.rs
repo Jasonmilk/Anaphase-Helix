@@ -20,7 +20,8 @@ use common::{spawn_mock_tentacle, MockTentacle, StructuredReasoning};
 use std::sync::Arc;
 
 async fn build_pipeline(mock: MockTentacle, clock_now: u64) -> Pipeline {
-    let (endpoint, _captured, _tx, _handle) = spawn_mock_tentacle(mock).await;
+    let (endpoint, _captured, tx, _handle) = spawn_mock_tentacle(mock).await;
+    common::keep_mock_alive(tx);   // ★ K25：`_tx` 会在本函数返回时被 drop ⇒ 服务器提前停机（见 common）
     let tentacle = anaphase::adapters::tentacle::GrpcTentacleAdapter::new(&endpoint)
         .await
         .unwrap();

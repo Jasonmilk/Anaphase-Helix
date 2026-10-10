@@ -159,6 +159,37 @@ impl TentacleService for MockTentacle {
     }
 }
 
+/// ★ K25 根因修复（2026-10-09）：把 mock 的 shutdown 发送端**持到测试二进制结束**。
+///
+/// 为什么必须有它：`spawn_mock_tentacle` 返回的 sending 端一旦被 drop，oneshot 接收端就
+/// **立即** resolve ⇒ `serve_with_incoming_shutdown` 收到停机信号 ⇒ 服务器**停止 accept**
+/// （已建连接仍可服务、但会被 tear down）⇒ 之后唯一过网的阶段（s3 execute_calls）在传输层失败。
+/// 而 `_tx` 的下划线只表示"我不打算用它"，**不阻止它在函数返回时被 drop** —— 这就是真因。
+///
+/// 语义选择（有意）：**"活到我用完"**，而不是 `std::mem::forget` 的"永不关"——名字即意图。
+/// 判据（本轮实测）：修复前 `--test run_cycle_pipeline` 20 次约 25–28 个失败（~95% 红）；
+/// 修复后并行 20/20、串行 20/20 全绿；删掉调用 ⇒ 8 次立刻回到 36 个失败。
+///
+/// ⚠️ **新增调用者必须持有它**（`tests/stage_events.rs` 曾漏这一处 ⇒ 同名间歇红）。
+pub fn keep_mock_alive(tx: tokio::sync::oneshot::Sender<()>) {
+    use std::sync::{Mutex, OnceLock};
+    static LIVE: OnceLock<Mutex<Vec<tokio::sync::oneshot::Sender<()>>>> = OnceLock::new();
+    LIVE.get_or_init(|| Mutex::new(Vec::new())).lock().unwrap().push(tx);
+}
+
+/// ★ K25（2026-10-09）：让测试里的日志**不再静音**。
+///
+/// 根因排查时我用 `grep 'Pipeline execution failed'` 得到 0 次，并把它当成"该分支未走"的证据 ——
+/// **那是无效推理**：`tracing_subscriber::fmt::init()` 只出现在 `src/main.rs`，
+/// **测试二进制里根本没有订阅者**，所以任何 `warn!`/`info!` 都不输出。
+/// ⇒ 正确的兑现不是"记住仪器可能静音"，而是**让仪器不再静音**（幂等，可重复调用）。
+pub fn init_logs() {
+    let _ = tracing_subscriber::fmt()
+        .with_test_writer()
+        .with_max_level(tracing::Level::INFO)
+        .try_init();
+}
+
 /// Spawn the mock Tentacle server on an ephemeral port.
 /// Returns (endpoint, captured_trace_ids, shutdown_tx, join_handle)
 /// following the mind_integration pattern.

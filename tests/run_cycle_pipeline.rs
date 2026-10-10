@@ -29,19 +29,9 @@ use std::sync::{Arc, Mutex};
 
 /// Build a pipeline wired to a fresh MockTentacle with an injected clock.
 async fn build_pipeline(mock: MockTentacle, clock_now: u64) -> Pipeline {
+    common::init_logs();   // ★ K25：让 warn!/info! 在测试里出声（幂等）
     let (endpoint, _captured, tx, _handle) = spawn_mock_tentacle(mock).await;
-    /* ★ K25 根因修复（2026-10-09，已用 20/20 变异实验确认）：
-     * `_tx` 的**下划线**只表示"我不打算用它"，**不阻止它在本函数返回时被 drop**；
-     * 而 shutdown 发送端一旦被 drop，oneshot 接收端就**立即** resolve
-     * ⇒ `serve_with_incoming_shutdown` 收到停机信号 ⇒ 服务器**停止 accept**（已建连接仍可服务）
-     * ⇒ 之后每次工具调用都在传输层失败；而那个错误被 run_cycle 降级成 `warn!`，
-     *   而**测试里没有日志订阅者**（`tracing_subscriber::fmt::init()` 只在 src/main.rs）
-     *   ⇒ **完全静音** ⇒ 表现为"工具调用没有执行"的疑似 flaky。
-     * ⇒ 故让 mock 活到进程结束（它的寿命本就该等于进程寿命）。
-     * 回归判据：把这一行删掉 ⇒ `cargo test --test run_cycle_pipeline` 立刻回到 ~95% 红（实测 20 次里 19 次有红）。
-     * 注意：**不要**改 spawn_mock_tentacle 的返回值 —— `tests/mock_tentacle.rs:66` 正当地用
-     * `shutdown_tx.send(())` 来造传输错误；把真发送端换成占位会弄坏它（我试过，它立刻红）。 */
-    std::mem::forget(tx);
+    common::keep_mock_alive(tx);
     let tentacle = anaphase::adapters::tentacle::GrpcTentacleAdapter::new(&endpoint)
         .await
         .unwrap();
@@ -77,6 +67,8 @@ async fn wait_for_evidence(a: &anaphase::run_cycle::AgentLoop, cap: &common::Cap
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     }
 }
+
+
 
 /// Agent with default adapters + a structured reasoning stub.
 fn base_agent(reason: Arc<dyn ReasoningAdapter>) -> AgentLoop {
