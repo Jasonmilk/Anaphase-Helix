@@ -156,3 +156,8 @@ summary  = "The door on `do` was never installed on the production path: `with_s
 id       = "K25-LEDGER-SNAPSHOT"
 recorded = "2026-10-09"
 summary  = "Outcome snapshot (outcome.ledger = pipeline ledger records) added ~3 NOCL to src/ledger/, pushing it past its ratchet. The snapshot is what makes the completion point observable; the growth is the feature, not drift."
+
+[[pit]]
+id       = "K26-EXECUTION-FAILED-ROW"
+recorded = "2026-10-09"
+summary  = "An execution-time failure in Pipeline::execute_calls was recorded ONLY as a warn! (downgraded in run_cycle/mod.rs to Ok(Failure)), so the run looked like one where nothing was attempted — a missing node, against run_cycle/mod.rs:722's DECLARED ROW rule. Measured cost: that warn! is invisible in test binaries (no subscriber), and a session of K25 diagnosis was spent partly on grepping a log line that could never print. The fix adds a named LedgerRecord::ExecutionFailed row; it costs source NOCL in a ratcheted file."
