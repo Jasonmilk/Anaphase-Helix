@@ -1,6 +1,6 @@
-# ADR-0053：会话锚是【已存在的 `conversation_id`】—— K15 可能是纯视图改动
+# ADR-0053：会话锚是【已存在的 `conversation_id`】—— K15 走【A · 分组下沉查询层】
 
-- **状态**：**Proposed（待人类裁决）**
+- **状态**：**Accepted（人类 2026-10-10 裁决选 A）**
 - **日期**：2026-10-10
 - **决策范围**：anaphase（查询层的**消费方式**，或持久化层的键）
 - **关联**：`K15` · `ADR-0006`（Episode 边界）· `ADR-0020`（事件轨迹持久化）· `ADR-0047`（lineage_path）
@@ -42,3 +42,17 @@
 - **A 的判据**：DSH 侧栏对同一 `conversation_id` 的 N 个 period 显示**一行**；且 `conversation_id` 由**查询层**给出（不在前端重算）。
 - **B 的判据**（若走）：`tests/session_convergence.rs` 的 `k15_target_one_episode_lands_in_one_file`
   **取消 `#[ignore]` 后转绿**（该判据已在 `anaphase 4f58c21` 落地，当前**红且具名**）。
+
+---
+
+## 裁决与三附件（人类 2026-10-10：**选 A**）
+
+> **★ "已备"不是状态翻转** —— 本 ADR 由 Proposed 转 **Accepted(A)**，实现随之开工。
+
+| 附件 | 内容 | 判据 |
+|---|---|---|
+| **一（最重）** | **分组逻辑【下沉到 anaphase 查询层】**，Cellrix **只消费** —— **不是"去 Cellrix 做侧栏分组"**。否则 **K15 会从"挡 DSH"反转成"被 DSH 挡"**（把地基放进 UI 里，UI 就变成地基的前置） | **纯 Rust 单测**：fixture ⇒ 分组输出（不碰 UI、不碰网络） |
+| **二** | **B 路线的红测试留 `#[ignore]` 作长期债标记** | `k15_target_one_episode_lands_in_one_file` 保持 `#[ignore]` + 具名理由（**它今天真能红**，已实测） |
+| **三** | **`34/103` 进观察态判据**，盯**合并率** | 一条读数：有 `resume_from` 的 period 占比（链覆盖率的趋势） |
+
+**⇒ 所以本 ADR 的落地物是【anaphase 查询层的一个纯函数 + 它的单测】，Cellrix 侧不动。**
