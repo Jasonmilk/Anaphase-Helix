@@ -16,6 +16,12 @@ jobs:
                            #   冻结是默认；预演 26 应是一次【有意】的实验，不是被动接受
     steps:
       - uses: actions/checkout@v4
+      - name: ⓪·1 检出兄弟仓（测试的【被检对象】在 workspace 里，不只是本仓）
+        uses: actions/checkout@v4
+        with:
+          repository: Jasonmilk/helix-mind
+          ref: rs
+          path: helix-mind
       - name: ⓪ 系统依赖（prost-build 需要 protoc ⇒ 这是 K32 古红的根因）
         run: sudo apt-get update -qq && sudo apt-get install -y -qq protobuf-compiler
       - run: rustup toolchain install stable --profile minimal && rustup default stable
