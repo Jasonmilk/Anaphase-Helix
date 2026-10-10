@@ -1063,8 +1063,8 @@ impl AgentLoop {
                 )
                 .await;
                 match verdict {
-                    safety_gate::GateVerdict::Refused(condition) => Ok(condition),
-                    safety_gate::GateVerdict::Cleared => {
+                    safety_gate::ToolGateOutcome::Refused(condition) => Ok(condition),
+                    safety_gate::ToolGateOutcome::Cleared => {
                         // Execute tool
                         match self.tool.execute(command, &[action_str.clone()]).await {
                             Ok(result) => {
@@ -1169,8 +1169,8 @@ impl AgentLoop {
             )
             .await
             {
-                safety_gate::GateVerdict::Cleared => {}
-                safety_gate::GateVerdict::Refused(condition) => return Ok(condition),
+                safety_gate::ToolGateOutcome::Cleared => {}
+                safety_gate::ToolGateOutcome::Refused(condition) => return Ok(condition),
             }
         }
         let job = match &self.context.job {
