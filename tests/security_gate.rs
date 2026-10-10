@@ -206,6 +206,23 @@ async fn reject_gate_blocks_and_records_blocked() {
         .filter(|r| matches!(r, LedgerRecord::Blocked { .. }))
         .collect();
     assert_eq!(blocked.len(), 1, "expected one blocked record");
+
+    /* ★ K26 判据 ③-b：**反双记守护（结果不变量，不关心靠什么机制维持）**。
+     * 闸门拦截场景 ⇒ ledger 中 blocked 行恰 1 条、ExecutionFailed 行恰 0 条。
+     * 为什么守护"结果"而不是"skip 逻辑"：`ExecutionFailed` 的记录写在【工具调用那一跳】，
+     * 而闸门在更早处就 return 了 ⇒ 当前控制流下二者互斥。**但控制流是会被重构的**：
+     * 将来任何人把 gate 检查挪到调用之后、或给调用失败也加一条记录，就会**双记**，
+     * 而双记不会让任何既有断言变红 ⇒ 故必须把它钉成不变量。 */
+    let exec_failed = pipeline
+        .ledger
+        .records()
+        .iter()
+        .filter(|r| matches!(r, LedgerRecord::ExecutionFailed { .. }))
+        .count();
+    assert_eq!(
+        exec_failed, 0,
+        "a gate block must NOT also produce an ExecutionFailed row (double-record)"
+    );
     match blocked[0] {
         LedgerRecord::Blocked { job_id, tool, index, reason, .. } => {
             assert_eq!(job_id, "tt_job-gate");
