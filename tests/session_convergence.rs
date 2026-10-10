@@ -425,3 +425,49 @@ fn observation_one_conversation_currently_maps_to_one_file_per_turn() {
         periods.len()
     );
 }
+
+/// ★★ K15 的**目标判据**（2026-10-10，reviewer 的硬承诺：**先判据、后实现**）。
+///
+/// **它今天必须是 `#[ignore]` 的** —— 因为它是**目标**而非现状：
+///   · 现状（观察态判据已测）：一个会话 = N 个提问 ⇒ **N 个文件**
+///   · 目标（本判据）：**一个会话（同一 episode）= 1 个文件**（按 episode 追加）
+/// ⇒ 若不加 `#[ignore]`，它会让整套变红 —— 而**"用红测试标注待办"会把"我在做这件事"
+///   和"这套测试坏了"混在一起**（一槽两义）。⇒ 用 `#[ignore]` + 具名理由，落地时取消它。
+///
+/// ★ 迁移案（已实测备齐，见 `KNOWN_ISSUES` K15 与 `§0-e`）：
+///   · **ADDITIVE**：新增 `episode_id` 字段（**不动 `id`** —— API 的 `id` 现在就是 `period_id`，
+///     `main.rs:268-274` 自述曾因此误导调用方）
+///   · 新写入按 `{episode_id}.events.jsonl` **追加**；旧 `{period_id}.events.jsonl` **不迁移、只读**
+///   · 读取侧先读 episode 文件、再并入旧 period 文件（`convergence.rs` 已有合并前例）
+///   · 回滚 = 停止写新形态 + 回退读取顺序（旧文件始终权威 ⇒ 无数据丢失）
+///   · **gist 同锚**（`convergence.rs:362` 的 `{period_id}.gist` ⇒ 同答案）
+///
+/// **回滚条件（reviewer 2026-10-10）**：若 Ⓑ 到手且 anaphase 的红落在 **`session_events` 域**
+///   ⇒ **暂停实现，先做坑位核对**（别在错误假设上开工）。
+#[test]
+#[ignore = "K15 目标判据：先判据后实现 —— 实现落地后取消 ignore"]
+fn k15_target_one_episode_lands_in_one_file() {
+    use anaphase::contract::{derive_episode_id, derive_job_id};
+    use anaphase::session_events::identity::try_allocate_period_id;
+
+    let first_input = "帮我看看这个方案";
+    let asks = ["帮我看看这个方案", "那第二个问题呢"];   // 同一个会话的两次提问
+    let ep = derive_episode_id(first_input);
+    assert!(ep.starts_with("ep-"), "episode 锚: {ep}");
+
+    // 现状：每问一个 period ⇒ 每问一个文件
+    let periods: Vec<String> = asks
+        .iter()
+        .map(|a| try_allocate_period_id(&derive_job_id(a), 1_000).expect("allocate"))
+        .collect();
+
+    // ★ 目标：**同一个 episode 的落盘文件数 = 1**
+    //   实现落地后，这里应改为"按 episode 查文件数"，而 `periods` 只用于证明"旧锚仍在"。
+    assert_eq!(
+        periods.len(),
+        1,
+        "K15 目标未达成：同一会话（episode={ep}）当前落 {} 个文件；\
+         目标 = 1 个（按 episode 追加 · ADDITIVE · 不动 `id`）",
+        periods.len()
+    );
+}
