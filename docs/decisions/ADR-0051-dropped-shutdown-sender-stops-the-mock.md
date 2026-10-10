@@ -62,3 +62,60 @@ shutdown 发送端绑成 `_tx`：
 
 **任何新调用 `spawn_mock_tentacle` 的测试都必须持有返回的发送端**（`common::keep_mock_alive(tx)`）。
 `tests/stage_events.rs` 就是漏了这一处而间歇红（同一根因的第二例，由本 ADR 的判据独立重发现）。
+
+---
+
+## 附：结案后的四条补记（2026-10-09，reviewer 审查后）
+
+### 附① 分母说清（原来"全套 6/6"没给分母）
+
+**确切命令**：`cargo test --all-features --no-fail-fast`
+**真实分母**：**35 个测试二进制**（`Running` 行）· **483 条测试用例** · 36 个结果块。
+
+**基线只写红率，不写失败计数** —— 各轮口径不一：一次 20 连跑的全套里 19/20 次运行有红、
+累计 **67** 个失败（≈3.5/次，**全库范围**）；而另一处 **25–28** 是
+`--test run_cycle_pipeline` **单文件** 20 次的累计。**两者分母不同，不可并列**。
+⇒ 故本文的基线表述统一为：**修复前红率 ≈95%（20 连跑 19 次有红）→ 修复后 0/35 二进制红、483/483 绿。**
+
+### 附② `the_override_does_not_affect_the_real_run` 的销案（从"断言"升级为"证据"）
+
+它**不是**被本 ADR 的 tx 修复修好的（它所在文件 `tests/ci_line_budget.rs` 根本不调用
+`spawn_mock_tentacle`）。它的正文是：
+
+    fn the_override_does_not_affect_the_real_run() {
+        let (code, _, stderr) = run_checker(&[]);
+        assert_eq!(code, 0, "the tree is clean: {stderr}");
+    }
+
+⇒ 它**恰好在行预算变绿时转绿** ⇒ **真因是行预算修复**（登记 `K25-LEDGER-SNAPSHOT` 坑 +
+`[[fix_window]]`），与本条分账、因果闭合。**"消失了"必须追因，不能算作"顺带修好"。**
+
+### 附③ 修法补上一半：`_handle` 的"死亡无人知晓"已在**源头**清掉
+
+`keep_mock_alive` 只持 `tx` 时，`handle` 仍被调用方丢成 `_handle` ⇒ 服务器任务若 **panic**
+或异常结束，无人知晓（H5 的沉默形态）。本轮在 **`spawn_mock_tentacle` 源头**加看守者：
+
+    let watched = handle;
+    let handle = tokio::spawn(async move {
+        if let Err(e) = watched.await {
+            eprintln!("[K25] mock tentacle 任务异常结束: {e}（panic={}）", e.is_panic());
+        }
+    });
+
+⇒ 死亡**具名**（含 panic，经 `JoinError::is_panic`），且**不改变** `tests/mock_tentacle.rs:66`
+的正当用法（那里只用发送端）：实测 `--test mock_tentacle` 仍 **4 passed**。
+
+### 附④ 方法论第 6、7 条
+
+**第 6 条（本轮最贵的遗漏）：绿是小样本抽样，红率 N≥20 才有资格说话。**
+它正是"等它红是伪命题"的来源 —— 我曾据"8/8 绿"宣布"它现在不红了"，而同一命令
+20 连跑是 **19/20 有红**。**对"变绿"与"消失了"同样适用**（附②就是实例）。
+
+**第 7 条：每个二分先问第三态。** 本轮的三个二分各自漏了第三态，且漏的那一支先验最高：
+- "断言读数为 0" 的二分漏了 **C（断言早于完成）**；
+- "采样看见什么" 的二分漏了 **挂起任务没有线程栈帧**（死/挂/busy 三分）；
+- "grep 无输出" 的二分漏了 **仪器本身静音**（没有订阅者）。
+**⇒ 对成功断言同样适用**："绿了 / 消失了"也有第三态（小样本绿 / 他因被顺手修掉），附②即实例。
+
+**（记账，不重做）** 本 ADR 的改动是三件不可分的东西（修复 / 判据仪器 / ADR 三本账），
+故以 `[large]` 具名提交。**习惯上更优的姿势是：三笔各 <50 行的提交互相引用**（对 `git bisect` 友好）。

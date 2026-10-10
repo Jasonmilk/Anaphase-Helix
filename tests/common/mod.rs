@@ -221,6 +221,17 @@ pub async fn spawn_mock_tentacle(
             eprintln!("[K25-H5] mock tentacle server 退出（此前会被静默吞掉）: {e}");
         }
     });
+    /* ★ K25（2026-10-09）第 3 件尾巴：把"死亡无人知晓"一笔清掉。
+     * 原先返回 `handle`，调用方多写成 `_handle` ⇒ 服务器任务若 panic 或异常结束，
+     * **没有任何人知道**（H5 的沉默形态）。这里在**源头**加一个看守者：
+     * 由它 await 真 handle 并**具名打印**异常结束——包括 panic（JoinError::is_panic）。
+     * 返回给调用方的是看守者的 handle；调用方丢弃它也无妨（任务会继续跑完）。 */
+    let watched = handle;
+    let handle = tokio::spawn(async move {
+        if let Err(e) = watched.await {
+            eprintln!("[K25] mock tentacle 任务异常结束: {e}（panic={}）", e.is_panic());
+        }
+    });
     (format!("http://{}", addr), captured, shutdown_tx, handle)
 }
 
