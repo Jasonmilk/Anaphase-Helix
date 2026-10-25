@@ -161,7 +161,7 @@ let file = fs::OpenOptions::new()
 
 ## 七、实现记录与偏差（2026-09-18，**待人类裁定**）
 
-**本 ADR 仍是 `Proposed`，但代码已经落地**（`anaphase-helix: 519da1f`、`a15a9eb`、`fbecc01`；消费侧 `Cellrix: 1fbab6e`）。
+**本 ADR 已于 2026-09-18 由人类裁定 `Accepted`（见文首状态行），代码亦已落地**（原此处曾写"仍是 Proposed"——同一事实写两处 ⇒ 两处漂；2026-10-25 收敛为一处，见 phyt-DNA ADR-20261025-failure-diagnosis-must-be-positive 的同族教训）（`anaphase-helix: 519da1f`、`a15a9eb`、`fbecc01`；消费侧 `Cellrix: 1fbab6e`）。
 按家族规矩「文档不落后源码」，此处**如实记录偏差**，**不替人类批准也不改动 D1–D5 的原文**。
 
 ### 7.1 与 D2 的偏差：分配方式由「文件系统后缀」改为「时钟 + 计数器」
