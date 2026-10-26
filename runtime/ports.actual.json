@@ -1,0 +1,97 @@
+{
+  "ports": {
+    "tuck": 60052,
+    "tentacle": 50051,
+    "mind": 50052,
+    "flowmodus-serve": 60053,
+    "flowmodus-reason": 60054,
+    "anaphase": 50061,
+    "panel": 50050
+  },
+  "events": [
+    {
+      "name": "tuck",
+      "kind": "DRIFT",
+      "severity": "warn",
+      "note": "期望端口 60052 != 角色序推导值 50050"
+    },
+    {
+      "name": "tuck",
+      "kind": "BOUND",
+      "port": 60052,
+      "note": "空闲，直接绑定"
+    },
+    {
+      "name": "tentacle",
+      "kind": "DRIFT",
+      "severity": "warn",
+      "note": "期望端口 50051 != 角色序推导值 50150"
+    },
+    {
+      "name": "tentacle",
+      "kind": "BOUND",
+      "port": 50051,
+      "note": "空闲，直接绑定"
+    },
+    {
+      "name": "mind",
+      "kind": "DRIFT",
+      "severity": "warn",
+      "note": "期望端口 50052 != 角色序推导值 50250"
+    },
+    {
+      "name": "mind",
+      "kind": "BOUND",
+      "port": 50052,
+      "note": "空闲，直接绑定"
+    },
+    {
+      "name": "flowmodus-serve",
+      "kind": "DRIFT",
+      "severity": "warn",
+      "note": "期望端口 60053 != 角色序推导值 50350"
+    },
+    {
+      "name": "flowmodus-serve",
+      "kind": "BOUND",
+      "port": 60053,
+      "note": "空闲，直接绑定"
+    },
+    {
+      "name": "flowmodus-reason",
+      "kind": "DRIFT",
+      "severity": "warn",
+      "note": "期望端口 60054 != 角色序推导值 50450"
+    },
+    {
+      "name": "flowmodus-reason",
+      "kind": "BOUND",
+      "port": 60054,
+      "note": "空闲，直接绑定"
+    },
+    {
+      "name": "anaphase",
+      "kind": "DRIFT",
+      "severity": "warn",
+      "note": "期望端口 50061 != 角色序推导值 50550"
+    },
+    {
+      "name": "anaphase",
+      "kind": "BOUND",
+      "port": 50061,
+      "note": "空闲，直接绑定"
+    },
+    {
+      "name": "panel",
+      "kind": "DRIFT",
+      "severity": "warn",
+      "note": "期望端口 50050 != 角色序推导值 50650"
+    },
+    {
+      "name": "panel",
+      "kind": "BOUND",
+      "port": 50050,
+      "note": "空闲，直接绑定"
+    }
+  ]
+}
