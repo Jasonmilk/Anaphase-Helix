@@ -1,7 +1,7 @@
 {
   "version": 1,
   "adr": "anaphase:ADR-0046",
-  "note": "The Helix chain's WIRING FACTS — the one source. Launchers derive 'which components, on which ports, injecting which Anaphase endpoint env' from here and must not restate them. Measured 2026-09-24: three launchers disagreed, and only one of them closed the loop.",
+  "note": "The Helix chain's WIRING FACTS — the one source. Launchers derive 'which components, on which ports, injecting which Anaphase endpoint env' from here and must not restate them. Measured 2026-09-24: three launchers disagreed, and only one of them closed the loop. aliases: health.rs 探测的端点名与组件名不同时，用 alias 归一；证据①语义 serve=服务↔flowmodus、reason=推理↔reasoning；②顺序（chain.json 的 order 0/1 与 health.rs 声明序一致）⇒ 无需语义判断。",
   "components": [
     {
       "name": "tuck",
@@ -48,7 +48,10 @@
       "port": 60053,
       "health_path": "/api/status",
       "order": 4,
-      "note": "Resolves its registry through the RELATIVE path 'registry' — must run from flowmodus-rs/."
+      "note": "Resolves its registry through the RELATIVE path 'registry' — must run from flowmodus-rs/.",
+      "alias": [
+        "flowmodus"
+      ]
     },
     {
       "name": "flowmodus-reason",
@@ -59,7 +62,10 @@
       "anaphase_env": "ANAPHASE_FLOWMODUS_ENDPOINT",
       "anaphase_value": "grpc://127.0.0.1:60054",
       "order": 5,
-      "note": "Same binary as flowmodus-serve, second listener. Anaphase dispatches to gRPC on any non-http scheme (anaphase:ADR-0045)."
+      "note": "Same binary as flowmodus-serve, second listener. Anaphase dispatches to gRPC on any non-http scheme (anaphase:ADR-0045).",
+      "alias": [
+        "reasoning"
+      ]
     },
     {
       "name": "anaphase",
