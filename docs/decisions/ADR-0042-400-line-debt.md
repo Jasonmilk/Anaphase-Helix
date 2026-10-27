@@ -1,6 +1,8 @@
 # ADR-0042: 400 行红线债务清偿 —— D11 的"另行开轮"到期
 
-- **状态**: Accepted
+- **状态**: **Superseded（2026-10-27）· 标尺已取消** —— 本 ADR 的 400 是 
+  「注意力边界」，园丁已取消该限制；**现行生效阈值见文末「补注 S」**（= CI-6 的 `--budget 300`）。
+  **本 ADR 正文内的 400 / `over_total` 公式 / 由它派生的数字一律不得再作为真值引用。**
 - **日期**: 2026-09-18
 - **决策范围**: anaphase-helix（`session_events.rs` → `session_events/`，`run_cycle.rs` → `run_cycle/`）
 - **关联**: `ADR-0038` D11（本次不做：不解耦 400 行红线既有违规）· `ADR-0041`（周期身份，其代码落在 `session_events.rs`）· DNA 红线「代码超 400 行必须解耦」
@@ -621,3 +623,71 @@ cargo clippy --all-features -- -W clippy::cognitive_complexity -W clippy::too_ma
 
 **⇒ 重复率（duplication）这一维本轮不做**：本仓四次拆分实测**未产生重复代码**，**没有需要它解决的观测问题**。
 **没有观测问题的维度不进清单** —— 否则就是给自己再造一个 allowance 装置，而那正是 D16 刚拆掉的东西。
+
+---
+
+## 补注 S（2026-10-27）：本 ADR 的标尺已取消 —— 400 不再是任何门的阈值
+
+**为什么补这一节**：本节由一次真实事故触发。我在 2026-10-27 以「`ADR-0042:512` 说 400 保留为分层边界」
+为依据，替一项待裁决的基线**选了刻度**，并从该刻度推出 `over_total = 1090 → 1471（+381）` 一整组数字。
+园丁指出：**400 这个粗暴限制早已取消**。⇒ 我为验证一个**已作废的边界**付了两轮成本。
+
+**这不是「文档说已做、代码里没有」（我们抓过三次的那种）**，是它的镜像：
+**「文档说有效、实际已废」** —— 同一族，方向相反。而我们没把它用在自己读的那份文档上。
+
+### S.1 「400 已取消」在规范文本里指得到行
+
+| 出处 | 原文（逐字） |
+|---|---|
+| `phyt-DNA/position.md:53` | 「**本仓不把它造成门**：400 行是**注意力**的边界（人一次读得完多少），不是**机器**能判的对错。」 |
+| `phyt-DNA/docs/V1-TRIAGE.md:58` | 「400 行红线（**v1 遗产，不造门**）」 |
+| `anaphase-helix/docs/DNA.md`（全文） | **没有任何 400 行条款**（`grep -n '400' docs/DNA.md` ⇒ 命中 0）——而本 ADR 的依据正写着「DNA 红线：代码超 400 行必须解耦」⇒ **该依据在现行 DNA 里不存在** |
+
+### S.2 现行生效阈值指得到行，且 CI-6 实际按它判
+
+| 出处 | 内容 |
+|---|---|
+| `ci/check_line_budget.py:962` | `ap.add_argument("--budget", type=int, default=300)` |
+| `python3 ci/check_line_budget.py` 实测输出 | `FAIL  8 file(s) over 300 NOCL with no waiver:`（rc=1）⇒ **判的是 300，不是 400** |
+| 代码自己的表述 `ci/check_line_budget.py:257` | 「…the same way **the 400-line budget was** missing a class rather than being wrong」——用**过去式**指 400 ⇒ 代码侧早已当它是历史 |
+
+### S.3 `over_total` 按现行阈值重算（旧数字全部标 superseded）
+
+用 CI-6 自己的算子（`iter_sources` / `is_test_path` / `ncloc`，逐字照抄它的调用方式）复算：
+
+| 口径 | 文件数 | `over_total` = Σ max(0, NCLOC − budget) | 状态 |
+|---|---|---|---|
+| **budget=300（现行）· 仅 `src/`** | **13** | **2429** | ✅ 现行真值 |
+| **budget=300（现行）· 含 `ci/`** | **16** | **3001** | ✅ 现行真值 |
+| budget=400（已取消）· 仅 `src/` | 7 | 1468 | ⛔ superseded |
+| budget=400（已取消）· 含 `ci/` | 8 | 1772 | ⛔ superseded |
+| ADR 原文记录值（400 口径，2026-09-20） | 5 | **1090** | ⛔ superseded |
+| 我 2026-10-27 报的值（400 口径，含 DATA-ONLY `config.rs` 3 行） | — | 1471 | ⛔ superseded |
+| 同上 · `8c99738` 快照（400 口径，仅 `src/`） | 5 | 1090（= ADR 逐字吻合） | ⛔ superseded（**口径对、标尺废**） |
+
+**`+381` 也随之作废**：它是 `1471 − 1090`，两项都以 400 为刻度；**标尺取消后这个差值不指向任何事实**。
+（分解本身仍可读：老文件涨 184 · 新越界 197 —— 但那是「相对 400 刻度」的分解。）
+
+**budget=300 明细（仅 `src/`，13 个）**：`main.rs` 1035(+735) · `run_cycle/mod.rs` 743(+443) · `bin/up.rs` 545(+245)
+· `hitl.rs` 505(+205) · `contract/mod.rs` 502(+202) · `session_events/convergence.rs` 489(+189)
+· `adapters/http_reasoning.rs` 449(+149) · `adapters/mind.rs` 395(+95) · `session_events/gc.rs` 376(+76)
+· `rails.rs` 370(+70) · `session_events/query.rs` 317(+17) · `bind.rs` 302(+2) · `pipeline/mod.rs` 301(+1)
+
+**与 CI-6 的 8 个交叉核对**：13 个超 300 中有 5 个持有**未到期**豁免（`main.rs` due 11-27 · `run_cycle/mod.rs` due 12-11
+· `bin/up.rs` due 11-13 · `contract/mod.rs` due 11-13 · `http_reasoning.rs` due 10-30）⇒ **13 − 5 = 8**，
+与 `FAIL 8 file(s) over 300 NOCL with no waiver` 逐字吻合 ⇒ 两套读数自洽。
+
+### S.4 本 ADR 的正文：哪些仍然有效，哪些作废
+
+| 正文部分 | 判定 |
+|---|---|
+| D11「另行开轮」的兑现过程（`session_events.rs`→`session_events/` · `run_cycle.rs`→`run_cycle/`） | ✅ **仍有效**（那是已发生的事实，不依赖刻度） |
+| D12「规模不得作正当性」 | ✅ 仍有效（与刻度无关） |
+| D16 `over_total` 闸门与「只减不增」 | ⛔ **作废**：阈值取消 ⇒ 公式无意义；且**它从未被实现**（见 K-129：代码里 `over_total` 0 处，仅 `ci/baseline.toml:403/405` 两行注释） |
+| D17「400 保留为分层边界」及其 4 条子论证 | ⛔ **作废**（本节即其 supersede 记录） |
+| 「门禁 enforcing 的是导航约定」这一自述 | ✅ 仍有效，且**现在更强**：既然 400 已取消，CI-6 的 300 更应立即说明自己是**施工约束**，不是质量或导航的客观刻度 |
+
+### S.5 纪律（已入 `GLOSSARY`，驱动层仓）
+
+> **引用规范条款之前，先确认它没被 superseded。**
+> 核对文本 ≠ 核对文本的有效性。**越认真地引用，错得越彻底。**
