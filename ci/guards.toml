@@ -42,18 +42,23 @@ id     = "gate-directions-differ"
 test   = "every_gate_branch_answers_what_it_answers_today"
 kind   = "lib"
 file   = "src/run_cycle/safety_gate.rs"
-from   = "                GateVerdict::Refused(TransitionCondition::Success)"
-to     = "                GateVerdict::Refused(TransitionCondition::Failure)"
+from   = "                ToolGateOutcome::Refused(TransitionCondition::Success)"
+to     = "                ToolGateOutcome::Refused(TransitionCondition::Failure)"
 k_id   = "K-033"
+# 2026-10-27（K-131）：`GateVerdict` 已重命名为 `ToolGateOutcome`（K19）⇒ 旧 `from` 在源文件里出现 0 次
+# ⇒ 本守卫静默失效（定位不到变异 ⇒ 不叫；而 rc=3 没人看就等于通过）。重写照抄真件字面量，未改判据含义。
 
 [[guard]]
 id     = "hitl-error-blocks"
 test   = "pc1_a_low_risk_tool_is_not_consulted_and_a_high_risk_one_is"
 kind   = "lib"
 file   = "src/run_cycle/safety_gate.rs"
-from   = "            warn!(\"[SafetyGate] HITL unavailable for {tool:?}, blocked (fail-closed): {e}\");\n            return GateVerdict::Refused(TransitionCondition::Failure);"
-to     = "            warn!(\"[SafetyGate] HITL unavailable: {e}\");"
+from   = "            warn!(\"[SafetyGate] HITL unavailable for {tool:?}, blocked (fail-closed) (hitl-unavailable: no channel could answer)\");\n            return ToolGateOutcome::Refused(TransitionCondition::Failure);"
+to     = "            warn!(\"[SafetyGate] HITL unavailable for {tool:?}: ALLOWING (fail-open) (hitl-unavailable)\");\n            return ToolGateOutcome::Cleared;"
 k_id   = "K-033"
+# 2026-10-27（K-131）：旧 `to` 用了早已不存在的 `{e}`（当时是 `Err(e)` 分支）⇒ 变异体根本编不过，
+# 而 `from` 也已漂成 0 次。现在：注入体必须**能编过**（否则测的是编译错误、不是行为），
+# 且方向必须反（fail-closed ⇒ Cleared/fail-open），否则测的是「改了没坏」而不是「判据会叫」。
 
 [[guard]]
 id     = "governed-is-dead"
@@ -153,6 +158,6 @@ test   = "no_gate_blocks_a_high_risk_call"
 kind   = "integration"
 target = "security_gate"
 file   = "src/pipeline/mod.rs"
-from   = "                None => crate::hitl::HITLApprover::is_high_risk(&call.tool).then(|| {"
+from   = "                None => crate::hitl::HITLApprover::is_high_risk_call(&call.tool, &params).then(|| {"
 to     = "                None => false.then(|| {"
 k_id   = "B7"
