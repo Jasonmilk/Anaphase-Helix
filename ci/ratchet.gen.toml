@@ -14,10 +14,13 @@
 counter = 2
 [[ratchet]]
 target = "ci/"
-ncloc  = 1787
+ncloc  = 1969
 [[ratchet]]
 target = "ci/allowances.py"
 ncloc  = 382
+[[ratchet]]
+target = "ci/check_adr_refs.py"
+ncloc  = 182
 [[ratchet]]
 target = "ci/check_guards.py"
 ncloc  = 386
@@ -32,13 +35,13 @@ target = "ci/scan_mutants.py"
 ncloc  = 266
 [[ratchet]]
 target = "src/"
-ncloc  = 4531
+ncloc  = 4544
 [[ratchet]]
 target = "src/adapters/"
-ncloc  = 1419
+ncloc  = 1429
 [[ratchet]]
 target = "src/adapters/flowmodus.rs"
-ncloc  = 78
+ncloc  = 81
 [[ratchet]]
 target = "src/adapters/http_reasoning.rs"
 ncloc  = 449
@@ -50,7 +53,7 @@ target = "src/adapters/mod.rs"
 ncloc  = 196
 [[ratchet]]
 target = "src/adapters/security_gate.rs"
-ncloc  = 103
+ncloc  = 110
 [[ratchet]]
 target = "src/adapters/tentacle.rs"
 ncloc  = 79
@@ -122,10 +125,10 @@ target = "src/judge.rs"
 ncloc  = 185
 [[ratchet]]
 target = "src/ledger/"
-ncloc  = 237
+ncloc  = 265
 [[ratchet]]
 target = "src/ledger/mod.rs"
-ncloc  = 237
+ncloc  = 265
 [[ratchet]]
 target = "src/lib.rs"
 ncloc  = 39
@@ -134,13 +137,13 @@ target = "src/lifecycle.rs"
 ncloc  = 148
 [[ratchet]]
 target = "src/main.rs"
-ncloc  = 1022
+ncloc  = 1035
 [[ratchet]]
 target = "src/pipeline/"
-ncloc  = 287
+ncloc  = 301
 [[ratchet]]
 target = "src/pipeline/mod.rs"
-ncloc  = 287
+ncloc  = 301
 [[ratchet]]
 target = "src/rails.rs"
 ncloc  = 370
@@ -149,19 +152,19 @@ target = "src/reflex.rs"
 ncloc  = 22
 [[ratchet]]
 target = "src/run_cycle/"
-ncloc  = 1463
+ncloc  = 1477
 [[ratchet]]
 target = "src/run_cycle/memory_retrieval.rs"
 ncloc  = 81
 [[ratchet]]
 target = "src/run_cycle/mod.rs"
-ncloc  = 732
+ncloc  = 743
 [[ratchet]]
 target = "src/run_cycle/reasoning.rs"
 ncloc  = 258
 [[ratchet]]
 target = "src/run_cycle/reflection.rs"
-ncloc  = 215
+ncloc  = 218
 [[ratchet]]
 target = "src/run_cycle/safety_gate.rs"
 ncloc  = 57
@@ -176,7 +179,7 @@ target = "src/security.rs"
 ncloc  = 68
 [[ratchet]]
 target = "src/session_events/"
-ncloc  = 2216
+ncloc  = 2246
 [[ratchet]]
 target = "src/session_events/convergence.rs"
 ncloc  = 489
@@ -200,7 +203,7 @@ target = "src/session_events/pins.rs"
 ncloc  = 127
 [[ratchet]]
 target = "src/session_events/query.rs"
-ncloc  = 287
+ncloc  = 317
 [[ratchet]]
 target = "src/session_events/refs.rs"
 ncloc  = 293

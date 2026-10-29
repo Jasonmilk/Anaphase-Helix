@@ -1,4 +1,4 @@
-//! REFS — the third layer (ADR-0048 §307/§309).
+//! REFS — the third layer (Cellrix:ADR-0048 §307/§309).
 //!
 //! Objects (periods) and edges (`parent`) existed; a REF is the small pointer that says *this
 //! conversation continues from HERE*. Git keeps refs in the repository, not in the window that happens
@@ -52,7 +52,7 @@ pub fn check_ref_name(name: &str) -> io::Result<()> {
 
 /// One line of a ref's HISTORY: which value was replaced, and when (a Git-style reflog).
 ///
-/// WHY THIS EXISTS BEFORE ANYONE NEEDS IT (ADR-0048 §315): `PUT` overwrites, so the OLD value is gone
+/// WHY THIS EXISTS BEFORE ANYONE NEEDS IT (Cellrix:ADR-0048 §315): `PUT` overwrites, so the OLD value is gone
 /// the moment it is replaced — and the deletion subsystem (`M2`) derives its grace anchor from exactly
 /// that fact: `(time, vacated position)`. A record written AFTERWARDS has fidelity q<1 per write, and
 /// `q^n` decays to ~0.37 for any n — that is, a back-filled stub is worth about as much as no stub. The
@@ -72,7 +72,7 @@ fn now_rfc3339() -> String {
 
 /// Read a ref's history, oldest first. An unreadable line is SKIPPED rather than fatal: a log with one
 /// torn line still answers "what was here before", which is the question it exists to answer.
-/// The ref's history — DERIVED from the period streams, never a second book (ADR-0048 §321).
+/// The ref's history — DERIVED from the period streams, never a second book (Cellrix:ADR-0048 §321).
 ///
 /// A `ref/move` row lives in the stream of the period the ref pointed at, so the anchor and the object
 /// share one stream. Reading the history is therefore a **projection** over the streams; deleting the
@@ -114,7 +114,7 @@ pub fn read_ref_log(events_dir: &Path, name: &str) -> io::Result<Vec<RefLogEntry
             });
         }
     }
-    /* ORDERED BY THE POINTER CHAIN, NOT BY STREAM ORDER (ADR-0048 §321 + §320 P12). The entries live in
+    /* ORDERED BY THE POINTER CHAIN, NOT BY STREAM ORDER (Cellrix:ADR-0048 §321 + §320 P12). The entries live in
      * different streams, and cross-stream timestamps are NOT comparable — so the only honest order is the
      * one the pointers themselves define: `old -> new`. An entry the chain cannot reach keeps its scan
      * position (named as a partial reconstruction rather than silently reordered). */
@@ -145,7 +145,7 @@ pub fn read_ref_log(events_dir: &Path, name: &str) -> io::Result<Vec<RefLogEntry
     Ok(chained)
 }
 
-/// Write the ref act INTO the target period's stream (ADR-0048 §321).
+/// Write the ref act INTO the target period's stream (Cellrix:ADR-0048 §321).
 ///
 /// Uses `open_append`, so numbering continues from that stream's last `seq` (never re-used) and nothing
 /// is overwritten. If the stream is torn, this FAILS BY NAME rather than guessing a number.
@@ -185,7 +185,7 @@ pub fn read_ref(events_dir: &Path, name: &str) -> io::Result<Option<String>> {
 
 /// Point `name` at `period_ref`, REFUSING a target that does not name exactly one existing period.
 /// Returns the RESOLVED period id (so the caller learns which period the pointer actually names).
-/// SINGLE-WRITER ASSUMPTION (ADR-0048 §318): this reads the previous value and then writes the new one —
+/// SINGLE-WRITER ASSUMPTION (Cellrix:ADR-0048 §318): this reads the previous value and then writes the new one —
 /// a check-then-write window. Today exactly ONE process writes `.refs` (the panel), and the reflog records
 /// what that process replaced. A second concurrent writer could record a stale `old`, so multi-writer
 /// support must close (or explicitly acknowledge) that window with a CONCURRENCY criterion, not by luck.
@@ -223,7 +223,7 @@ pub fn write_ref(events_dir: &Path, name: &str, period_ref: &str) -> io::Result<
     let old = read_ref(events_dir, name)?;
     fs::write(&path, format!("{id}\n"))?;
     /* THE OLD VALUE IS RECORDED AT THE MOMENT IT IS REPLACED, IN THE TARGET'S OWN STREAM
-     * (ADR-0048 §321): a second book beside the streams would leave cross-stream order
+     * (Cellrix:ADR-0048 §321): a second book beside the streams would leave cross-stream order
      * undefined, and the grace anchor compares against the object's history. */
     record_ref_move(events_dir, &id, name, old.as_deref(), Some(&id))?;
     Ok(id)
@@ -236,7 +236,7 @@ pub fn delete_ref(events_dir: &Path, name: &str) -> io::Result<bool> {
     let old = read_ref(events_dir, name)?;
     match fs::remove_file(refs_dir(events_dir).join(name)) {
         Ok(()) => {
-            /* A VACANCY is recorded in the stream of the period that was vacated (ADR-0048 §321). */
+            /* A VACANCY is recorded in the stream of the period that was vacated (Cellrix:ADR-0048 §321). */
             if let Some(prev) = old.as_deref() {
                 record_ref_move(events_dir, prev, name, old.as_deref(), None)?;
             }
@@ -291,14 +291,14 @@ fn collect_refs(root: &Path, dir: &Path, out: &mut Vec<RefEntry>) -> io::Result<
     Ok(())
 }
 
-/* ── THE WRITER LOCK (ADR-0048 §322, ledger P14/P15) ──────────────────────────────────────────────
+/* ── THE WRITER LOCK (Cellrix:ADR-0048 §322, ledger P14/P15) ──────────────────────────────────────────────
  * `write_ref` READS the previous value and then writes: a check-then-write window. A comment cannot
  * refuse a second writer, and M5 (the Tauri shell) is a KNOWN future second writer — so the window is
  * closed with a lock that NAMES its holder and can only be broken by an explicit act.
  *
  * Advisory by construction: a process that ignores `.refs/.writer` can still write. That limit is DECLARED
  * here rather than implied, because "we hold a lock" and "nobody else can write" are different claims. */
-const WRITER_STALE_SECS: u64 = 300; /* declared threshold (ADR-0022 §2.5): older locks are named, never stolen */
+const WRITER_STALE_SECS: u64 = 300; /* declared threshold (Cellrix:ADR-0022 §2.5): older locks are named, never stolen */
 
 fn writer_lock_path(events_dir: &Path) -> PathBuf {
     refs_dir(events_dir).join(".writer")
@@ -367,7 +367,7 @@ pub fn release_stale_writer(events_dir: &Path) -> io::Result<bool> {
     }
 }
 
-/* ── RETENTION MUST COVER THE GRACE WINDOW (ADR-0048 §323, ledger P16) ─────────────────────────────
+/* ── RETENTION MUST COVER THE GRACE WINDOW (Cellrix:ADR-0048 §323, ledger P16) ─────────────────────────────
  * The grace window decides when a vacated position may be recycled; the retention window decides how long
  * the VACANCY FACT survives. If retention is shorter, the anchor is trimmed BEFORE it is needed and the
  * protection silently disappears — the reviewer measured 82% under-protection at 50 entries versus 14

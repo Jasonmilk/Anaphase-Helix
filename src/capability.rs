@@ -1,4 +1,4 @@
-//! Capability classes, declared OUTSIDE the request (ADR-0048 §236).
+//! Capability classes, declared OUTSIDE the request （原引 ADR-0048 的 §233–§236 在工作区任何 ADR 里都不存在（Cellrix 索引 232→237 跳号），见 DEBTS d-adr0048-233-236）.
 //!
 //! Hardy 1988 (*The Confused Deputy*) names the defect this module removes: a gate that holds its own
 //! classifier **and** reads the monitored party's text draws "authority stemming from two sources".

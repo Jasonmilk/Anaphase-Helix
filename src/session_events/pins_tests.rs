@@ -1,4 +1,4 @@
-//! C14b's criteria (ADR-0048 §330): a holder COUNT that survives a restart, an owner that must be
+//! C14b's criteria (Cellrix:ADR-0048 §330): a holder COUNT that survives a restart, an owner that must be
 //! declarative, and orphans that are named rather than silently protective or silently collected.
 
 use super::*;

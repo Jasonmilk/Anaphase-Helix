@@ -9,7 +9,7 @@
 use std::sync::Arc;
 
 /// 人类确认回调：`(command, args) -> Ok(true)=确认放行 / Ok(false)=拒绝 / Err=无通道`
-/// THE SINGLE WORD TABLE (ADR-0048 §231). Every action word this crate knows, WITH THE ROLES IT
+/// THE SINGLE WORD TABLE (Cellrix:ADR-0048 §231). Every action word this crate knows, WITH THE ROLES IT
 /// SERVES — one host for the words, and the differences between classifiers become DECLARED tags
 /// instead of two hand-written lists that drift (measured: two same-named EXECUTION constants of
 /// 83 and 77 words, differing in ten places each, both hidden inside function bodies).
@@ -183,7 +183,7 @@ fn role_words(roles: &str) -> Vec<&'static str> {
 
 pub type ApproveFn = Arc<dyn Fn(&str, &[String]) -> ApprovalOutcome + Send + Sync>;
 
-/// 把**旧布尔合同**装进闭集（ADR-0048 §226）:`Ok(true) ⇒ AllowedOnce` · `Ok(false) ⇒ Rejected` ·
+/// 把**旧布尔合同**装进闭集（Cellrix:ADR-0048 §226）:`Ok(true) ⇒ AllowedOnce` · `Ok(false) ⇒ Rejected` ·
 /// `Err(_) ⇒ Unavailable`。旧批准者不必改写,而**新批准者可以表达 `Cancelled`**
 /// —— 这是"加宽管子",不是"催工人接线"。
 pub fn from_bool(
@@ -217,7 +217,7 @@ impl HITLApprover {
     }
 
     /// 高风险动作判定：写操作 / 网络请求 / 凭证使用
-    /// THE DECISION SURFACE IS THE CALL, NOT THE NAME (ADR-0048 §213).
+    /// THE DECISION SURFACE IS THE CALL, NOT THE NAME (Cellrix:ADR-0048 §213).
     ///
     /// Measured: judging the tool name alone intervenes on **0/12** realistic dangerous calls —
     /// the dangerous content lives in the arguments while the name is neutral ("run_command",
@@ -229,7 +229,7 @@ impl HITLApprover {
     /// `args_json` is the SAME serialization the `Some(gate)` path already passes as
     /// `GateCheck::args_json`, so the two paths finally judge the same thing.
     pub fn is_high_risk_call(tool: &str, args_json: &str) -> bool {
-        /* THE SURFACE IS CAPABILITY, NOT TEXT (ADR-0048 §215), and §213's "tool ∨ args text" was
+        /* THE SURFACE IS CAPABILITY, NOT TEXT (Cellrix:ADR-0048 §215), and §213's "tool ∨ args text" was
          * only half right — measured, scanning the args as free text gives:
          *   · false positives 11/12 (91.7%): `{"key":"theme"}` hits CREDENTIAL's `key`;
          *     `{"query":"how to remove a stain"}` hits WRITE's `remove`; `{"path":"…/.ssh/id_rsa.pub"}`
@@ -255,7 +255,7 @@ impl HITLApprover {
         Self::carries_command(args_json)
     }
 
-    /// THE REFUSAL MUST NOT NAME ITS TRIGGER (ADR-0048 §216 ⑤): naming the field or tool that
+    /// THE REFUSAL MUST NOT NAME ITS TRIGGER (Cellrix:ADR-0048 §216 ⑤): naming the field or tool that
     /// fired teaches an adaptive adversary exactly which name to change next. This states the
     /// capability position instead — "you did not declare a class", never "you wrote `code`".
     pub fn capability_undeclared_reason() -> &'static str {
@@ -263,7 +263,7 @@ impl HITLApprover {
          capability is not permission (B7). Declare one in the tool registry to allow it."
     }
 
-    /// UN-AMBIGUOUS NAMES ONLY (ADR-0048 §220 ③). §216 narrowed the name axis to EXECUTION and, in
+    /// UN-AMBIGUOUS NAMES ONLY (Cellrix:ADR-0048 §220 ③). §216 narrowed the name axis to EXECUTION and, in
     /// doing so, silently dropped WRITE/NETWORK/CREDENTIAL *by name*: measured, after that change
     /// `is_high_risk_call("rm", {"path":"/data"})` returned **false** — a tool literally called `rm`
     /// was allowed by name. The false positives §216 removed came from COMPOUND names and GENERIC
@@ -271,7 +271,7 @@ impl HITLApprover {
     /// dangerous if it IS one of them, or if EVERY word in it is dangerous (so `code_review`,
     /// `dry_run`, `send_message`, `run_query` stay allowed — those were the measured FPs).
     pub fn is_dangerous_name(tool: &str) -> bool {
-        /* THE OTHER GATE'S HALF (ADR-0048 §222). Measured: the ENGINE gate's list (`is_high_risk`)
+        /* THE OTHER GATE'S HALF (Cellrix:ADR-0048 §222). Measured: the ENGINE gate's list (`is_high_risk`)
          * and this pipeline gate's list shared only 79 words (Jaccard 0.577) — 30 words were blocked
          * by the engine and invisible here, and this module's own header says high-risk means
          * "write / network / credential". The pipeline gate scored **0/20** on bare names for those
@@ -308,7 +308,7 @@ impl HITLApprover {
         if role_words("A").contains(&bare.as_str()) {
             return true;
         }
-        /* ALL tokens must be execution words (ADR-0048 §216). Measured with `any`: `dry_run` fires
+        /* ALL tokens must be execution words (Cellrix:ADR-0048 §216). Measured with `any`: `dry_run` fires
          * (token `run`) although it is the one tool that does NOT run, and `code_review`,
          * `process_document`, `invoke_api`, `script_lint`, `shell_completion`, `run_query`,
          * `service_status` all fired on a single token. The judgement was inverted on `dry_run` —
@@ -324,7 +324,7 @@ impl HITLApprover {
     /// an executor's args are undecidable, so the refusal cites the SHAPE of the call, not its words.
     /// Unparseable args ⇒ refuse (fail-closed: undecidable is not permission — the B7 rule).
     pub fn carries_command(args_json: &str) -> bool {
-        /* EXACT, EXPLICIT COMMAND FIELDS ONLY (ADR-0048 §216). Measured false positives from the
+        /* EXACT, EXPLICIT COMMAND FIELDS ONLY (Cellrix:ADR-0048 §216). Measured false positives from the
          * previous matching (`ends_with`/`starts_with` + generic names + `_ => true` on any value):
          *   translate {"source":"en"} · llm_complete {"input":"…"} (an OpenAI STANDARD field) ·
          *   embeddings {"input":[…]} · form_submit {"action":"submit"} · render {"payload":{…}} ·
@@ -336,7 +336,7 @@ impl HITLApprover {
             "cmd", "command", "commandline", "script", "code", "stdin", "bin", "binary", "exec",
             "execute", "argv", "program", "shell", "eval", "snippet",
         ];
-        /* ABSENT IS NOT MALFORMED (ADR-0048 §225, measured the hard way): the first version of this
+        /* ABSENT IS NOT MALFORMED (Cellrix:ADR-0048 §225, measured the hard way): the first version of this
          * rule treated an EMPTY args string as undecidable and refused — which made every call with
          * no arguments high-risk, and two existing tests caught it (a low-risk tool was suddenly
          * consulted). "No arguments" is a fact we understand; "unparseable arguments" is the one we
@@ -369,7 +369,7 @@ impl HITLApprover {
     }
 
     pub fn is_high_risk(command: &str) -> bool {
-        /* THE CAPABILITY AXIS (ADR-0048 §212). Measured before this line existed: the list above
+        /* THE CAPABILITY AXIS (Cellrix:ADR-0048 §212). Measured before this line existed: the list above
          * blocked `rm`/`curl`/`ssh` (name axis 28.3%) and let `bash`/`python3`/`sudo`/`docker`
          * through (capability axis **0.0%**) — and an interpreter can perform every blocked action.
          * Saltzer & Schroeder (1975) name the failure direction of any exclusion list:
@@ -404,7 +404,7 @@ impl HITLApprover {
     pub fn check_approval(&self, command: &str, args: &[String]) -> ApprovalOutcome {
         /* 不变量(§226 ⑤):`args` 恰好携带一个已序列化的 JSON 值;多余者会被静默忽略。 */
         debug_assert!(args.len() <= 1, "check_approval expects one serialized args value");
-        /* THE UNION, NOT THE REPLACEMENT (ADR-0048 §225, corrected). §225 proposed switching this
+        /* THE UNION, NOT THE REPLACEMENT (Cellrix:ADR-0048 §225, corrected). §225 proposed switching this
          * to `is_high_risk_call(tool, args_json)`; measured, that would LOSE the engine's recall,
          * because `is_dangerous_name("rm -rf /")` is `false` (tokens {rm, rf}: `rf` is not in any
          * list, so the all-tokens rule declines) while the old token-OR classifier catches it.

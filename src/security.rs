@@ -129,7 +129,7 @@ impl SecurityGate for PermissiveGate {
     }
 }
 
-/* THE DECLARATION WAS DELETED (ADR-0048 §212): the string it returned said "every tool call
+/* THE DECLARATION WAS DELETED (Cellrix:ADR-0048 §212): the string it returned said "every tool call
  * executes UNGATED", and that is FALSE — measured, pipeline/mod.rs:198-212 blocks high-risk
  * calls when the gate is None ("absence is not approval (B7)") and writes a `blocked` ledger
  * record. Worse, the absence was ALREADY declared PER CALL by `gate_presence()`

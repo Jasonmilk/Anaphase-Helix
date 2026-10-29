@@ -38,7 +38,7 @@ struct MockMind {
     captured: Captured,
     /// P11b：mock Mind 返回的 suggested_actions（模拟 Mind 认知工艺产出的动作建议）
     suggested_actions: Vec<SuggestedAction>,
-    /// P10d (ADR-0032)：ana_wakeup 返回的 due alarms（默认空；测试注入）。
+    /// P10d (helix-mind:ADR-0032)：ana_wakeup 返回的 due alarms（默认空；测试注入）。
     due_alarms: Vec<anaphase::helix_mind_api::AlarmDue>,
     /// P10d：ack 调用记录（claim_id, status）。
     acked: std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>>,
@@ -221,7 +221,7 @@ impl HelixMind for MockMind {
             conflicts: vec![],
         }))
     }
-    // P10a (ADR-0031): deterministic craft stub — echo a fixed synthesis
+    // P10a (helix-mind:ADR-0031): deterministic craft stub — echo a fixed synthesis
     // so integration tests can assert the trigger path end to end.
     async fn helix_craft(
         &self,
@@ -298,7 +298,7 @@ async fn spawn_mock_mind_with_actions(actions: Vec<SuggestedAction>) -> (
     (format!("http://{}", addr), captured, shutdown_tx, handle)
 }
 
-/// P10d (ADR-0032)：spawn 一个返回指定 due alarms 的 mock Mind，暴露 ack 记录句柄。
+/// P10d (helix-mind:ADR-0032)：spawn 一个返回指定 due alarms 的 mock Mind，暴露 ack 记录句柄。
 async fn spawn_mock_mind_with_alarms(alarms: Vec<AlarmDue>) -> (
     String,
     Captured,

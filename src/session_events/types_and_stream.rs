@@ -51,16 +51,16 @@ pub enum EventType {
     Usage,
     /// The period ended and returned to Perception.
     TurnEnd,
-    /// D0 — THE TOMBSTONE (ADR-0048 §311): the period is deleted AS A FACT, and the readers hide it,
+    /// D0 — THE TOMBSTONE (Cellrix:ADR-0048 §311): the period is deleted AS A FACT, and the readers hide it,
     /// while every byte stays on disk. Deletion is three knobs, not one button: this is the first
     /// (`D1` GC and `D2` content destruction are separate and later). A tombstone is an EVENT because
     /// the WAL is the single source of truth — a sidecar flag would be a second one.
     Tombstone,
-    /// The third layer's own act (ADR-0048 §321): a ref was set, moved or cleared. It is written INTO THE
+    /// The third layer's own act (Cellrix:ADR-0048 §321): a ref was set, moved or cleared. It is written INTO THE
     /// TARGET PERIOD'S STREAM so that the grace anchor and the object it protects share ONE stream — cross-
     /// stream timestamps are not comparable, and a second book would be exactly that mistake.
     RefMove,
-    /// D1 — THE PURGE FACT (ADR-0048 §329): a physical delete HAPPENED. Without this row a replay would
+    /// D1 — THE PURGE FACT (Cellrix:ADR-0048 §329): a physical delete HAPPENED. Without this row a replay would
     /// revive the object (measured in the reviewer's sandbox: [4,5,6] came back), so the fact is an event in
     /// the SAME stream as the object, under the same writer lock as every other append.
     Purge,
@@ -168,7 +168,7 @@ impl SessionEventStream {
         })
     }
 
-    /// Append-mode open for a stream that ALREADY EXISTS (ADR-0048 §319).
+    /// Append-mode open for a stream that ALREADY EXISTS (Cellrix:ADR-0048 §319).
     ///
     /// `open` carries `seq` from 0 and writes at offset 0, so a second handle OVERWROTE a period's
     /// history (caught by the criterion "every byte stays on disk"). This opens with `append` and
@@ -184,7 +184,7 @@ impl SessionEventStream {
         fs::create_dir_all(&dir)?;
         let path = dir.join(format!("{period_id}.events.jsonl"));
         let last = last_seq_or_refuse(&path)?;
-        /* A MISSING TRAILING NEWLINE CONCATENATES TWO ROWS (ADR-0048 §325, measured). Appending to a file
+        /* A MISSING TRAILING NEWLINE CONCATENATES TWO ROWS (Cellrix:ADR-0048 §325, measured). Appending to a file
          * whose last row has no `\n` put the new object on the SAME line as the old one, and every reader
          * that parses JSONL line by line then crashed — three suites went red, and the cause was this
          * writer, not their invocation. The guard is here, at the only place that appends. */
@@ -271,7 +271,7 @@ impl SessionEventStream {
         // The FACT beside `chars` (the configured budget): what injection actually
         // contributed. `Option`, so "no measurement" stays distinct from zero.
         injected_chars: Option<usize>,
-        /* THE MODE, ONLY WHEN IT WAS DECLARED (ADR-0048 §346/§343). `None` leaves the key **ABSENT** — not
+        /* THE MODE, ONLY WHEN IT WAS DECLARED (Cellrix:ADR-0048 §346/§343). `None` leaves the key **ABSENT** — not
          * null, not `Mode::default()` — because "undeclared" must travel as an absence the reader can name
          * (`event_family`/`modeFacts` return `undeclared` for exactly this), never as a value that poses as a
          * choice. The two payloads are built explicitly so the absence is visible in the code. */
@@ -337,7 +337,7 @@ pub fn now_ts() -> String {
     )
 }
 
-/// The last `seq` in a stream, read WITHOUT silently skipping corruption (ADR-0048 §320, ledger P13).
+/// The last `seq` in a stream, read WITHOUT silently skipping corruption (Cellrix:ADR-0048 §320, ledger P13).
 ///
 /// A half-written last line means the NEXT number is **unknown**: `max+1` computed from the previous line
 /// would RE-USE the number the torn row already claimed, and two events sharing a `seq` are
@@ -376,7 +376,7 @@ fn last_seq_or_refuse(path: &std::path::Path) -> io::Result<u64> {
 }
 
 /// Drop a torn tail **explicitly**, returning how many BYTES were removed (0 = nothing to repair).
-/// The caller decides; the reader never silently skips (ADR-0048 §320).
+/// The caller decides; the reader never silently skips (Cellrix:ADR-0048 §320).
 pub fn repair_torn_tail(path: &std::path::Path) -> io::Result<usize> {
     let body = match fs::read_to_string(path) {
         Ok(b) => b,
@@ -401,7 +401,7 @@ pub fn repair_torn_tail(path: &std::path::Path) -> io::Result<usize> {
     Ok(dropped)
 }
 
-/// THE OPTIONAL MODE, AND IT DOES NOT FALL BACK (ADR-0048 §345). This lives beside the WRITER of the event
+/// THE OPTIONAL MODE, AND IT DOES NOT FALL BACK (Cellrix:ADR-0048 §345). This lives beside the WRITER of the event
 /// payload, not with the config struct: the config field is what a run is configured with, while this is what
 /// the payload may carry — and `None` must stay `None`, because substituting `Mode::default()` here is exactly
 /// the defect the reviewer named (a default that then claims to be declared). The panel's `undeclared` state

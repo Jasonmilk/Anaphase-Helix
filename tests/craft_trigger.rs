@@ -1,4 +1,4 @@
-//! Cognitive craft trigger tests — P10a (ADR-0031).
+//! Cognitive craft trigger tests — P10a (helix-mind:ADR-0031).
 //!
 //! On-demand zero-token orchestration BEFORE the LLM reasoning step:
 //! GrpcMindAdapter implements craft (helix_craft), the loop triggers it in

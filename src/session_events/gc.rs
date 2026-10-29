@@ -1,4 +1,4 @@
-//! D1 — THE COLLECTOR'S PURE CORE (ADR-0048 §328).
+//! D1 — THE COLLECTOR'S PURE CORE (Cellrix:ADR-0048 §328).
 //!
 //! Criteria first: every invariant below is expressed as a PURE function of `(state, now)` so that each one
 //! can be tested on its own and can go RED on its own. Three properties follow from the shape rather than
@@ -24,7 +24,7 @@ pub struct Object {
     pub stamped: bool,
 }
 
-/// The fact that a position was VACATED, and when. Recorded by the `ref/move` event (ADR-0048 §321).
+/// The fact that a position was VACATED, and when. Recorded by the `ref/move` event (Cellrix:ADR-0048 §321).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Vacancy {
     pub id: String,
@@ -157,14 +157,14 @@ pub fn plan(input: &GcInput, now: u64) -> GcPlan {
     GcPlan { kept, collected, ghosts, no_anchor, protected_by_descendant }
 }
 
-/* ── THE STORE-FACING HALF (ADR-0048 §329) ─────────────────────────────────────────────────────────
+/* ── THE STORE-FACING HALF (Cellrix:ADR-0048 §329) ─────────────────────────────────────────────────────────
  * The collector reads a REPLAYED state from the streams, decides with the pure `plan`, and records the
  * decision as a `period/purge` row in the object's OWN stream — one book, same writer lock, and no bytes
  * destroyed (that is `D2`). The state is read INSIDE the lock (P15): a dangling check that happens outside
  * it is a TOCTOU window where someone can attach between the check and the collection. */
 
 
-/// THE ONE PLACE VACANCIES ARE READ (ADR-0048 §334). The collector and the reading surface both call this —
+/// THE ONE PLACE VACANCIES ARE READ (Cellrix:ADR-0048 §334). The collector and the reading surface both call this —
 /// a second implementation would be a second answer to "when was this position vacated", which is exactly
 /// the drift this project keeps catching.
 pub fn read_vacancies(dir: &std::path::Path) -> std::io::Result<Vec<Vacancy>> {
@@ -194,7 +194,7 @@ pub fn read_vacancies(dir: &std::path::Path) -> std::io::Result<Vec<Vacancy>> {
     Ok(out)
 }
 
-/// A vacancy AS A READER SEES IT (ADR-0048 §334): the fact, the deadline it implies, and a NAME for its
+/// A vacancy AS A READER SEES IT (Cellrix:ADR-0048 §334): the fact, the deadline it implies, and a NAME for its
 /// state — never a bare timestamp the caller has to interpret.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VacancyView {
@@ -296,7 +296,7 @@ pub fn collect_garbage(dir: &std::path::Path, now: u64, grace_secs: u64) -> std:
         objects.push(Object { id: stem.to_string(), parent, stamped });
     }
     let refs: Vec<String> = super::refs::list_refs(dir)?.into_iter().map(|r| r.period_id).collect();
-    /* C14b (ADR-0048 §330): holders come from the pin WAL, replayed — a restart cannot lose them, and an
+    /* C14b (Cellrix:ADR-0048 §330): holders come from the pin WAL, replayed — a restart cannot lose them, and an
      * owner that is no longer declared is NAMED below rather than silently protecting forever. */
     let vacancies = read_vacancies(dir)?;   /* the SAME reader the surface uses (§334) */
     let (by_object, _) = super::pins::replay(dir)?;
@@ -323,7 +323,7 @@ pub fn collect_garbage(dir: &std::path::Path, now: u64, grace_secs: u64) -> std:
     })
 }
 
-/* ── REPLAY: TWO PREDICATES, NEVER ONE (ADR-0048 §331) ────────────────────────────────────────────
+/* ── REPLAY: TWO PREDICATES, NEVER ONE (Cellrix:ADR-0048 §331) ────────────────────────────────────────────
  * `D0` HIDES an object; `D1` makes it STOP EXISTING. Collapsing those into one predicate is how "the
  * reader does not show it" and "it is gone" become the same sentence — and then a replay that ignores the
  * tombstone silently revives something that was purged. So there are two, and the end-to-end criterion
@@ -376,7 +376,7 @@ pub fn replay_exists_ignoring_purge(dir: &std::path::Path) -> std::io::Result<Ve
     Ok(scan(dir, true)?.1)
 }
 
-/* ── D2: CONTENT DESTRUCTION (ADR-0048 §332) ──────────────────────────────────────────────────────
+/* ── D2: CONTENT DESTRUCTION (Cellrix:ADR-0048 §332) ──────────────────────────────────────────────────────
  * The third knob. `D0` hides, `D1` records that the object is gone; `D2` removes the CONTENT of objects
  * that are staying (or already gone). Two rules decide the shape:
  *   · **ID AND PARENT SURVIVE** (C7). Deleting whole files breaks the chain — the child's `resume_from`
@@ -386,7 +386,7 @@ pub fn replay_exists_ignoring_purge(dir: &std::path::Path) -> std::io::Result<Ve
  *     had text: that is the three-state law this project keeps meeting ("absent" ≠ "empty" ≠ "destroyed").
  *     Each affected row gains `data.content = "destroyed"`.
  * Rewriting is the one place this store is not append-only, so it happens under the WRITER LOCK. */
-/* P42 (ADR-0048 §333): a CONTENT list is fail-OPEN — a new content key would silently survive while the UI
+/* P42 (Cellrix:ADR-0048 §333): a CONTENT list is fail-OPEN — a new content key would silently survive while the UI
  * still said "destroyed". So the list is inverted: what SURVIVES is declared, everything else in `data` is
  * destroyed, and a key that is neither declared as surviving nor known as content is ALSO NAMED
  * (`unclassified`) so a new field cannot appear silently in either direction. */

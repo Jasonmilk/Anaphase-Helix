@@ -75,7 +75,7 @@ pub(super) async fn admit(
     on_audit_error: OnAuditError,
 ) -> ToolGateOutcome {
     match hitl.check_approval(tool, actions) {
-        /* THE FOUR ANSWERS KEEP FOUR NAMES (ADR-0048 §226) — in the LOG, because the verdict's
+        /* THE FOUR ANSWERS KEEP FOUR NAMES (Cellrix:ADR-0048 §226) — in the LOG, because the verdict's
          * payload type cannot carry them yet: `ToolGateOutcome::Refused(TransitionCondition)` holds a
          * state-machine condition, not a reason. So the folding is one layer deeper than the
          * boolean was: the closed set now flows out of the approver, and the next pipe to widen is

@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 /// Interaction mode of the cognitive loop (ADR-0006): the same Helix with
 /// different Mind participation — not three separate minds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
-/// ONE VOCABULARY FOR THE CONFIG AND THE WIRE (ADR-0048 §349). The variant names and the wire values had
+/// ONE VOCABULARY FOR THE CONFIG AND THE WIRE (Cellrix:ADR-0048 §349). The variant names and the wire values had
 /// DRIFTED: `rename_all = "snake_case"` gave `drive`/`partner`/`survive` while `mode_wire` gives
 /// `driving`/`partner`/`survival` — two of three disagreed, and a config written one way would be read the
 /// other. The renames are therefore EXPLICIT, so the config vocabulary and the protocol vocabulary are the
@@ -30,7 +30,7 @@ pub enum Mode {
     Survive,
 }
 
-/// THE ONE WIRE VOCABULARY FOR MODES (ADR-0048 §340). It used to exist twice: `ci144` mapped the enum to
+/// THE ONE WIRE VOCABULARY FOR MODES (Cellrix:ADR-0048 §340). It used to exist twice: `ci144` mapped the enum to
 /// `driving`/`partner`/`survival` while the panel's `MODES` table keyed on the ENUM NAMES. A payload written
 /// with one vocabulary and read with the other reports "mode undeclared" for a mode that IS declared — the
 /// exact shape of the wall the reviewer named. One mapping, both ends, and a criterion that compares them.
@@ -291,18 +291,18 @@ pub struct RunCycleConfig {
     #[serde(default)]
     /// `None` = the run DECLARED no mode. It must stay `None` all the way into the payload: substituting
     /// `Mode::default()` here is the defect the reviewer named (a default claiming to be declared), and the
-    /// panel's `undeclared` state exists for this value (ADR-0048 §345/§343).
+    /// panel's `undeclared` state exists for this value (Cellrix:ADR-0048 §345/§343).
     pub mode: Option<Mode>,
-    /// P10d (ADR-0032): wake-up check on each interaction cycle. Mind never
+    /// P10d (helix-mind:ADR-0032): wake-up check on each interaction cycle. Mind never
     /// self-wakes; Anaphase looks at the agenda per cycle (elastic window
     /// limits frequency — no daemon yet, honest).
     #[serde(default = "default_wakeup_enabled")]
     pub wakeup_enabled: bool,
-    /// P10d (ADR-0032): peak-congestion window width for jittered alarms
+    /// P10d (helix-mind:ADR-0032): peak-congestion window width for jittered alarms
     /// (minutes). 0 = off (strict due for all). Human config default 60.
     #[serde(default = "default_wakeup_jitter")]
     pub wakeup_jitter_minutes: u32,
-    /// P10d (ADR-0032): alarm actions Anaphase knows how to execute — each
+    /// P10d (helix-mind:ADR-0032): alarm actions Anaphase knows how to execute — each
     /// value maps 1:1 to a helix_consolidate kind. Protocol default:
     /// "hibernate" (sleep review chain, P10c). Unknown actions are acked
     /// done with a warning (released, never deadlocked).
@@ -616,11 +616,11 @@ pub struct MindConfig {
     pub probe_fallback: f64,
     /// Explore-semantics keywords (hit -> exploratory query).
     pub explore_keywords: Vec<String>,
-    /// P10a (ADR-0031): cognitive craft process+mode pairs (protocol
+    /// P10a (helix-mind:ADR-0031): cognitive craft process+mode pairs (protocol
     /// default — deterministic zero-token thinking before the LLM). Source
     /// for the craft trigger literal (DNA principle 11). Consumed INSIDE
     /// GrpcMindAdapter — the loop only asks "should I think", the Mind side
-    /// decides "how to think" (按需驱动, ADR-0031).
+    /// decides "how to think" (按需驱动, helix-mind:ADR-0031).
     pub craft_steps: Vec<(String, String)>,
     /// Craft global constraints (MSC schema), protocol default.
     pub craft_constraints: String,

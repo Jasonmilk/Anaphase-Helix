@@ -1,4 +1,4 @@
-//! THE JUDGE, NOT THE RESULT (ADR-0048 §210).
+//! THE JUDGE, NOT THE RESULT (Cellrix:ADR-0048 §210).
 //!
 //! `run_cycle` must be unable to reach reasoning when the audit/LLM gateway is down. The wrong way
 //! to get there is to STORE the last probe's result: a stored result is a cache, a cache expires,
@@ -59,7 +59,7 @@ impl Default for Gate {
 }
 
 impl Gate {
-    /// Build the judge from CONFIG (ADR-0048 §233). Two-sided by construction and by test:
+    /// Build the judge from CONFIG （原引 ADR-0048 的 §233–§236 在工作区任何 ADR 里都不存在（Cellrix 索引 232→237 跳号），见 DEBTS d-adr0048-233-236）. Two-sided by construction and by test:
     /// a configured endpoint yields a breaker; an ABSENT or EMPTY endpoint yields `Unconfigured`,
     /// which is the announced-ungoverned policy — not a silent pass and not an accidental breaker.
     pub fn from_config(tuck_endpoint: Option<&str>, cooldown: std::time::Duration) -> Gate {
@@ -69,7 +69,7 @@ impl Gate {
         }
     }
 
-    /// FEED THE REAL CALL'S OUTCOME (ADR-0048 §234). The distinction this encodes was measured:
+    /// FEED THE REAL CALL'S OUTCOME （原引 ADR-0048 的 §233–§236 在工作区任何 ADR 里都不存在（Cellrix 索引 232→237 跳号），见 DEBTS d-adr0048-233-236）. The distinction this encodes was measured:
     /// `NoopReasoningAdapter` returns `Ok("No reasoning available")`, so "the call did not error" is
     /// NOT health. A placeholder or an empty answer is recorded as a FAILURE, which is what lets the
     /// breaker's memory grow in the fail-closed direction (§210) instead of staying Closed forever

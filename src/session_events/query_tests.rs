@@ -321,7 +321,7 @@
         let _ = fs::remove_dir_all(&dir);
     }
 
-/// THE CONVERSATION IS THE LINEAGE ROOT, DECLARED BY THE READER (ADR-0048 §297).
+/// THE CONVERSATION IS THE LINEAGE ROOT, DECLARED BY THE READER (Cellrix:ADR-0048 §297).
 ///
 /// `job_id` is a content digest: two conversations that open with the same words share it, so it can
 /// never name a conversation (measured on the live store: 22 job ids stood in for 79 chains).
@@ -399,7 +399,7 @@ fn a_root_outside_the_window_is_named_absent() {
     let _ = fs::remove_dir_all(&dir);
 }
 
-/// D0 — THE TOMBSTONE, READ SIDE (ADR-0048 §311). The WRITER is not landed (see `query.rs`: a second
+/// D0 — THE TOMBSTONE, READ SIDE (Cellrix:ADR-0048 §311). The WRITER is not landed (see `query.rs`: a second
 /// stream handle starts at offset 0 and overwrote history — caught by the "bytes stay" criterion), so
 /// these fixtures append a tombstone ROW by hand. What they pin is the read side and its preconditions.
 fn append_tombstone(dir: &std::path::Path, pid: &str, seq: u64) {
@@ -464,7 +464,7 @@ fn an_untombstoned_store_counts_zero() {
     let _ = fs::remove_dir_all(&dir);
 }
 
-/// M2-A — THE TOMBSTONE WRITER (ADR-0048 §326). The first version OVERWROTE the period's history; this one
+/// M2-A — THE TOMBSTONE WRITER (Cellrix:ADR-0048 §326). The first version OVERWROTE the period's history; this one
 /// must ADD a row, and every guard that makes that true is itself a criterion elsewhere.
 #[test]
 fn the_tombstone_writer_appends_without_destroying_history() {

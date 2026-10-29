@@ -1,4 +1,4 @@
-//! REFS tests (ADR-0048 §309): the four ENDINGS of the third layer, each paired with the guard that
+//! REFS tests (Cellrix:ADR-0048 §309): the four ENDINGS of the third layer, each paired with the guard that
 //! produces it — so removing a guard makes a test fail rather than making the system quietly lenient.
 //!
 //! NOTE the fixture ids are SHAPE-VALID period ids (`run-<16 hex>-p<16 hex>`): a `resume_from` or ref
@@ -97,7 +97,7 @@ fn an_empty_target_is_refused() {
     let _ = fs::remove_dir_all(&dir);
 }
 
-/// THE REFLOG (ADR-0048 §315): the value that was REPLACED, recorded at the moment it is replaced.
+/// THE REFLOG (Cellrix:ADR-0048 §315): the value that was REPLACED, recorded at the moment it is replaced.
 /// `M2`'s grace anchor is derived from this fact, and a back-filled record has fidelity q<1 per write
 /// (`q^n` ≈ 0.37) — so the cheap moment to write it is the only moment worth writing it in.
 #[test]
@@ -165,7 +165,7 @@ fn an_unknown_ref_has_an_empty_history() {
     let _ = fs::remove_dir_all(&dir);
 }
 
-/// M1d — MULTIPLE REFS (ADR-0048 §317, ledger P2). Git keeps ONE ref per branch; a single fixed name
+/// M1d — MULTIPLE REFS (Cellrix:ADR-0048 §317, ledger P2). Git keeps ONE ref per branch; a single fixed name
 /// cannot express "which conversation", so the conversation set was unaddressable. Nesting is the shape
 /// Git uses (`refs/heads/<name>`), and every SEGMENT is still guarded.
 #[test]
@@ -216,7 +216,7 @@ fn a_nested_ref_keeps_its_own_history() {
     let _ = fs::remove_dir_all(&dir);
 }
 
-/// The numbering wall (ADR-0048 §319): appending to an existing stream must CONTINUE the numbering.
+/// The numbering wall (Cellrix:ADR-0048 §319): appending to an existing stream must CONTINUE the numbering.
 /// Reusing the last `seq` would make two events indistinguishable in order — deterministically, not
 /// probabilistically. This is the criterion the reviewer asked for, stated as the failure it forbids.
 #[test]
@@ -245,7 +245,7 @@ fn appending_continues_the_numbering_and_never_repeats_a_seq() {
     let _ = fs::remove_dir_all(&dir);
 }
 
-/// P13 — A TORN TAIL MUST BE NAMED, NOT SKIPPED (ADR-0048 §320).
+/// P13 — A TORN TAIL MUST BE NAMED, NOT SKIPPED (Cellrix:ADR-0048 §320).
 /// Skipping a half-written last line makes `max+1` collide with the number that row already claimed:
 /// two events, one `seq`, order indistinguishable. The reader refuses by name, and the explicit repair
 /// is a separate, deliberate act.
@@ -283,7 +283,7 @@ fn a_torn_tail_is_refused_by_name_and_can_be_repaired_explicitly() {
     let _ = fs::remove_dir_all(&dir);
 }
 
-/// ⑤ THE WRITER LOCK (ADR-0048 §322). "Single writer" as a comment is worth 0 bits, and M5 (the shell) is
+/// ⑤ THE WRITER LOCK (Cellrix:ADR-0048 §322). "Single writer" as a comment is worth 0 bits, and M5 (the shell) is
 /// a known future second writer: the second writer must be REFUSED BY NAME, and breaking a lock must be a
 /// deliberate act rather than a timeout.
 #[test]
@@ -322,7 +322,7 @@ fn a_stale_lock_is_named_and_only_broken_explicitly() {
     let _ = fs::remove_dir_all(&dir);
 }
 
-/// ⑧ RETENTION ≥ GRACE (ADR-0048 §323). The vacancy fact must outlive the window that depends on it; the
+/// ⑧ RETENTION ≥ GRACE (Cellrix:ADR-0048 §323). The vacancy fact must outlive the window that depends on it; the
 /// two numbers live in ONE place and their relation is a criterion, not a sentence.
 #[test]
 fn the_declared_retention_covers_the_grace_window() {
@@ -341,7 +341,7 @@ fn the_retention_check_can_go_red() {
     assert_eq!(retention_covers_grace(20, 20), true, "equality is enough: the anchor survives the window");
 }
 
-/// A MISSING TRAILING NEWLINE MUST NOT CONCATENATE TWO ROWS (ADR-0048 §325). Measured the hard way: the
+/// A MISSING TRAILING NEWLINE MUST NOT CONCATENATE TWO ROWS (Cellrix:ADR-0048 §325). Measured the hard way: the
 /// ref writer appended to a file whose last row had no `\n`, two objects landed on one line, and three
 /// unrelated suites crashed parsing that line — reds that looked like someone else's bug.
 #[test]

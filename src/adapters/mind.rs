@@ -140,7 +140,7 @@ impl MemoryAdapter for GrpcMindAdapter {
 
     /// Write a memory node at an explicit layer (L0-L3; -1 = protocol default
     /// L3). One adapter method, any layer: the orchestrator names the layer,
-    /// Mind enforces the meaning (ADR-0033 layer semantics).
+    /// Mind enforces the meaning (helix-mind:ADR-0033 layer semantics).
     async fn remember_node(&self, content: &str, node_type: i32, parent_ids: &[String]) -> Result<String, String> {
         let request = tonic::Request::new(RememberRequest {
             content: content.to_string(),
@@ -157,7 +157,7 @@ impl MemoryAdapter for GrpcMindAdapter {
         Ok(response.into_inner().node_id)
     }
 
-    /// P10a (ADR-0031): cognitive craft trigger. Deterministic orchestration
+    /// P10a (helix-mind:ADR-0031): cognitive craft trigger. Deterministic orchestration
     /// on the Mind side (helix_craft). Process+mode pairs and constraints
     /// come from MindConfig (protocol defaults, DNA principle 11) — the
     /// loop only asks "should I think", this adapter decides "how to think"
@@ -197,7 +197,7 @@ impl MemoryAdapter for GrpcMindAdapter {
         })
     }
 
-    /// P10d (ADR-0032): wake-up check — ask Mind's agenda for due alarms
+    /// P10d (helix-mind:ADR-0032): wake-up check — ask Mind's agenda for due alarms
     /// (ana_wakeup). The jitter window (peak-congestion guard) comes from
     /// MindConfig (human config default 60, 0 = off). Degradation: Err
     /// surfaces to the caller, which skips the check silently.
@@ -223,7 +223,7 @@ impl MemoryAdapter for GrpcMindAdapter {
             .collect())
     }
 
-    /// P10d (ADR-0032): acknowledge a claimed alarm (done / renewed).
+    /// P10d (helix-mind:ADR-0032): acknowledge a claimed alarm (done / renewed).
     async fn wakeup_ack(&self, claim_id: &str, status: &str) -> Result<(), String> {
         let request = tonic::Request::new(AnaWakeupAckRequest {
             claim_id: claim_id.to_string(),
@@ -243,7 +243,7 @@ impl MemoryAdapter for GrpcMindAdapter {
         }
     }
 
-    /// P10d (ADR-0032): run a Mind metabolism action (helix_consolidate).
+    /// P10d (helix-mind:ADR-0032): run a Mind metabolism action (helix_consolidate).
     /// The action value from an alarm maps directly to the consolidate kind
     /// ("hibernate" → sleep review chain, P10c).
     async fn consolidate(&self, kind: &str) -> Result<(), String> {

@@ -146,7 +146,7 @@ pub struct AgentLoop {
     pub stream_tx: Option<tokio::sync::mpsc::UnboundedSender<crate::adapters::StreamDelta>>,
     /// HITL 人在回路审批通道（P10b T3，执行闸；默认 fail-closed）
     pub hitl: HITLApprover,
-    /// THE JUDGE THE ENGINE ASKS AT ITS ENTRY (ADR-0048 §233): `Unconfigured` by DEFAULT, which is
+    /// THE JUDGE THE ENGINE ASKS AT ITS ENTRY （原引 ADR-0048 的 §233–§236 在工作区任何 ADR 里都不存在（Cellrix 索引 232→237 跳号），见 DEBTS d-adr0048-233-236）: `Unconfigured` by DEFAULT, which is
     /// exactly today's behaviour (ungoverned passes, and `governance::warning` announces it), so no
     /// existing test changes meaning. It is INJECTED, never stored-and-refreshed: a remembered probe
     /// result expires in the fail-OPEN direction, which is the one direction §210 forbids.
@@ -304,7 +304,7 @@ fn remember_parents(context: &AgentContext) -> Vec<String> {
 #[derive(Debug, Clone, Default)]
 pub struct AgentContext {
     pub user_input: String,
-    /// THE DECLARATION, BESIDE THE EFFECTIVE VALUE (ADR-0048 §346.3 ③). `AgentLoop.mode` is what the cycle
+    /// THE DECLARATION, BESIDE THE EFFECTIVE VALUE (Cellrix:ADR-0048 §346.3 ③). `AgentLoop.mode` is what the cycle
     /// RUNS with (it must hold some value to run); this is what the config DECLARED — and it stays `None`
     /// when the config said nothing, so the event payload can carry an ABSENCE instead of a default posing as
     /// a choice. `#[derive(Default)]` gives `None`, which is exactly "undeclared".
@@ -339,7 +339,7 @@ pub struct AgentContext {
     /// aggregation), while `resume` carries the human-readable summary for
     /// prompt injection. One continuation, two carriers.
     pub resume_job: Option<String>,
-    /// THE LINEAGE FACT, kept apart from the history fact (ADR-0048 §251). `resume_job` names the
+    /// THE LINEAGE FACT, kept apart from the history fact (Cellrix:ADR-0048 §251). `resume_job` names the
     /// SCOPE whose history is injected; THIS names the exact PERIOD this run continues, and it is
     /// `Some` only when the resolver actually found a period id. Measured before this split: the
     /// normalized period was stored in `resume_job` and, when resolution failed, the raw job id was
@@ -387,7 +387,7 @@ pub struct AgentContext {
     /// cycle must be verbatim rail citations (or NO_RAIL_CONTENT) — no
     /// synthesized paraphrase.
     pub rail_mode: bool,
-    /// P10a (ADR-0031): cognitive craft note from Mind's helix_craft —
+    /// P10a (helix-mind:ADR-0031): cognitive craft note from Mind's helix_craft —
     /// deterministic zero-token orchestration folded into the Reasoning
     /// prompt (think-first, then spend tokens). None = craft unavailable or
     /// degraded this cycle (enhancement, never a dependency).
@@ -395,7 +395,7 @@ pub struct AgentContext {
 }
 
 impl AgentLoop {
-    /// SA-Core choice detail for the ProveTrack cockpit (ADR-0033): which layers
+    /// SA-Core choice detail for the ProveTrack cockpit (helix-mind:ADR-0033): which layers
     /// were picked and the top-activation nodes — provenance only (id/tier/activation/
     /// phase), never node content. Empty when no memory was retrieved.
     fn memory_choice_detail(&self) -> Option<serde_json::Value> {
@@ -627,7 +627,7 @@ impl AgentLoop {
     /// period (job_id-derived, deterministic). ts comes from the SAME injected
     /// Clock as the ledger/stage events (极致复用 — one time source, no second
     /// clock): FakeClock makes the black box byte-identical replayable too.
-    /// P10d (ADR-0032): check the agenda and execute due alarms. Each due
+    /// P10d (helix-mind:ADR-0032): check the agenda and execute due alarms. Each due
     /// alarm: if the action is in the configured whitelist → run the
     /// consolidate chain (action maps 1:1 to a helix_consolidate kind),
     /// then ack done. Unknown action → ack done with a warning (released,
@@ -730,7 +730,7 @@ impl AgentLoop {
         )
         .map_err(|e| warn!("[Period] no identity this cycle: {}", e))
         .ok();
-        /* THE SINK (ADR-0048 §235): every path that reaches reasoning asks the judge HERE, so the
+        /* THE SINK （原引 ADR-0048 的 §233–§236 在工作区任何 ADR 里都不存在（Cellrix 索引 232→237 跳号），见 DEBTS d-adr0048-233-236）: every path that reaches reasoning asks the judge HERE, so the
          * check cannot be forgotten by a caller — §206 measured that a declaration enforced at two
          * of four call sites is fail-closed only "where someone remembered". The cost model is the
          * breaker's (§210): O(1) and IO-free unless it is half-open; an open breaker refuses without
@@ -740,7 +740,7 @@ impl AgentLoop {
          * changes meaning. The refusal is NAMED; turning it into "skip and record" is the next node
          * (`gate.refusal_record`). */
         if let Err(reason) = self.gate.check() {
-            /* A REFUSAL IS A DECLARED ROW, NOT A MISSING NODE (ADR-0048 §235 + §210): with the gate
+            /* A REFUSAL IS A DECLARED ROW, NOT A MISSING NODE (Cellrix:ADR-0048 §210；原 §235 不存在，见 DEBTS d-adr0048-233-236): with the gate
              * silent, a refused period produced NO cycle event at all, so "the gate refused", "the
              * period produced nothing" and "it ran empty" looked alike. Emitting the refusal under its
              * own phase keeps the DAG readable — the panel can show WHY a period has no steps.
@@ -774,7 +774,7 @@ impl AgentLoop {
             ep.step += 1;
         }
 
-        // P10d (ADR-0032): wake-up check — look at Mind's agenda once per
+        // P10d (helix-mind:ADR-0032): wake-up check — look at Mind's agenda once per
         // interaction (no daemon yet; elastic window limits frequency).
         // Silent degradation: unavailable adapter or failure skips the
         // check entirely (enhancement, never a dependency).
@@ -1153,7 +1153,7 @@ impl AgentLoop {
 
     async fn execute_structured(&mut self) -> Result<TransitionCondition, String> {
         for c in &self.context.calls {
-            /* THE ARGS MUST REACH THE JUDGEMENT (ADR-0048 §225 F3): this was `&[]` verbatim —
+            /* THE ARGS MUST REACH THE JUDGEMENT (Cellrix:ADR-0048 §225 F3): this was `&[]` verbatim —
              * measured, so the human-confirmation request carried a tool name with an EMPTY
              * parameter column, and the risk predicate never saw the arguments. The signature
              * already took `&[String]`; it was simply passed nothing. */

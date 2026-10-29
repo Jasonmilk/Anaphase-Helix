@@ -1,4 +1,4 @@
-//! Wake-up trigger tests — P10d (ADR-0032).
+//! Wake-up trigger tests — P10d (helix-mind:ADR-0032).
 //!
 //! Anaphase looks at Mind's agenda once per interaction cycle: due alarms
 //! with a supported action run the consolidate chain (action maps 1:1 to a

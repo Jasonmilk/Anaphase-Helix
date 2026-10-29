@@ -170,7 +170,7 @@ impl AgentLoop {
                 ),
                 (None, None) => prompt,
             };
-            // P10a (ADR-0031): fold the cognitive craft note (zero-token
+            // P10a (helix-mind:ADR-0031): fold the cognitive craft note (zero-token
             // deterministic orchestration from Mind) into the prompt —
             // think first, then spend tokens. None = no note (degraded or
             // unavailable); the note is bounded by construction (synthesis
@@ -210,7 +210,7 @@ impl AgentLoop {
                     resume_from,
                     detail.as_ref(),
                     Some(injected_chars),
-                    /* THE DECLARATION, NOT THE EFFECTIVE VALUE (ADR-0048 §346.3 ③): when the config declared
+                    /* THE DECLARATION, NOT THE EFFECTIVE VALUE (Cellrix:ADR-0048 §346.3 ③): when the config declared
                      * a mode it is written; when it declared nothing, the payload carries an ABSENCE. */
                     crate::session_events::mode_wire_opt(self.context.declared_mode),
                 );
@@ -275,7 +275,7 @@ impl AgentLoop {
                     }
                     Err(e) => {
                         warn!("Reasoning failed: {}", e);
-                        /* A FAILURE IS A NAMED ROW, NOT JUST A LOG LINE (ADR-0048 §259). Measured on the
+                        /* A FAILURE IS A NAMED ROW, NOT JUST A LOG LINE (Cellrix:ADR-0048 §259). Measured on the
                          * live chain: flowmodus names every failure it can produce ("路由失败: …",
                          * "供应商 X 未配置 API key", the `call_chat` error), and this branch threw all of
                          * that away — it cleared the output and returned `Impass`, so the 证轨 showed
@@ -339,7 +339,7 @@ impl AgentLoop {
                     // describes THIS round: `self.context.calls` is only assigned
                     // by the parse below, so reading it describes the LAST one.
                     /* FEED THE BREAKER WITH WHAT ACTUALLY CAME BACK, not with "it did not error"
-                     * (ADR-0048 §234): a placeholder or an empty answer is a FAILURE. */
+                     * （原引 ADR-0048 的 §233–§236 在工作区任何 ADR 里都不存在（Cellrix 索引 232→237 跳号），见 DEBTS d-adr0048-233-236）: a placeholder or an empty answer is a FAILURE. */
                     self.gate.note_output(&output);
                     let plan = parse_reasoning_output(&output);
                     let planned = match &plan {

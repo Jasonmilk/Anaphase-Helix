@@ -40,7 +40,7 @@ const TENTACLE_GRPC_DEFAULT_PORT: u16 = 50051;
 /// Helix-Mind API default listen port (protocol default, `api.listen_addr`).
 const MIND_GRPC_DEFAULT_PORT: u16 = 50051;
 /// Cellrix web panel default port (cellrix-web documented protocol default,
-/// ADR-0014; env `WEB_PORT` overrides).
+/// Cellrix:ADR-0014; env `WEB_PORT` overrides).
 /// The panel's listen port. 8080 was here and it is NOT an ecosystem port: it belongs to
 /// `not_ecosystem.llama-server` in `Helix-Mind/docs/helixECO/ports.json`, so the launcher was
 /// putting the panel on llama-server's port — the collision this project actually hit. The SSOT

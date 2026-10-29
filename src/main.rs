@@ -263,7 +263,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             "configured": false, "missing": true, "events": []
                         }));
                     };
-                    /* ACCEPTED NAMES, ONE KEY (ADR-0048 §296): the value is a period id OR a job id and
+                    /* ACCEPTED NAMES, ONE KEY (Cellrix:ADR-0048 §296): the value is a period id OR a job id and
                      * is classified by SHAPE (`PeriodRef::parse`), so the parameter NAME carried no
                      * information — it only lied (`?job_id=<period_id>`). `id` is the honest name;
                      * `job_id` and `period_id` stay accepted so no caller breaks in one step. The error
@@ -311,18 +311,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
             }))
-            /* REFS: THE THIRD LAYER (ADR-0048 §307/§309). Objects and edges existed; this is the pointer
+            /* REFS: THE THIRD LAYER (Cellrix:ADR-0048 §307/§309). Objects and edges existed; this is the pointer
              * that says which period the NEXT message continues. It lives in the REPOSITORY (one file per
              * ref under `<events>/.refs/<name>`), so a restart does not erase it and every reader shares
              * it. Refusals are NAMED: an unsafe name, a target that resolves to nothing, an ambiguous
              * target — none of them stores a pointer. */
-            /* D0 — THE TOMBSTONE (ADR-0048 §326): deletion AS A FACT. A writer that appends (never rewrites),
+            /* D0 — THE TOMBSTONE (Cellrix:ADR-0048 §326): deletion AS A FACT. A writer that appends (never rewrites),
              * refuses a torn tail by name, and holds the writer lock. The period is RESOLVED first, so an
              * unknown or ambiguous key is refused by name. */
-            /* D1 — COLLECT (ADR-0048 §329): decide with the PURE planner and RECORD the decision as
+            /* D1 — COLLECT (Cellrix:ADR-0048 §329): decide with the PURE planner and RECORD the decision as
              * `period/purge` facts. The grace window defaults to the DECLARED constant, and the retention
              * relation that protects it is checked rather than assumed. */
-            /* C14b — RELEASING AN ORPHAN IS AN EXPLICIT ACT (ADR-0048 §330): the collector NAMES holders whose
+            /* C14b — RELEASING AN ORPHAN IS AN EXPLICIT ACT (Cellrix:ADR-0048 §330): the collector NAMES holders whose
              * owner is no longer declared, and this route is how an operator lets them go. */
             .route("/v1/pins/release", post({
                 let events_dir = config.anaphase.session_events_path.clone();
@@ -337,10 +337,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
             }))
-            /* D2 — CONTENT DESTRUCTION (ADR-0048 §332): the third knob. It rewrites ROWS (keeping identity,
+            /* D2 — CONTENT DESTRUCTION (Cellrix:ADR-0048 §332): the third knob. It rewrites ROWS (keeping identity,
              * lineage, `seq` and `time`) because deleting files would break the chain; every affected row is
              * marked `content: destroyed`, so "destroyed" never reads as "there was never any". */
-            /* M2-D — THE VACANCIES, AS A READER SEES THEM (ADR-0048 §334): the fact, the deadline it implies,
+            /* M2-D — THE VACANCIES, AS A READER SEES THEM (Cellrix:ADR-0048 §334): the fact, the deadline it implies,
              * and a NAMED state. The grace window is checked against the declared retention here, so the
              * surface cannot promise a deadline the store is unable to keep. */
             .route("/v1/periods/vacancies", get({
@@ -514,7 +514,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // single-period cycle — no shared mutable state, no cross-
                 // session bleed; conversation continuity is a future Memory
                 // concern (L3 情景), not a v1 promise.
-                    // GOVERNED-FAIL-CLOSED (ADR-0048 §208): when tuck_endpoint IS configured and
+                    // GOVERNED-FAIL-CLOSED (Cellrix:ADR-0048 §208): when tuck_endpoint IS configured and
                     // unreachable refuses (fail-closed); **ungoverned (unconfigured) is ALLOWED** and announced at
                     // startup by governance::warning — a deliberate policy (health.rs:155-160), not a failure.
                 // process stays alive to keep the panel honest.
@@ -797,14 +797,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or_else(|| "events.jsonl".to_string());
     let mut flushed_seq = 0u64;
     let mut completed = false;
-    /* DID IT RUN AT ALL? (ADR-0048 §207): the gate break below leaves `completed = false`, and
+    /* DID IT RUN AT ALL? (Cellrix:ADR-0048 §207): the gate break below leaves `completed = false`, and
      * the terminal sentence was chosen by that ONE bool — so "did NOT complete … within 7 cycles"
      * was printed after ZERO cycles had run, i.e. the number was literally false. Measured: reading
      * that sentence, P(truth = Tuck absent) swings with an UNMEASURED prior (0.60/0.71); naming it
      * makes P(truth | observation) = 1.0000 for any prior. */
     let mut gate_refused = false;
     for _ in 0..agent.run_config.cycle_cap {
-                    // GOVERNED-FAIL-CLOSED (ADR-0048 §208): when tuck_endpoint IS configured and
+                    // GOVERNED-FAIL-CLOSED (Cellrix:ADR-0048 §208): when tuck_endpoint IS configured and
                     // unreachable refuses (fail-closed); **ungoverned (unconfigured) is ALLOWED** and announced at
                     // startup by governance::warning — a deliberate policy (health.rs:155-160), not a failure.
         // gateway is down — Tuck down = Helix stops thinking (SPOF
@@ -958,7 +958,7 @@ async fn build_agent(config: &config::Config) -> BuiltAgent {
         let reflex = ReflexArc::with_default_rules();
 
         let mut agent = AgentLoop::new(memory, reason, tool, safety, ui, fear, reflex);
-        /* INJECT THE JUDGE (ADR-0048 §233): the engine now carries a Gate built from CONFIG —
+        /* INJECT THE JUDGE （原引 ADR-0048 的 §233–§236 在工作区任何 ADR 里都不存在（Cellrix 索引 232→237 跳号），见 DEBTS d-adr0048-233-236）: the engine now carries a Gate built from CONFIG —
          * a breaker when a Tuck endpoint is configured, `Unconfigured` (announced-ungoverned) when it
          * is not, so an unconfigured deployment behaves exactly as before. The judge is asked at the
          * entry (next sub-step); nothing is stored from a previous answer, because a remembered
@@ -1034,14 +1034,14 @@ async fn build_agent(config: &config::Config) -> BuiltAgent {
         // the loop; physical Mind participation is decided by resolve_memory_adapter
         // (Noop vs gRPC) — Drive auto-achieves "no experience written" through
         // the Noop adapter without any runtime branch.
-        /* THE AGENT KEEPS ITS OWN RUNNING STATE, THE PAYLOAD KEEPS THE DECLARATION (ADR-0048 §345): the
+        /* THE AGENT KEEPS ITS OWN RUNNING STATE, THE PAYLOAD KEEPS THE DECLARATION (Cellrix:ADR-0048 §345): the
          * agent must hold SOME value to run, but a missing config must NOT become a claim. Only an explicit
          * `Some` is copied, and the payload reads the config's `Option` directly — so "undeclared" stays
          * undeclared all the way into the event. */
         if let Some(m) = config.anaphase.run_cycle.mode {
             agent.mode = m;
         }
-        /* THE DECLARATION TRAVELS SEPARATELY (ADR-0048 §346.3 ③): the effective value above and the declared
+        /* THE DECLARATION TRAVELS SEPARATELY (Cellrix:ADR-0048 §346.3 ③): the effective value above and the declared
          * one here are two facts — the payload reports the second, so "undeclared" can reach the event. */
         agent.context.declared_mode = config.anaphase.run_cycle.mode;
 
@@ -1181,7 +1181,7 @@ async fn run_stdio_mode() -> Result<(), Box<dyn std::error::Error>> {
     // Action handler: protocol layer stays business-free; real actions
     // (send_message -> one cognitive period) live here, in the launcher.
     let act_agent = std::sync::Arc::clone(&agent);
-    /* THE GATE'S CONFIG MUST REACH THE CI-144 PATH (ADR-0048 §205/§206): `config` lives
+    /* THE GATE'S CONFIG MUST REACH THE CI-144 PATH (Cellrix:ADR-0048 §205/§206): `config` lives
      * outside this `move` closure, so the path had no gate not from intent but from capture.
      * Arc ⇒ the closure stays `Fn`; it is cloned per call (below), before the async block. */
     let gate_cfg = std::sync::Arc::new(config.anaphase.clone());
@@ -1191,7 +1191,7 @@ async fn run_stdio_mode() -> Result<(), Box<dyn std::error::Error>> {
         // borrow the request reference (lifetime must outlive Fn).
         let action_id = req.action_id.clone();
         let message = req.parameters["message"].as_str().unwrap_or("").to_string();
-        /* PER CALL, BEFORE THE ASYNC BLOCK (ADR-0048 §206): capturing the Arc INTO the async
+        /* PER CALL, BEFORE THE ASYNC BLOCK (Cellrix:ADR-0048 §206): capturing the Arc INTO the async
          * block demotes this closure to `FnOnce` (measured E0525); cloning here keeps it `Fn`. */
         let gate_cfg = gate_cfg.clone();
         async move {

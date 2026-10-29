@@ -206,7 +206,7 @@ impl Pipeline {
                 // how weak), so it under-blocks rather than over-blocks. Low-risk calls
                 // keep the legacy behaviour this ADR promised.
                 //
-                // THE SURFACE IS THE CALL, NOT THE NAME (ADR-0048 §213): measured, a name-only
+                // THE SURFACE IS THE CALL, NOT THE NAME (Cellrix:ADR-0048 §213): measured, a name-only
                 // judgement intervenes on 0/12 realistic dangerous calls, because the danger is in
                 // `args` while the name is neutral — and the name is chosen by the LLM. `params` is
                 // already serialized above for this very call, so this costs nothing new.

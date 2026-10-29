@@ -155,6 +155,15 @@ counter = 2
 k_id   = "K-038"
 reason = "CI-6 itself, at its baseline. It was re-taken to 913 while the file was 913, then the ledger loaders were split out and it fell to 645. The re-take path is now retired, so the seed is set back to the baseline: a re-take that outlives the growth it absorbed is a permanent raise nobody decided on"
 
+# F7 / K10: the ADR-reference gate. A NEW file needs a named pit plus a signed seed
+# (K-126 says exactly this); the pit is `K10-ADR-REF-GATE` in ci/pits.toml.
+[[seed]]
+target = "ci/check_adr_refs.py"
+ncloc  = 182
+counter = 2
+k_id   = "K10-ADR-REF-GATE"
+reason = "the ADR-reference gate, seeded at its first value. 182 NOCL, below the 300 module budget, so this seed records a decision (the file was added on purpose) rather than an allowance"
+
 # ------------------------------------------------------------------- tooling tier
 #
 # The 300-line budget was calibrated for Rust source modules, where the number

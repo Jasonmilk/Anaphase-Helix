@@ -12,7 +12,7 @@ use serde::{Serialize, Deserialize};
 use std::sync::Arc;
 
 // ---------- Memory Adapter ----------
-/// One retrieved memory node with its provenance metadata (ADR-0033):
+/// One retrieved memory node with its provenance metadata (helix-mind:ADR-0033):
 /// Mind's Node carries layer/activation/phase already — the adapter must not
 /// discard them, or the cockpit cannot show what SA-Core actually chose.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -72,7 +72,7 @@ pub struct QueryResult {
     pub provenance: Option<MindProvenance>,
 }
 
-/// Cognitive craft outcome (P10a, ADR-0031): the deterministic orchestration
+/// Cognitive craft outcome (P10a, helix-mind:ADR-0031): the deterministic orchestration
 /// synthesis from Mind's helix_craft. Injected into the Reasoning prompt as a
 /// zero-token "think first" note.
 #[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -81,13 +81,13 @@ pub struct CraftNote {
     pub trace_id: String,
     /// Hegelian convergence synthesis (the orchestration result).
     pub synthesis: String,
-    /// P10b (ADR-0031 D3) fills value_grade from Mind's deterministic assessor
+    /// P10b (helix-mind:ADR-0031 D3) fills value_grade from Mind's deterministic assessor
     /// (helix-mind-api/src/layer3.rs:374 echoes `format!("{grade:?}")`, e.g.
     /// "Low"/"Medium"/"High"). Empty only when the adapter degrades (Noop).
     pub value_grade: String,
 }
 
-/// One due alarm handed to the waker (P10d, ADR-0032): the semantic action
+/// One due alarm handed to the waker (P10d, helix-mind:ADR-0032): the semantic action
 /// Anaphase will execute (action → consolidate kind), plus the deterministic
 /// claim handle used for the ack.
 #[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -121,26 +121,26 @@ pub trait MemoryAdapter: Send + Sync {
     /// 状态驱动钩子（P10b T2）：Amygdala PreAssessment 输出复杂度（1=简单/2=中等/3=复杂），
     /// adapter 据此调整 `suggested_mode`。默认实现为空操作（Noop 等忽略）。
     fn set_complexity(&self, _level: u8) {}
-    /// P10a (ADR-0031): cognitive craft trigger — deterministic orchestration
+    /// P10a (helix-mind:ADR-0031): cognitive craft trigger — deterministic orchestration
     /// before the LLM reasoning step (zero tokens). Default = unavailable
     /// (Noop and other adapters ignore; GrpcMindAdapter implements). Callers
     /// degrade silently on Err: craft is an enhancement, never a dependency.
     async fn craft(&self, _query: &str, _job_id: &str) -> Result<CraftNote, String> {
         Err("craft unavailable".to_string())
     }
-    /// P10d (ADR-0032): wake-up check — list due alarms from Mind's agenda
+    /// P10d (helix-mind:ADR-0032): wake-up check — list due alarms from Mind's agenda
     /// (ana_wakeup). Default = unavailable (Noop ignores; GrpcMindAdapter
     /// implements). Callers degrade silently on Err: wake-up is an
     /// enhancement, never a dependency.
     async fn wakeup(&self, _jitter_minutes: u32) -> Result<Vec<WakeupAlarm>, String> {
         Err("wakeup unavailable".to_string())
     }
-    /// P10d (ADR-0032): acknowledge a claimed alarm (ana_wakeup_ack).
+    /// P10d (helix-mind:ADR-0032): acknowledge a claimed alarm (ana_wakeup_ack).
     /// Default = unavailable; GrpcMindAdapter implements.
     async fn wakeup_ack(&self, _claim_id: &str, _status: &str) -> Result<(), String> {
         Err("wakeup_ack unavailable".to_string())
     }
-    /// P10d (ADR-0032): run a Mind metabolism action (helix_consolidate).
+    /// P10d (helix-mind:ADR-0032): run a Mind metabolism action (helix_consolidate).
     /// Default = unavailable; GrpcMindAdapter implements.
     async fn consolidate(&self, _kind: &str) -> Result<(), String> {
         Err("consolidate unavailable".to_string())

@@ -224,7 +224,7 @@ fn every_option_config_field_is_classified() {
         "bind_state_path", "events_log_path", "gene_lock_path", "reasoning_trace_path",
         "session_events_path", "session_notes_path",
         // The interaction MODE (ADR-0006): it names the run's shape. Its ABSENCE is carried as
-        // UNDECLARED all the way into the payload (ADR-0048 §345) — a named absence, not a default —
+        // UNDECLARED all the way into the payload (Cellrix:ADR-0048 §345) — a named absence, not a default —
         // and it neither grants nor removes governance, so it is not a precondition.
         "mode",
         // Operator input for a smoke run.

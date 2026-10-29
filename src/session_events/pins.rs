@@ -1,4 +1,4 @@
-//! C14b — PINS WITH A RESTART-STABLE OWNER (ADR-0048 §330).
+//! C14b — PINS WITH A RESTART-STABLE OWNER (Cellrix:ADR-0048 §330).
 //!
 //! The refcount (C14) answers "how many holders"; it does NOT answer "whose holders" — and a per-process
 //! random identity makes every pin an orphan the moment the process restarts, which is a PERMANENT leak
@@ -17,7 +17,7 @@ use std::fs;
 use std::io::{self, ErrorKind};
 use std::path::{Path, PathBuf};
 
-/// The pin WAL lives in its OWN SUBDIRECTORY (ADR-0048 §330). `SessionEventStream` names files
+/// The pin WAL lives in its OWN SUBDIRECTORY (Cellrix:ADR-0048 §330). `SessionEventStream` names files
 /// `<id>.events.jsonl`, and `list_periods` walks the events directory non-recursively — so a subdirectory is
 /// the one place an internal stream can live without ever being read as a period. (Measured the hard way:
 /// writing to `pins.jsonl` while the stream wrote `pins.events.jsonl` made every count read zero.)

@@ -124,7 +124,7 @@ pub struct PeriodSummary {
     /// Continuation parent (`context/inject.resume_from`): this period is a
     /// direct continuation of that one. Null = a fresh conversation root.
     pub parent: Option<String>,
-    /// THE CONVERSATION THIS PERIOD BELONGS TO (ADR-0048 §297): the ROOT of its `parent` chain.
+    /// THE CONVERSATION THIS PERIOD BELONGS TO (Cellrix:ADR-0048 §297): the ROOT of its `parent` chain.
     /// `Some(id)` — the root's own id (a root names itself, a continuation inherits it).
     /// `None` — the chain is TRUNCATED by the requested window: the root is not in it, so the answer
     /// would depend on the window rather than on the data. Absence is NAMED, never guessed.
@@ -151,7 +151,7 @@ pub struct PeriodSummary {
 }
 
 /// How many periods are TOMBSTONED (D0) in this store. A named count, because "the list is shorter"
-/// and "the list is hiding something" must not be the same reading (ADR-0048 §311).
+/// and "the list is hiding something" must not be the same reading (Cellrix:ADR-0048 §311).
 pub fn count_tombstoned(dir: &std::path::Path) -> io::Result<usize> {
     let mut n = 0usize;
     for entry in fs::read_dir(dir)? {
@@ -173,14 +173,14 @@ pub fn count_tombstoned(dir: &std::path::Path) -> io::Result<usize> {
     Ok(n)
 }
 
-/// D0's WRITE side is NOT landed yet, and the reason is a criterion, not an opinion (ADR-0048 §311):
+/// D0's WRITE side is NOT landed yet, and the reason is a criterion, not an opinion (Cellrix:ADR-0048 §311):
 /// writing a tombstone through a SECOND `SessionEventStream::open` handle starts at offset 0 (the stream
 /// carries its own `seq` and does not append), so the first attempt OVERWROTE the period's history —
 /// caught by the test "every byte stays on disk". The fix is an append mode that recovers the last `seq`;
 /// until it exists, nothing in this crate writes a tombstone, and the read side below stays inert.
 ///
 
-/// D0 — WRITE A TOMBSTONE, SAFELY (ADR-0048 §326). The first version used `open`, which carries `seq` from 0
+/// D0 — WRITE A TOMBSTONE, SAFELY (Cellrix:ADR-0048 §326). The first version used `open`, which carries `seq` from 0
 /// and writes at offset 0: it OVERWROTE the period's history (the criterion "every byte stays on disk"
 /// caught it, and the writer was withdrawn). Four guards now make it safe, all of them already criteria:
 /// `open_append` continues from max+1 · a missing trailing newline is repaired before appending · a torn
@@ -224,7 +224,7 @@ pub fn count_tombstoned_of(dir: &std::path::Path, period_id: &str) -> io::Result
 /// returned window (protocol default lives at the caller, not here).
 pub fn list_periods(dir: &std::path::Path, limit: usize) -> io::Result<Vec<PeriodSummary>> {
     let mut out = Vec::new();
-    /* C7 — A TOMBSTONED PERIOD STILL *EXISTS* (ADR-0048 §311): hiding it from the listing must not
+    /* C7 — A TOMBSTONED PERIOD STILL *EXISTS* (Cellrix:ADR-0048 §311): hiding it from the listing must not
      * null its children's `parent`, or deletion would break the chain it never touched. */
     let mut existing_ids: Vec<String> = Vec::new();
     let entries = fs::read_dir(dir)?;
@@ -316,7 +316,7 @@ pub fn list_periods(dir: &std::path::Path, limit: usize) -> io::Result<Vec<Perio
         if count == 0 {
             continue;
         }
-        /* D0 — A TOMBSTONE HIDES THE PERIOD FROM READERS, NOT FROM DISK (ADR-0048 §311). The bytes stay:
+        /* D0 — A TOMBSTONE HIDES THE PERIOD FROM READERS, NOT FROM DISK (Cellrix:ADR-0048 §311). The bytes stay:
          * `D1` (GC) and `D2` (content destruction) are separate knobs with their own preconditions, and a
          * tombstoned period that something still points at is a GHOST — counted, never collected here. */
         if tombstone_seen {
@@ -386,7 +386,7 @@ pub fn list_periods(dir: &std::path::Path, limit: usize) -> io::Result<Vec<Perio
             .then_with(|| a.period_id.cmp(&b.period_id))
     });
     out.truncate(limit);
-    /* THE CONVERSATION IS THE LINEAGE ROOT, DECLARED BY THE READER (ADR-0048 §297).
+    /* THE CONVERSATION IS THE LINEAGE ROOT, DECLARED BY THE READER (Cellrix:ADR-0048 §297).
      * `job_id` is a content digest that legitimately repeats across conversations, so it can never name
      * one. The root is derived from the IMMUTABLE `parent` links: a root names itself, a continuation
      * inherits its root's id. TWO ENDINGS ARE NAMED rather than guessed:

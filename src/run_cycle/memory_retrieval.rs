@@ -61,7 +61,7 @@ impl AgentLoop {
                 Ok(result) => {
                     self.context.memory_nodes = result.nodes;
                     self.context.suggested_actions = result.suggested_actions;
-                    // P10a (ADR-0031): on-demand cognitive craft —
+                    // P10a (helix-mind:ADR-0031): on-demand cognitive craft —
                     // deterministic zero-token orchestration BEFORE the
                     // LLM reasoning step. Triggered by physical ability
                     // (GrpcMindAdapter implements craft; Noop returns

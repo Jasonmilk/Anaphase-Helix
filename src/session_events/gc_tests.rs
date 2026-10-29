@@ -1,4 +1,4 @@
-//! D1's criteria, one per invariant (ADR-0048 §328). Pure: no store, no clock, no files — so a failure
+//! D1's criteria, one per invariant (Cellrix:ADR-0048 §328). Pure: no store, no clock, no files — so a failure
 //! names the RULE, not the environment. Each test states the rule and, where the rule is a guard, the
 //! mutation that would slip past if the guard were removed.
 
@@ -147,7 +147,7 @@ fn an_unstamped_object_is_never_collected() {
     assert_eq!(p.kept, vec!["a".to_string()]);
 }
 
-/* ── THE STORE-FACING CRITERIA (ADR-0048 §329) ─────────────────────────────────────────────────── */
+/* ── THE STORE-FACING CRITERIA (Cellrix:ADR-0048 §329) ─────────────────────────────────────────────────── */
 
 #[test]
 fn the_rfc3339_reader_agrees_with_the_writer_the_ledger_owns() {
@@ -228,7 +228,7 @@ fn a_stamped_object_without_a_vacancy_fact_is_named_and_not_purged() {
     let _ = fs::remove_dir_all(&dir);
 }
 
-/// ④ THE END-TO-END (ADR-0048 §331): delete ⇒ replay ⇒ NO REVIVAL. And the MUTATION that proves the
+/// ④ THE END-TO-END (Cellrix:ADR-0048 §331): delete ⇒ replay ⇒ NO REVIVAL. And the MUTATION that proves the
 /// criterion is about the purge FACT rather than about the test: drop that one fact and the object returns.
 #[test]
 fn a_purged_object_is_neither_visible_nor_existing_after_a_replay() {
@@ -269,7 +269,7 @@ fn a_purged_object_is_neither_visible_nor_existing_after_a_replay() {
     let _ = fs::remove_dir_all(&dir);
 }
 
-/// C7 + the three-state law (ADR-0048 §332): destroying content must keep ID and PARENT, must make the text
+/// C7 + the three-state law (Cellrix:ADR-0048 §332): destroying content must keep ID and PARENT, must make the text
 /// unrecoverable, and must SAY that it was destroyed — because "destroyed" is not "there was never any".
 #[test]
 fn content_destruction_keeps_identity_and_lineage_and_names_itself() {
@@ -346,7 +346,7 @@ fn a_missing_object_is_refused_by_name_when_destroying_content() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// P40 — A REWRITE MUST BE ATOMIC (ADR-0048 §333). The append path has a tail guard; a REWRITE has no tail:
+/// P40 — A REWRITE MUST BE ATOMIC (Cellrix:ADR-0048 §333). The append path has a tail guard; a REWRITE has no tail:
 /// a crash in the middle of an in-place write leaves the WHOLE stream unparsable, and one bad row already
 /// took three suites down once. So: temp file, flush, rename.
 #[test]
@@ -444,7 +444,7 @@ fn an_unknown_key_is_destroyed_and_named_as_unclassified() {
     let _ = fs::remove_dir_all(&dir);
 }
 
-/// M2-D (ADR-0048 §334): a vacancy is READABLE — the fact, the deadline it implies, and a NAMED state.
+/// M2-D (Cellrix:ADR-0048 §334): a vacancy is READABLE — the fact, the deadline it implies, and a NAMED state.
 #[test]
 fn a_vacancy_is_readable_with_its_deadline_and_a_named_state() {
     use crate::trace::Redaction;
@@ -508,7 +508,7 @@ fn a_vacancy_whose_object_is_gone_is_named_object_gone() {
     let _ = fs::remove_dir_all(&dir);
 }
 
-/// The mode vocabulary (ADR-0048 §340): ONE mapping, and the inverse must round-trip. If the panel keyed on
+/// The mode vocabulary (Cellrix:ADR-0048 §340): ONE mapping, and the inverse must round-trip. If the panel keyed on
 /// the enum names while a payload carried these strings, a declared mode would read as "undeclared".
 #[test]
 fn the_mode_wire_vocabulary_is_one_mapping_and_round_trips() {
@@ -524,7 +524,7 @@ fn the_mode_wire_vocabulary_is_one_mapping_and_round_trips() {
     assert_eq!(mode_from_wire("partner "), None, "and a near-miss is unknown, not guessed");
 }
 
-/// M3④ (ADR-0048 §345): the OPTIONAL mode must not fall back. A criterion that cannot tell `None` from
+/// M3④ (Cellrix:ADR-0048 §345): the OPTIONAL mode must not fall back. A criterion that cannot tell `None` from
 /// `Some(Partner)` would let the very defect it guards ("a default claiming to be declared") pass.
 #[test]
 fn an_undeclared_mode_stays_undeclared_and_never_falls_back() {
@@ -540,7 +540,7 @@ fn an_undeclared_mode_stays_undeclared_and_never_falls_back() {
     assert_ne!(fallback(None), mode_wire_opt(None), "the fallback IS distinguishable from the honest one");
 }
 
-/// M3④ ② (ADR-0048 §346): the payload carries the mode ONLY when it was declared — the key is ABSENT
+/// M3④ ② (Cellrix:ADR-0048 §346): the payload carries the mode ONLY when it was declared — the key is ABSENT
 /// otherwise. Both branches are exercised directly on the emitter, so the rule is proven before the
 /// declaration is threaded through the run cycle.
 #[test]
@@ -573,7 +573,7 @@ fn period_start_carries_the_mode_only_when_declared() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// M3④ ③ (ADR-0048 §346.3): the DECLARATION is a separate fact from the effective value, and only an
+/// M3④ ③ (Cellrix:ADR-0048 §346.3): the DECLARATION is a separate fact from the effective value, and only an
 /// explicit one reaches the payload. This pins the wiring, not just the leaf.
 #[test]
 fn the_declared_mode_is_carried_separately_from_the_effective_one() {
@@ -589,7 +589,7 @@ fn the_declared_mode_is_carried_separately_from_the_effective_one() {
                "a declared mode reaches the payload as its wire value");
 }
 
-/// M3④ ② (ADR-0048 §349): the CONFIG speaks the WIRE vocabulary, and the enum name is REFUSED.
+/// M3④ ② (Cellrix:ADR-0048 §349): the CONFIG speaks the WIRE vocabulary, and the enum name is REFUSED.
 /// The mutation is the attribute itself: without `rename_all = "lowercase"` the two assertions below swap
 /// (the enum name would parse and the wire value would not), so this criterion moves with the drift.
 #[test]
