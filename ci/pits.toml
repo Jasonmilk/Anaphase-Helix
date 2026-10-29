@@ -181,3 +181,9 @@ summary  = "Splitting `Option<Pipeline>` into Unbound / Unreachable / Bound (the
 id       = "K127-EXECUTION-POINT-STOP"
 recorded = "2026-10-29"
 summary  = "The execution-point stop (2026-10-28 ruling: the STOP lives at the execution point, not the entrance 503) grew `src/pipeline/mod.rs` 350 -> 381 and `src/run_cycle/mod.rs` 743 -> 769. The growth IS the feature: `BindingState` is the portable half of the three-state binding (AgentLoop needs 'bound or not, and why', not ownership of the `Pipeline`), and `run_cycle` gains the four-state gate plus one named-refusal slot. Two things worth recording here rather than in the commit: (1) the flip is NOT the same as the type split -- the split left behaviour untouched, the flip changes what is executed, which is why they are two commits and the criterion file was written red FIRST and committed red (see tests/execution_gate.rs); (2) a self-check in `src/run_cycle/tests.rs` caught the new edge immediately ('Execution can return ReflexBlocked but the table has no edge for it'), so `TransitionCondition::ExecutionRefused` was added rather than reusing `ReflexBlocked`: the two are different gates (reflex check vs execution binding) with different dispositions, and collapsing them is the two-meanings-collapsed-into-one mistake this ledger keeps recording. Emitted deliberately via --emit-ratchet per K-126."
+
+[[pit]]
+k_id = "K128-CI144-PROFILE-GATE"
+what = "ci/check_ci144_profile.py 的初值基线（137 NCLOC）"
+why = "该判据 2026-10-29 进仓时漏了 seed，check_line_budget 直接拒绝运行；补 seed 是记账，不是放宽。"
+date = "2026-10-30"

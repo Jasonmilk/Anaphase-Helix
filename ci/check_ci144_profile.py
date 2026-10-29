@@ -71,8 +71,11 @@ def check(root, rows):
     return bad
 
 
-def run(root, quiet=False):
-    text = io.open(os.path.join(root, "docs/ci144-profile.md"), encoding="utf-8").read()
+DEFAULT_FILE = "docs/ci144-profile.md"
+
+
+def run(root, quiet=False, rel=DEFAULT_FILE):
+    text = io.open(os.path.join(root, rel), encoding="utf-8").read()
     rows = parse(text)
     if not rows:
         print("CHECKER DEAD: read 0 declarations -> not clean, read nothing")
@@ -107,6 +110,13 @@ def selftest():
         ("missing-symbol", ["| c1 | framing | adopted | `src/main.rs::no_such_symbol_xyz` |"], 1),
         ("absent-no-revisit", ["| c1 | framing | absent | we never adopted it |"], 1),
         ("deviated-no-why", ["| c1 | framing | deviated | unused |"], 1),
+        # Symmetry (§3.4): every exemption mechanism needs a "must be exempted"
+        # positive sample, or the exemption rule is untested and can rot to
+        # "always red" -- which is indistinguishable from a broken checker.
+        ("exempt-positive", [
+            "| c1 | framing | absent | revisit: event-triggered when X ships |",
+            "| c2 | framing | deviated | why: our transport has no such frame |",
+        ], 0),
         ("empty", [], 3),
     ]
     fail = 0
@@ -129,10 +139,18 @@ def selftest():
 
 
 def main():
+    """--root DIR and --file REL let another repo reuse this shape unchanged
+    (helix-mind/docs/helixECO/consensus-ledger.md). Same rules, one tool."""
     if "--selftest" in sys.argv:
         return selftest()
+    argv = sys.argv[1:]
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    return run(root)
+    rel = DEFAULT_FILE
+    if "--root" in argv:
+        root = argv[argv.index("--root") + 1]
+    if "--file" in argv:
+        rel = argv[argv.index("--file") + 1]
+    return run(root, rel=rel)
 
 
 if __name__ == "__main__":

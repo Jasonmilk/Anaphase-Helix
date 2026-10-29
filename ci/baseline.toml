@@ -657,3 +657,13 @@ target = "src/session_events/"
 cap    = 30
 k_id   = "K15-A-ROUTE-GROUPING"
 reason = "The same attachment-1 change: the directory total follows the file (2216 -> 2246). One allowance per target — this is the directory's."
+
+# The CI-144 profile gate (ci/check_ci144_profile.py) shipped in 69667ab without
+# a seed -- it ran in ci.yml but the budget checker refused to baseline it.
+# Seeded here at its first measured size (137 NCLOC). A seed is a decision.
+[[seed]]
+target = "ci/check_ci144_profile.py"
+ncloc = 137
+counter = 2
+k_id = "K128-CI144-PROFILE-GATE"
+reason = "declaration-evidence gate for the CI-144 profile; shipped without a seed, seeded at first measured size"
