@@ -7,6 +7,9 @@
 #   ① `cargo test --all-features --no-fail-fast`（实测本地 0 失败组 · 485 用例）
 #   ② `python3 ci/check_line_budget.py`（**本仓的行预算棘轮** —— 它曾在我改动别处时红过，
 #      而当时因为**没有 CI**没人自动发现 ⇒ 这项就是那次事故的守卫）
+#   ④ `python3 ci/check_ci144_profile.py`（CI-144 profile 声明-证据 —— 2026-10-30 立：
+#      每条声明必须 adopted(可解析)/absent(带 revisit)/deviated(带 why)；读到 0 条 exit 3。
+#      它一上线就抓到我自己的假证据：`::GateDecision` 这个符号不存在。)
 #   ③ `python3 ci/check_adr_refs.py`（ADR 引用可解析 —— 2026-10-29 立，修前实测 142 处红：
 #      134 处裸跨仓、8 处 §233–§236 全工作区不存在）。法源是 `docs/decisions/README.md:88`
 #      「跨仓引用一律写仓名」；此前它只是**纸上的规矩**，没人跑 ⇒ K10 的 100+ 次实例。
@@ -83,6 +86,11 @@ jobs:
         run: |
           python3 ci/check_adr_refs.py --selftest
           python3 ci/check_adr_refs.py
+      - name: ④ CI-144 profile 声明-证据可解析
+        working-directory: anaphase-helix
+        run: |
+          python3 ci/check_ci144_profile.py --selftest
+          python3 ci/check_ci144_profile.py
       - name: 上传日志
         if: always()
         uses: actions/upload-artifact@v4
