@@ -44,6 +44,13 @@ pub enum TransitionCondition {
     Impass,
     ReflexBlocked,
     ReflexPassed,
+    /// 执行点拒绝（2026-10-28「停 = 执行点」）。
+    ///
+    /// 为什么不复用 `ReflexBlocked`：两者是**不同的门**（反身门 vs 执行点绑定/变暗），
+    /// 处置也不同（反身门拦的是反身动作，执行点拒绝把循环降级为只读）。
+    /// 共用一个条件 = 让读者与统计都分不清「哪道门拦的」——
+    /// 这正是本仓反复记录的「两义坍缩」。
+    ExecutionRefused,
 }
 
 /// One episode (experience) of the cognitive loop (ADR-0006): the boundary
@@ -177,6 +184,11 @@ pub struct AgentLoop {
      * "remember not to write that", but "it does not compile".
      * (ADR-0018 batch 4: 一类缺陷变成不可能状态 — applied one layer up, to the criterion's INPUT.) */
     pub pipeline: Option<Pipeline>,   /* ③ 暂时撤回：先验 ② 的行为修复 */
+    /// 执行通道**为什么**绑上了/没绑上（ADR-0007 D'-3 三态的可搬运那一半）。
+    /// 执行点用它决定停不停（"停"= 执行点，2026-10-28 裁定）；`pipeline` 只管载荷。
+    /// 两者可能不一致的唯一情形是有人绕过 `with_pipeline` —— 所以翻转时
+    /// 判据读的是 `binding`，不是 `pipeline.is_some()`（后者会把 Unreachable 读成 Unbound）。
+    pub binding: crate::pipeline::BindingState,
     /// Interaction mode (ADR-0006): Drive (no Mind) / Partner (default) /
     /// Survive (Mind autonomous, reserved for P10a). Physical participation
     /// is decided at assembly time (Noop vs gRPC memory adapter); this field
@@ -294,6 +306,17 @@ impl AgentLoop {
         eprintln!("⚠️  reflex gate blocked the action: {reason}");
         self.context.last_reflex_block = Some(reason.to_string());
     }
+
+    /// 执行点拒绝的记账（2026-10-28「停 = 执行点」）：
+    ///   1. `warn!` — 人能看见；
+    ///   2. `eprintln!` — 终端上能看见；
+    ///   3. `context.last_execution_refusal` — **判据能看见**（这是关键那条：
+    ///      只 warn 不落槽位 = K22 族，东西在那儿，等于没有）。
+    fn ring_execution_refusal(&mut self, reason: &str) {
+        warn!("[Execution] REFUSED ({reason}) — fail-closed, no tool call");
+        eprintln!("⛔ execution point refused: {reason}");
+        self.context.last_execution_refusal = Some(reason.to_string());
+    }
 }
 
 fn remember_parents(context: &AgentContext) -> Vec<String> {
@@ -321,6 +344,12 @@ pub struct AgentContext {
     /// `Option`, not `String`: an absent block and an empty reason are different facts,
     /// and collapsing them is this ledger's most-recorded mistake.
     pub last_reflex_block: Option<String>,
+    /// 执行点最近一次**具名拒绝**的理由（2026-10-28「停 = 执行点」）。
+    ///
+    /// 单独一个槽位，不复用 `last_reflex_block`：两者来源不同（反身门 vs 执行点绑定），
+    /// 复用一个槽位等于让读者无法区分「哪道门拦的」—— 而这两道门的处置也不同
+    /// （反身门进 ReflexBlocked 分支，执行点拒绝只降级为只读）。`Option` 同理：缺席 ≠ 空串。
+    pub last_execution_refusal: Option<String>,
     /// Physical-clock time anchor (2026-09-09): when the user message
     /// arrived (epoch secs from the single injected clock, ADR-0021).
     /// Injected into the prompt at zero tokens so Helix never loses the
@@ -466,6 +495,10 @@ impl AgentLoop {
         transitions.insert((HelixState::Reasoning, TransitionCondition::Failure), HelixState::Reflection);
         transitions.insert((HelixState::ReflexCheck, TransitionCondition::ReflexPassed), HelixState::Execution);
         transitions.insert((HelixState::ReflexCheck, TransitionCondition::ReflexBlocked), HelixState::Reflection);
+        // 执行点拒绝 ⇒ 转 Reflection：拒绝不是循环结束，是降级为只读。
+        // 没有这条边，`every_returned_condition_has_a_rule` 会说
+        // 「Execution can return … but the table has no edge for it」（它正是这么抓到的）。
+        transitions.insert((HelixState::Execution, TransitionCondition::ExecutionRefused), HelixState::Reflection);
         transitions.insert((HelixState::Execution, TransitionCondition::Success), HelixState::Reflection);
         transitions.insert((HelixState::Execution, TransitionCondition::Failure), HelixState::Reflection);
         transitions.insert((HelixState::Reflection, TransitionCondition::Success), HelixState::Perception);
@@ -487,6 +520,7 @@ impl AgentLoop {
             tool_command: None,
             run_config: RunCycleConfig::default(),
             pipeline: None,
+            binding: crate::pipeline::BindingState::Unbound,
             mode: Mode::Partner,
             episode: None,
             events: None,
@@ -529,6 +563,15 @@ impl AgentLoop {
     /// keeps the legacy string/echo path (backwards compatible).
     pub fn with_pipeline(mut self, pipeline: Pipeline) -> Self {
         self.pipeline = Some(pipeline);
+        // 绑上 ≠ 一定执行：运行期变暗是第四态，由执行点另行判定（binding 只说装配结果）。
+        self.binding = crate::pipeline::BindingState::Bound;
+        self
+    }
+
+    /// 只声明装配结果（不带 pipeline）。给 `resolve_binding` 的调用方用：
+    /// `Unreachable` 时 `pipeline` 仍是 None，但原因不再塌缩成「没配」。
+    pub fn with_binding_state(mut self, state: crate::pipeline::BindingState) -> Self {
+        self.binding = state;
         self
     }
 
@@ -1033,17 +1076,37 @@ impl AgentLoop {
                 // candidate E (ADR-0005): a structured plan with a wired
                 // pipeline takes the deterministic path (stages 3-4). Without
                 // either, the legacy string/echo path stays (backwards compat).
-                if self.pipeline.is_some() && !self.context.calls.is_empty() {
-                    // O-1: pipeline resolved at startup, but the physical probe
-                    // says the tentacle is dark — log the degradation fact.
-                    match self.context.ecosystem.status("tentacle") {
-                        Some(crate::gloves::GloveStatus::Unavailable) => {
-                            warn!("[Execution] tentacle dark at runtime; pipeline path may fail-open");
-                        }
-                        _ => {}
+                // ★ 执行点停（2026-10-28 裁定：停 = 执行点，不是入口 503）。
+                //
+                // 四态：Unbound / Unreachable / Bound / Bound-then-Dark。
+                // 只有「Bound 且运行期没变暗」才执行；其余三态一律具名拒绝并**不落 legacy**。
+                //
+                // 为什么这里读 `self.binding` 而不读 `self.pipeline.is_some()`：
+                // 后者把 Unreachable 塌缩成「没配」，拒绝文案就会指错原因
+                // （`tests/execution_gate.rs` 与 `tests/replay_guard.rs` 分别守两头）。
+                if !self.context.calls.is_empty() {
+                    let dark = matches!(
+                        self.context.ecosystem.status("tentacle"),
+                        Some(crate::gloves::GloveStatus::Unavailable)
+                    );
+                    let refusal = match (&self.binding, dark) {
+                        (crate::pipeline::BindingState::Bound, false) => None,
+                        (crate::pipeline::BindingState::Bound, true) => Some(
+                            "execution pipeline dark at runtime: bound at assembly, but the \
+                             runtime probe says the tentacle is gone (bound-then-dark)"
+                                .to_string(),
+                        ),
+                        (state, _) => state.refusal(),
+                    };
+                    if let Some(reason) = refusal {
+                        self.ring_execution_refusal(&reason);
+                        // 拒绝不是循环结束：转 Reflection 后仍能想/记/报（只读降级）。
+                        return Ok(TransitionCondition::ExecutionRefused);
                     }
                     return self.execute_structured().await;
                 }
+                // calls 为空 ⇒ 没有任何「做」被请求 ⇒ 旧 legacy 占位路径语义不变
+                // （它只是在空动作上回一个占位串，不构成一次「做」）。
                 let action_str = self.context.suggested_actions.join(", ");
                 // M1.5-T6: resolved real tool name; placeholder from config
                 // source (DNA principle 11 / ADR-0005) when unset.

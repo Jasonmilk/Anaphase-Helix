@@ -514,6 +514,8 @@ fn the_transition_table_has_exactly_these_edges() {
         (S::ReflexCheck, C::ReflexBlocked, S::Reflection),
         (S::Execution, C::Success, S::Reflection),
         (S::Execution, C::Failure, S::Reflection),
+        // 2026-10-28「停 = 执行点」：拒绝转 Reflection（降级只读，不是循环结束）
+        (S::Execution, C::ExecutionRefused, S::Reflection),
         (S::Reflection, C::Success, S::Perception),
     ];
 
@@ -792,13 +794,15 @@ async fn the_loop_actually_reads_the_transition_table() {
 fn the_transition_table_is_sparse_and_that_is_recorded() {
     let agent = base();
     let defined = agent.transitions.len();
-    let pairs = crate::states::HelixState::ALL.len() * 7;
+    // 2026-10-28: conditions 7 → 8（新增 ExecutionRefused），故 pairs 49 → 56，
+    // 边 13 → 14。两个数一起动 —— 只改一个就说明有人漏读了这张表。
+    let pairs = crate::states::HelixState::ALL.len() * 8;
     assert_eq!(
-        pairs, 49,
-        "7 states and 7 conditions; if either changed, the ratio below moved"
+        pairs, 56,
+        "7 states and 8 conditions; if either changed, the ratio below moved"
     );
     assert_eq!(
-        defined, 13,
+        defined, 14,
         "the table changed size; update this record and the dispatch fallback test"
     );
 }
@@ -1018,6 +1022,7 @@ fn every_returned_condition_has_a_rule() {
             "Impass" => TransitionCondition::Impass,
             "ReflexBlocked" => TransitionCondition::ReflexBlocked,
             "ReflexPassed" => TransitionCondition::ReflexPassed,
+            "ExecutionRefused" => TransitionCondition::ExecutionRefused,
             other => panic!("unknown condition {other}"),
         }
     };

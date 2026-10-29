@@ -448,7 +448,68 @@ pub enum PipelineBinding {
     Bound(Box<Pipeline>),
 }
 
+/// 三态里**可搬运的那部分**（不带 `Pipeline` 载荷）。
+///
+/// 存在理由：`AgentLoop` 是测试与生产共用的执行体，它只需要知道“绑没绑、为什么没绑”，
+/// 不需要（也不该）持有 `Pipeline` 的所有权。把状态与载荷分开，
+/// 执行点才有可能在**没绑**的时候说清楚它是哪一态 —— 这正是本轮翻转要用的东西。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BindingState {
+    /// 没有配执行通道 —— 出厂态。
+    Unbound,
+    /// 配了但连不上 —— 环境故障。
+    Unreachable { endpoint: String, reason: String },
+    /// 已绑定。
+    Bound,
+}
+
+impl BindingState {
+    /// 机器可读的态名（与 `PipelineBinding::state` 同一套词汇）。
+    pub fn state(&self) -> &'static str {
+        match self {
+            BindingState::Unbound => "unbound",
+            BindingState::Unreachable { .. } => "unreachable",
+            BindingState::Bound => "bound",
+        }
+    }
+
+    pub fn is_bound(&self) -> bool {
+        matches!(self, BindingState::Bound)
+    }
+
+    /// 没有绑定时的**具名**拒绝理由；绑定时 `None`。
+    ///
+    /// 三个字段（state / endpoint / reason）拼错一个就变成“另一个原因”，
+    /// 所以拒绝文案只许从这里出，调用方不得自己拼。
+    pub fn refusal(&self) -> Option<String> {
+        match self {
+            BindingState::Bound => None,
+            BindingState::Unbound => Some(
+                "execution pipeline unbound: no tentacle endpoint configured \
+                 (this build runs read-only: think/record/report keep working, tool calls do not)"
+                    .to_string(),
+            ),
+            BindingState::Unreachable { endpoint, reason } => Some(format!(
+                "execution pipeline unreachable: tentacle at {endpoint}: {reason} \
+                 (this build runs read-only: think/record/report keep working, tool calls do not)"
+            )),
+        }
+    }
+}
+
 impl PipelineBinding {
+    /// 取出可搬运的状态（供 `AgentLoop` 之类只关心“绑没绑”的消费方使用）。
+    pub fn state_of(&self) -> BindingState {
+        match self {
+            PipelineBinding::Unbound => BindingState::Unbound,
+            PipelineBinding::Unreachable { endpoint, reason } => BindingState::Unreachable {
+                endpoint: endpoint.clone(),
+                reason: reason.clone(),
+            },
+            PipelineBinding::Bound(_) => BindingState::Bound,
+        }
+    }
+
     /// 机器可读的三态名。落账/判据只许用它，不要用自然语言复述。
     pub fn state(&self) -> &'static str {
         match self {
@@ -467,18 +528,7 @@ impl PipelineBinding {
     /// 为什么不让调用方自己拼字符串：执行点的拒绝事件必须能互相比较（判据要数它），
     /// 而三个字段（state / endpoint / reason）拼错一个就变成“另一个原因”。
     pub fn refusal(&self) -> Option<String> {
-        match self {
-            PipelineBinding::Bound(_) => None,
-            PipelineBinding::Unbound => Some(
-                "execution pipeline unbound: no tentacle endpoint configured \
-                 (this build runs read-only: think/record/report keep working, tool calls do not)"
-                    .to_string(),
-            ),
-            PipelineBinding::Unreachable { endpoint, reason } => Some(format!(
-                "execution pipeline unreachable: tentacle at {endpoint}: {reason} \
-                 (this build runs read-only: think/record/report keep working, tool calls do not)"
-            )),
-        }
+        self.state_of().refusal()
     }
 
     pub fn into_bound(self) -> Option<Pipeline> {

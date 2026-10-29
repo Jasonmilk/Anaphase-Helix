@@ -140,10 +140,10 @@ target = "src/main.rs"
 ncloc  = 1035
 [[ratchet]]
 target = "src/pipeline/"
-ncloc  = 350
+ncloc  = 381
 [[ratchet]]
 target = "src/pipeline/mod.rs"
-ncloc  = 350
+ncloc  = 381
 [[ratchet]]
 target = "src/rails.rs"
 ncloc  = 370
@@ -152,13 +152,13 @@ target = "src/reflex.rs"
 ncloc  = 22
 [[ratchet]]
 target = "src/run_cycle/"
-ncloc  = 1477
+ncloc  = 1503
 [[ratchet]]
 target = "src/run_cycle/memory_retrieval.rs"
 ncloc  = 81
 [[ratchet]]
 target = "src/run_cycle/mod.rs"
-ncloc  = 743
+ncloc  = 769
 [[ratchet]]
 target = "src/run_cycle/reasoning.rs"
 ncloc  = 258

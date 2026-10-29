@@ -208,12 +208,23 @@ async fn test_execution_resolves_real_tool_command() {
 
     agent.run_cycle("Hello").await.unwrap();
 
-    // Cycle ends back at Perception; the real tool name was resolved.
+    // 2026-10-28「停 = 执行点」翻行为之后，本条改判：**没有 pipeline 就不执行**。
+    // `TriggerToolReasoning` 请求了「做」（calls 非空）而没有执行通道 ⇒ 执行点具名拒绝。
+    // 注意这不是回到「回一个占位串」——拒绝与占位的区别正是本轮要的东西：
+    // 占位看起来像做过了，拒绝说清楚没做（且理由可读、可数）。
     assert_eq!(agent.current_state, HelixState::Perception);
-    assert_eq!(
-        *tool.last_command.lock().unwrap(),
-        Some("numbers".to_string()),
-        "Execution must dispatch to the configured real tool name"
+    assert!(
+        tool.last_command.lock().unwrap().is_none(),
+        "未绑定执行通道时不得把任何 command 派给工具"
+    );
+    let refusal = agent
+        .context
+        .last_execution_refusal
+        .clone()
+        .expect("执行点必须留下具名拒绝，否则判据与人都读不到它");
+    assert!(
+        refusal.contains("unbound"),
+        "拒绝理由要指名是哪一态：{refusal}"
     );
 }
 
@@ -232,9 +243,12 @@ async fn test_execution_keeps_echo_placeholder_when_unset() {
     let mut agent = AgentLoop::new(memory, reason, tool_adapter, safety, ui, fear, reflex);
 
     agent.run_cycle("Hello").await.unwrap();
-    assert_eq!(
-        *tool.last_command.lock().unwrap(),
-        Some("echo".to_string()),
-        "without tool_command, Execution keeps the echo placeholder"
+    // 同上一族：占位符现在是**不可达**的行为 —— 请求了「做」而没有执行通道 ⇒ 拒绝。
+    // `tool_command` / `execution_placeholder` 因此退化为「calls 为空时才会用到」的
+    // 残存配置（已在提交信息里登记为待清项，不在这里偷偷删掉它）。
+    assert!(
+        tool.last_command.lock().unwrap().is_none(),
+        "未绑定执行通道时不得执行 echo 占位符"
     );
+    assert!(agent.context.last_execution_refusal.is_some());
 }

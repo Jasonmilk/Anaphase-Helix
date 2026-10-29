@@ -342,10 +342,20 @@ async fn run_config_execution_placeholder() {
     });
 
     agent.run_cycle("hello").await.unwrap();
-    assert_eq!(
-        *recorded.lock().unwrap(),
-        Some("custom".to_string()),
-        "placeholder from config"
+    // 2026-10-28「停 = 执行点」：请求了「做」而没有执行通道 ⇒ 拒绝，且**不执行**。
+    // 本条原断言 `Some("custom")`（占位符被执行）—— 那正是本轮关掉的行为。
+    assert!(
+        recorded.lock().unwrap().is_none(),
+        "未绑定执行通道时不得执行占位符 command"
+    );
+    assert!(
+        agent
+            .context
+            .last_execution_refusal
+            .as_deref()
+            .is_some_and(|r| r.contains("unbound")),
+        "拒绝理由要指名 unbound：{:?}",
+        agent.context.last_execution_refusal
     );
 }
 
