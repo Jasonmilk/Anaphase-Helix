@@ -4,11 +4,14 @@
 //! (`bl-` + FNV-1a over `{tool}#{params}`) instead of the `""` placeholder.
 //! D'-3: `resolve_pipeline` wires the deterministic execution channel at
 //! startup with fail-open semantics (empty endpoint / failed connect -> None).
+//! 2026-10-29: that single `None` carried two meanings (factory state vs broken
+//! environment) — `resolve_binding` now separates them (Unbound / Unreachable).
+//! The assembly stays fail-open; only the vocabulary was split.
 
 use std::collections::BTreeMap;
 
 use anaphase::contract::derive_seen_bloom;
-use anaphase::pipeline::{resolve_pipeline, Pipeline, PipelineConfig};
+use anaphase::pipeline::{resolve_binding, resolve_pipeline, Pipeline, PipelineBinding, PipelineConfig};
 
 mod common;
 use common::{spawn_mock_tentacle, MockTentacle};
@@ -93,4 +96,48 @@ async fn resolve_pipeline_wires_mock_endpoint() {
     let config = PipelineConfig::from_codex("knowledge_base/fixture-codex.json").unwrap();
     let pipeline = resolve_pipeline(Some(endpoint), config).await;
     assert!(pipeline.is_some(), "configured endpoint must wire the pipeline");
+}
+
+/// 三态必须**可区分**（2026-10-29 拆 `Option<Pipeline>` 的两义 None）。
+///
+/// 反样本就是旧形状本身：`None` 对「没配」与「配了连不上」给出同一个值，
+/// 于是「这台机器出厂就没有执行通道」与「执行通道坏了」在后代代码里不可分。
+/// 这里断言三件事：state 名不同、refusal 文案不同、且只有 Bound 有 pipeline。
+#[tokio::test]
+async fn resolve_binding_separates_unbound_from_unreachable() {
+    let config = PipelineConfig::from_codex("knowledge_base/fixture-codex.json").unwrap();
+
+    let unbound = resolve_binding(None, config.clone()).await;
+    let empty = resolve_binding(Some(String::new()), config.clone()).await;
+    let unreachable = resolve_binding(Some("http://127.0.0.1:1".into()), config).await;
+
+    // 1) 三态名互不相同：出厂态 ≠ 环境故障。
+    assert_eq!(unbound.state(), "unbound");
+    assert_eq!(empty.state(), "unbound", "empty string is the factory state, not a fault");
+    assert_eq!(unreachable.state(), "unreachable");
+    assert_ne!(unbound.state(), unreachable.state(), "the two Nones must not collapse");
+
+    // 2) 都不是 Bound（fail-open 装配保持不变：ADR-0007 D2 未被推翻）。
+    assert!(!unbound.is_bound() && !empty.is_bound() && !unreachable.is_bound());
+
+
+    // 3) 具名拒绝理由：都出声，但说的是不同的原因，且都不许是空串。
+    let r_unbound = unbound.refusal().expect("unbound must name its refusal");
+    let r_unreachable = unreachable.refusal().expect("unreachable must name its refusal");
+    assert!(r_unbound.contains("unbound"), "{r_unbound}");
+    assert!(r_unreachable.contains("unreachable"), "{r_unreachable}");
+    assert!(r_unreachable.contains("127.0.0.1:1"), "the failed endpoint must survive: {r_unreachable}");
+    assert_ne!(r_unbound, r_unreachable, "different causes need different words");
+}
+
+/// Bound 才有 pipeline，且拒绝理由是 `None`（不是空串 - 空串会被读成“已拒绝”）。
+#[tokio::test]
+async fn resolve_binding_bound_names_no_refusal() {
+    let mock = MockTentacle::new().with_tool("numbers", "{}");
+    let (endpoint, _captured, _tx, _handle) = spawn_mock_tentacle(mock).await;
+    let config = PipelineConfig::from_codex("knowledge_base/fixture-codex.json").unwrap();
+    let bound = resolve_binding(Some(endpoint), config).await;
+    assert_eq!(bound.state(), "bound");
+    assert!(bound.refusal().is_none(), "a bound pipeline has nothing to refuse");
+    assert!(matches!(bound, PipelineBinding::Bound(_)));
 }

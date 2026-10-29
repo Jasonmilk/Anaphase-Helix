@@ -429,23 +429,99 @@ impl Pipeline {
     }
 }
 
+/// 执行通道的**装配结果**（ADR-0007 D'-3，2026-10-29 拆三态）。
+///
+/// 拆的理由：`Option<Pipeline>` 的 `None` 同时承载两个语义 —— **出厂态（没配）**
+/// 与 **环境故障（配了连不上）**。两者对调用方的后果不同：前者是“这台机器上本来就没有
+/// 执行通道”，后者是“本该有、现在坏了”。而两者的共同后果才是致命的那条 ——
+/// 都掉进 legacy 直连（旁路所有内容安全能力，默认只 `echo`）。
+///
+/// **本枚举不改装配层的 fail-open**：`Unbound` / `Unreachable` 仍不炸启动（ADR-0007 D2、
+/// `tests/replay_guard.rs` 原样保留）。三态只是让**上层能把两个语义分开说**，
+/// 并给执行点一个可判的形状（见 `PipelineBinding::refusal`）。
+pub enum PipelineBinding {
+    /// 没有配执行通道（端点缺席或空串）—— 出厂态，不是故障。
+    Unbound,
+    /// 配了但连不上 —— 环境故障。`reason` 是带端点的原名错误，不许吞。
+    Unreachable { endpoint: String, reason: String },
+    /// 已绑定。
+    Bound(Box<Pipeline>),
+}
+
+impl PipelineBinding {
+    /// 机器可读的三态名。落账/判据只许用它，不要用自然语言复述。
+    pub fn state(&self) -> &'static str {
+        match self {
+            PipelineBinding::Unbound => "unbound",
+            PipelineBinding::Unreachable { .. } => "unreachable",
+            PipelineBinding::Bound(_) => "bound",
+        }
+    }
+
+    pub fn is_bound(&self) -> bool {
+        matches!(self, PipelineBinding::Bound(_))
+    }
+
+    /// 没有绑定时的**具名**拒绝理由；绑定时 `None`。
+    ///
+    /// 为什么不让调用方自己拼字符串：执行点的拒绝事件必须能互相比较（判据要数它），
+    /// 而三个字段（state / endpoint / reason）拼错一个就变成“另一个原因”。
+    pub fn refusal(&self) -> Option<String> {
+        match self {
+            PipelineBinding::Bound(_) => None,
+            PipelineBinding::Unbound => Some(
+                "execution pipeline unbound: no tentacle endpoint configured \
+                 (this build runs read-only: think/record/report keep working, tool calls do not)"
+                    .to_string(),
+            ),
+            PipelineBinding::Unreachable { endpoint, reason } => Some(format!(
+                "execution pipeline unreachable: tentacle at {endpoint}: {reason} \
+                 (this build runs read-only: think/record/report keep working, tool calls do not)"
+            )),
+        }
+    }
+
+    pub fn into_bound(self) -> Option<Pipeline> {
+        match self {
+            PipelineBinding::Bound(p) => Some(*p),
+            _ => None,
+        }
+    }
+}
+
 /// Bootstrap assembly of the deterministic execution channel (ADR-0007 D'-3):
-/// fail-open — an empty endpoint or a failed connection yields None (legacy
-/// echo fallback keeps working), never a startup error. Mirrors the
-/// `resolve_memory_adapter` pattern (DNA principle 6 fail-open).
+/// fail-open — an empty endpoint or a failed connection yields a non-`Bound`
+/// binding (never a startup error), so `resolve_pipeline` keeps its old
+/// `Option` shape for callers that only need “usable or not”.
+///
+/// 需要区分“没配”与“配了连不上”的调用方用 `resolve_binding`（本函数是它的薄包装）。
+pub async fn resolve_binding(endpoint: Option<String>, config: PipelineConfig) -> PipelineBinding {
+    let endpoint = match endpoint {
+        Some(e) if !e.is_empty() => e,
+        _ => return PipelineBinding::Unbound,
+    };
+    match GrpcTentacleAdapter::new(&endpoint).await {
+        Ok(tentacle) => PipelineBinding::Bound(Box::new(Pipeline::new(
+            tentacle,
+            Box::new(SystemClock),
+            config,
+        ))),
+        Err(e) => {
+            // 出声保留（原行为）：配了却连不上是环境故障，不是出厂态，不许静默。
+            eprintln!(
+                "Warning: failed to connect to Tentacle at {endpoint}: {e}. Falling back to legacy execution."
+            );
+            PipelineBinding::Unreachable {
+                endpoint,
+                reason: e.to_string(),
+            }
+        }
+    }
+}
+
 pub async fn resolve_pipeline(
     endpoint: Option<String>,
     config: PipelineConfig,
 ) -> Option<Pipeline> {
-    let endpoint = match endpoint {
-        Some(e) if !e.is_empty() => e,
-        _ => return None,
-    };
-    match GrpcTentacleAdapter::new(&endpoint).await {
-        Ok(tentacle) => Some(Pipeline::new(tentacle, Box::new(SystemClock), config)),
-        Err(e) => {
-            eprintln!("Warning: failed to connect to Tentacle at {endpoint}: {e}. Falling back to legacy execution.");
-            None
-        }
-    }
+    resolve_binding(endpoint, config).await.into_bound()
 }

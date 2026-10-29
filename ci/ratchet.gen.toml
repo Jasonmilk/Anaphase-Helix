@@ -140,10 +140,10 @@ target = "src/main.rs"
 ncloc  = 1035
 [[ratchet]]
 target = "src/pipeline/"
-ncloc  = 301
+ncloc  = 350
 [[ratchet]]
 target = "src/pipeline/mod.rs"
-ncloc  = 301
+ncloc  = 350
 [[ratchet]]
 target = "src/rails.rs"
 ncloc  = 370
