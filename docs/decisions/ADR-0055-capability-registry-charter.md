@@ -1,0 +1,66 @@
+# ADR-0055: 能力授权注册表立项（charter only, no implementation）
+
+- **状态**: Proposed（待人类批准立项；本 ADR 不含任何实现）
+- **日期**: 2026-10-28
+- **决策范围**: 是否把 CI-144 `CAPABILITY-13 §2` 落地为生态的一等组件；落地形状、时间、归属另行裁决
+- **关联**: `COMMONINTENTS/CAPABILITY-13/spec/CAPABILITY-13.md` §1/§2/§2.2/§5 · `COMMONINTENTS/BIND-19/docs/spec/sap-xcf14.md`（家族 SSOT）· ADR-0017（ci144 传输）· ADR-0054（执行点停）· `helix-mind/docs/helixECO/observations/2026-10-28/ci144-alignment-census.md`
+
+---
+
+## 1. 为什么现在立项
+
+`grep -rn 'capability_mapping\|signer_l0_hash\|0x05FA' anaphase-helix/src anaphase-helix/config.toml.example Tuck/crates` ⇒ **0 命中**。
+
+CAPABILITY-13 把自己的价值主张定义为三项（§1）：异步 HITL · **动态签名权限注册表** · 沙箱权限映射。生态现状：
+
+| 规范项 | 现状 |
+|---|---|
+| §2 动态注册表（`capability_mapping.toml` + `[meta].signer_l0_hash` + `[integrity] Ed25519`） | 不存在 |
+| §2.2 启动验签链（L0 gRPC over UDS → 验签 → 失败 `0x05FA` 拒启动并锁定沙箱） | 不存在（无 L0 客户端） |
+| §3 异步 HITL | 只有终局拒绝（见 §4 的对照） |
+| §4 scope ↔ 沙箱 capability 映射 | 存在，但是**编译期硬编码**（`Tuck/crates/tuck-gateway/src/matrix.rs`） |
+
+⇒ 这是唯一"从未被**任何**传输承载过"的一层：连那条确实在 CI-144 栈上的 stdio 链（`src/ci144/mod.rs`）也只有握手与快照，没有能力授权。
+
+## 2. 决定（仅立项范围）
+
+**D1 · 定性**：§2 属**语义层**，不是帧层。它的载体是一份带签名的配置 + 一次启动期验签，与任何帧格式无关；因此它既不需要「换帧」，也不能靠「加字段」得到。
+
+**D2 · 归属**：验证责任在 **anaphase**（spec `:127`/`:129` 明写 Anaphase 用旧公钥验 `rotation_proof`、原子换键后立即重验注册表）；注册表**本体**属配置域，不得编译进二进制——这正是 §2 开头反对的形态。
+
+**D3 · 前置（本 ADR 的核心约束）**：CAPABILITY-13 并非传输无关，它把语义钉在三处具体传输上：
+
+| 位置 | 钉在哪 |
+|---|---|
+| `:51` | L0 查询「via the standardized **L0 gRPC interface over local UDS**」 |
+| `:59` | HITL 挂起「utilizing the **BIND-19 `CON` (`0x02`) flag**」 |
+| `:101` | 唤醒「via **BIND-19 `Control (0x03)` frame**」 |
+
+⇒ 因此「把判定层从帧层改为语义层」不是一个可以单方面接受的重述，它需要**二选一**：
+- **(a) 解绑**：修订规范，把这三处改为「传输中立 + 各传输必须提供等价能力（flow-control 标志、control 帧、本地凭证查询）」；
+- **(b) 声明 profile**：规范不动，由生态写一份 `profile`，逐个映射「该传输上的等价物」，并具名承认哪些条款在该传输上不适用。
+
+不做 (a) 或 (b)，「语义层判定」只是一句口号：任何一次严格的规范符合性检查都会把我们打回帧层。
+
+**D4 · 反样本义务**：后续任何实现都必须自带「**签名错 ⇒ `0x05FA` 拒启动**」的可红判据（正样本：签名正确 ⇒ 启动；负样本：改一个字节 ⇒ 拒绝启动且日志含 `0x05FA`）。没有这条判据的实现不许合并。
+
+## 3. 明确不做（本 ADR 范围内）
+
+1. 不实现注册表解析、不接 L0 客户端、不改任何路由。
+2. 不把任何验签放进每次执行的前置路径（PFP 4 字节 <100ns；SAP 自述「按需加载，不在 Tuck 实时路径上」）。
+3. 不改 `COMMONINTENTS/` 下任何仓（只读语料）。
+4. 不在本 ADR 里裁决 HITL 拆分（`HitlRequired` → `Pending{token}` + `Reject`），那是独立一项且依赖 §2 验签。
+
+## 4. 事实补录（本轮普查，供后续引用）
+
+- **家族权威结构**：`BIND-19` 是 SSOT；`SAP-xCF14` / `PFP-xCF14` 自述为 **publication window, not the authority**。`CAPABILITY-13` **不在**镜像表内 ⇒ 它自己就是权威，引用它无需转引。
+- **权威指针已断**：`SAP-xCF14/README.md` 与 `PFP-xCF14/README.md` 各有 **6** 处指向 `v2.0-rc.1`，而 `git ls-remote --heads origin` 只有 `main` 与 `v2.0-alpha` ⇒ **该分支不存在**，权威链接全部悬空（K-131 家族：指针悬空不会变红，只会静默失效）。
+- **镜像已漂移**：`BIND-19/docs/spec/sap-xcf14.md` 262 行 vs `SAP-xCF14/README.md` 206 行，二者 `diff -q` 不同 ⇒ 引用防重放条款必须引 **BIND-19** 的那份。
+- **防重放的责任方是 Tuck**：SSOT `sap-xcf14.md:195`「当 PFP 中 `Replay-Enable == 0` 时，**Tuck 必须**强制执行以下约束」。⇒ 防重放既不属 anaphase 的加字段工作，也不属换帧工作；它落在 Tuck 这个代理上（与 ADR-0004 D7「唯一出口 = FlowModus，其下游必经 Tuck」一致）。
+- **`Replay-Enable` 是条件开关**：`sap-xcf14.md:101-106` 防重放判定整体包在 `IF PFP.Replay-Enable == 1` 内；`Seq-Counter` 是 **16 位**（`:51`），回绕阈值 `65534`（`:172`）。⇒ 谈「用 nonce+时间窗还是用序列号」之前，先要回答「这条链的 `Replay-Enable` 是 0 还是 1」，否则两种机制都在讨论一个未定义的开关。
+
+## 5. 待批准
+
+1. **立项本身**（本 ADR 的存在意义：把"该做"与"怎么做"分开）。
+2. **D3 的 (a) 还是 (b)**。
+3. 是否同时登记「权威指针悬空」与「镜像漂移」为 `COMMONINTENTS` 侧缺陷（本轮只登记在本文，未开 issue、未改他人仓）。
