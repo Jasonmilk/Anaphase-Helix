@@ -22,7 +22,7 @@ import io
 import os
 import sys
 
-STATUSES = {"adopted", "absent", "deviated"}
+STATUSES = {"adopted", "absent", "deviated", "withdrawn"}
 START = "<!-- profile-claims:start -->"
 END = "<!-- profile-claims:end -->"
 
@@ -68,6 +68,13 @@ def check(root, rows):
         elif status == "deviated":
             if "why:" not in evidence:
                 bad.append("%s: deviated but no `why:`" % cid)
+        elif status == "withdrawn":
+            # A withdrawal that cannot say what would have to change is just a
+            # memory: it can be revived by renaming it (shadow period / pilot /
+            # grace window). That is exactly how a withdrawn bypass comes back.
+            if "why-risk-gone:" not in evidence:
+                bad.append("%s: withdrawn but no `why-risk-gone:` (what must be "
+                           "proven before it may be revived)" % cid)
     return bad
 
 
@@ -116,7 +123,10 @@ def selftest():
         ("exempt-positive", [
             "| c1 | framing | absent | revisit: event-triggered when X ships |",
             "| c2 | framing | deviated | why: our transport has no such frame |",
+            "| c3 | framing | withdrawn | why-risk-gone: the bypass cannot be "
+            "self-triggered any more |",
         ], 0),
+        ("withdrawn-no-risk-gone", ["| c1 | framing | withdrawn | we removed it |"], 1),
         ("empty", [], 3),
     ]
     fail = 0
