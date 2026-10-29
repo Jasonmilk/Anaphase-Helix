@@ -692,3 +692,17 @@ cargo clippy --all-features -- -W clippy::cognitive_complexity -W clippy::too_ma
 
 > **引用规范条款之前，先确认它没被 superseded。**
 > 核对文本 ≠ 核对文本的有效性。**越认真地引用，错得越彻底。**
+
+### S.6 「300 的合法来源」普查（2026-10-28，K32 裁决的前置材料）
+
+园丁要的四问，逐条以命令为据：
+
+| 问 | 读数 | 结论 |
+| --- | --- | --- |
+| **是哪个 ADR / 决策定的 300？** | `grep -rln 300 docs/decisions/*.md` ⇒ **只有本篇**（且只出现在 S.1–S.5 这段"描述现状"里，不是定 300）。`grep -n 'default=300' ci/check_line_budget.py` ⇒ `:962 ap.add_argument("--budget", type=int, default=300)`。 | **没有 ADR 定过 300。** 唯一"源"是 argparse 默认值。 |
+| **预算依据（为什么 300 不是 500）？** | `ci/baseline.toml:169` 与 `ci/allowances.py:115` 两处散文：「approximates *how much a reader must hold in their head* for a Rust module」。**没有**分布、没有分位数、没有对比 200/500 的实测。 | 依据是**隐喻**，不是校准。两处散文的用途也不是论证 300，而是论证 **checker 不属这个形状**（本篇 D9）。 |
+| **唯一源在哪 / 谁批准 / 变更走哪？** | 无所有者字段、无批准记录、无变更流程；CI 裸调（`.github/workflows/ci.yml` 无 `--budget`）；`ci/baseline.toml` 里 300 只是注释，checker 从不读它。 | **三无**。这与同生态的 320 形成对照：`phyt-DNA:ADR-20261011-layer1-threshold-calibrated-by-premiere` 有阈值、有校准过程、有批准。 |
+| **有没有"必然为红"的反样本？** | 有（2026-10-28 实测）：`php` 追加一行**真代码**到 `ci/check_adr_refs.py` ⇒ `FAIL ci/ 1969 -> 1970` + `FAIL ci/check_adr_refs.py 182 -> 183`；收回即回基线。**元层教训**：第一版样本写成 `# 注释` ⇒ 什么都没发生，因为 NOCL 不计注释行。 | 棘轮真在守。**但反样本自身必须先证明能红**，否则样本空转、机制看起来正常。 |
+
+**综上：300 无合法来源、无预算依据、无所有者 ⇒ 该裁的是口径，不是那 8 个文件。**
+8 个文件的「违规」不是事实，只是与一个无主默认值不一致。重定口径须写清：理由、适用范围、以及「到期是判红还是改数字」。

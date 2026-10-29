@@ -539,10 +539,13 @@ impl PipelineBinding {
     }
 }
 
-/// Bootstrap assembly of the deterministic execution channel (ADR-0007 D'-3):
-/// fail-open — an empty endpoint or a failed connection yields a non-`Bound`
-/// binding (never a startup error), so `resolve_pipeline` keeps its old
-/// `Option` shape for callers that only need “usable or not”.
+/// Bootstrap assembly of the deterministic execution channel (ADR-0007 D'-3,
+/// 补注 2026-10-28 + `ADR-0054` §一)。
+///
+/// `fail-open` 在这里**只说一件事**：装配层不炸启动 —— 端点为空、连不上，都不构成启动错误。
+/// 它**不**说明执行层会放行：没有绑定（或运行期变暗）时执行点拒绝并具名记账。
+/// 旧注释写 `yields None`，把「出厂态」与「环境故障」两个语义压进一个 `None`；
+/// 现在返回的是 `PipelineBinding`（三态），`resolve_pipeline` 只是它的薄包装。
 ///
 /// 需要区分“没配”与“配了连不上”的调用方用 `resolve_binding`（本函数是它的薄包装）。
 pub async fn resolve_binding(endpoint: Option<String>, config: PipelineConfig) -> PipelineBinding {

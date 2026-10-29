@@ -65,3 +65,17 @@ main.rs：`tentacle_endpoint` 非空 → `resolve_pipeline` → `agent.with_pipe
 | 文档五件套 | ADR-0007 → PLAN → GROWTH → README → ECOSYSTEM | 待实现 |
 
 **相邻债**：Tentacle 侧 `seen_entropy_bloom` 消费逻辑（生态裁决后）；D'-2（Tuck 深度集成）/ D'-4（真实场景插件）仍阻塞。
+
+---
+
+## 补注（2026-10-28）：D'-3 的 `yields None` 已失效，fail-open 的含义收窄
+
+本 ADR 的 D2 用一句话描述装配失败：
+
+> `fail-open — an empty endpoint or a failed connection yields None`
+
+这句话把**两个语义**（出厂态「没配」/ 环境故障「配了连不上」）压进一个 `None`，并在 2026-10-28 由 `ADR-0054` §一 拆开。补注如下（**不修订 D2**，D2 的裁决本身仍然有效）：
+
+- **`fail-open` 的含义不变，且只说一件事**：装配层**不炸启动**。端点空、连不上，都不构成启动错误。
+- **返回值变了**：`resolve_binding` 现在返回 `PipelineBinding`（`Unbound` / `Unreachable` / `Bound`），不再返回 `Option`；`resolve_pipeline` 保留为薄包装（`into_bound()`），所以 `tests/replay_guard.rs` 的三条断言原样通过。
+- **执行层不再 fail-open**：没有绑定（或运行期变暗）时，执行点**拒绝**并具名记账（`ADR-0054` §二）。装载仍宽容，执行不宽容——这两件事过去被同一句话描述，现在分属两条 ADR。
