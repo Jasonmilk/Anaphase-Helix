@@ -22,7 +22,7 @@ import io
 import os
 import sys
 
-STATUSES = {"adopted", "absent", "deviated", "withdrawn"}
+STATUSES = {"adopted", "absent", "deviated", "withdrawn", "rejected"}
 START = "<!-- profile-claims:start -->"
 END = "<!-- profile-claims:end -->"
 
@@ -65,9 +65,22 @@ def check(root, rows):
         elif status == "absent":
             if "revisit:" not in evidence:
                 bad.append("%s: absent but no `revisit:` trigger" % cid)
+            # Double lock: absent and rejected both mean "not adopted today".
+            # Without this they collapse back into one slot -- the very
+            # "two things one name" fault we split them to avoid.
+            if "why-never:" in evidence:
+                bad.append("%s: absent must not carry `why-never:` "
+                           "(that is `rejected`; say which one it is)" % cid)
         elif status == "deviated":
             if "why:" not in evidence:
                 bad.append("%s: deviated but no `why:`" % cid)
+        elif status == "rejected":
+            if "why-never:" not in evidence:
+                bad.append("%s: rejected but no `why-never:` (why it may never be "
+                           "adopted here)" % cid)
+            if "revisit:" in evidence:
+                bad.append("%s: rejected must not carry `revisit:` "
+                           "(a never is not a later)" % cid)
         elif status == "withdrawn":
             # A withdrawal that cannot say what would have to change is just a
             # memory: it can be revived by renaming it (shadow period / pilot /
@@ -126,6 +139,12 @@ def selftest():
             "| c3 | framing | withdrawn | why-risk-gone: the bypass cannot be "
             "self-triggered any more |",
         ], 0),
+        ("rejected-no-why-never", ["| c1 | framing | rejected | no |"], 1),
+        # Double lock, both directions: the collapse is the fault, not the value.
+        ("absent-with-why-never", ["| c1 | framing | absent | why-never: never |"], 1),
+        ("rejected-with-revisit", [
+            "| c1 | framing | rejected | why-never: never; revisit: soon |"], 1),
+        ("rejected-positive", ["| c1 | framing | rejected | why-never: never |"], 0),
         ("withdrawn-no-risk-gone", ["| c1 | framing | withdrawn | we removed it |"], 1),
         ("empty", [], 3),
     ]
