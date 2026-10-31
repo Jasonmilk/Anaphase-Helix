@@ -1,3 +1,4 @@
+pub mod irreversible;
 pub mod adapters;
 pub mod judge;
 pub mod run_cycle;
