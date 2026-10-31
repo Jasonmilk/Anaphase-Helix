@@ -1103,6 +1103,24 @@ impl AgentLoop {
                         // 拒绝不是循环结束：转 Reflection 后仍能想/记/报（只读降级）。
                         return Ok(TransitionCondition::ExecutionRefused);
                     }
+                    // ★ 判据 A 接线（2026-11-01，C3）：不可逆动作必须有人做主。
+                    //
+                    // **当前形态是「I-1..I-7 一律拒绝」，不是「无授权才拒绝」。**
+                    // 「已授权」这个状态今天不存在：K23 两物一名未拆，`HitlRequired`
+                    // 仍是终局拒绝，没有可携带授权凭据的载体。所以这里传 `false` 是**事实**，
+                    // 不是占位值。fail-closed 是对的；危险的是把它说成「无授权才拒绝」——
+                    // 那会让后来读它的人以为 HITL 已经在工作。
+                    //
+                    // revisit 触发：K23 拆分落地时（台账 C-040）。
+                    for call in &self.context.calls {
+                        let params = serde_json::to_string(&call.args).unwrap_or_default();
+                        if let Some(reason) =
+                            crate::irreversible::refuse_without_hitl(&call.tool, &params, false)
+                        {
+                            self.ring_execution_refusal(&reason);
+                            return Ok(TransitionCondition::ExecutionRefused);
+                        }
+                    }
                     return self.execute_structured().await;
                 }
                 // calls 为空 ⇒ 没有任何「做」被请求 ⇒ 旧 legacy 占位路径语义不变

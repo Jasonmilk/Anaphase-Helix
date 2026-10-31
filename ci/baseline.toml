@@ -667,3 +667,12 @@ ncloc = 137
 counter = 2
 k_id = "K128-CI144-PROFILE-GATE"
 reason = "declaration-evidence gate for the CI-144 profile; shipped without a seed, seeded at first measured size"
+
+# C3 criterion A (2026-11-01): consequence classifier for I-1..I-7. Seeded at its
+# first measured size; the new file needs a signed seed like any other.
+[[seed]]
+target = "src/irreversible.rs"
+ncloc = 79
+counter = 2
+k_id = "C3-IRREVERSIBLE"
+reason = "consequence classifier behind the execution-point gate; first measured size"

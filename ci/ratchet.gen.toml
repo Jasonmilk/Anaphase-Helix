@@ -14,7 +14,7 @@
 counter = 2
 [[ratchet]]
 target = "ci/"
-ncloc  = 2106
+ncloc  = 2127
 [[ratchet]]
 target = "ci/allowances.py"
 ncloc  = 382
@@ -23,7 +23,7 @@ target = "ci/check_adr_refs.py"
 ncloc  = 182
 [[ratchet]]
 target = "ci/check_ci144_profile.py"
-ncloc  = 137
+ncloc  = 158
 [[ratchet]]
 target = "ci/check_guards.py"
 ncloc  = 386
@@ -38,7 +38,7 @@ target = "ci/scan_mutants.py"
 ncloc  = 266
 [[ratchet]]
 target = "src/"
-ncloc  = 4544
+ncloc  = 4624
 [[ratchet]]
 target = "src/adapters/"
 ncloc  = 1429
@@ -124,6 +124,9 @@ ncloc  = 200
 target = "src/hitl.rs"
 ncloc  = 505
 [[ratchet]]
+target = "src/irreversible.rs"
+ncloc  = 79
+[[ratchet]]
 target = "src/judge.rs"
 ncloc  = 185
 [[ratchet]]
@@ -134,7 +137,7 @@ target = "src/ledger/mod.rs"
 ncloc  = 265
 [[ratchet]]
 target = "src/lib.rs"
-ncloc  = 39
+ncloc  = 40
 [[ratchet]]
 target = "src/lifecycle.rs"
 ncloc  = 148
@@ -155,13 +158,13 @@ target = "src/reflex.rs"
 ncloc  = 22
 [[ratchet]]
 target = "src/run_cycle/"
-ncloc  = 1503
+ncloc  = 1512
 [[ratchet]]
 target = "src/run_cycle/memory_retrieval.rs"
 ncloc  = 81
 [[ratchet]]
 target = "src/run_cycle/mod.rs"
-ncloc  = 769
+ncloc  = 778
 [[ratchet]]
 target = "src/run_cycle/reasoning.rs"
 ncloc  = 258

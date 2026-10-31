@@ -187,3 +187,9 @@ k_id = "K128-CI144-PROFILE-GATE"
 what = "ci/check_ci144_profile.py 的初值基线（137 NCLOC）"
 why = "该判据 2026-10-29 进仓时漏了 seed，check_line_budget 直接拒绝运行；补 seed 是记账，不是放宽。"
 date = "2026-10-30"
+
+[[pit]]
+k_id = "C3-IRREVERSIBLE"
+what = "src/irreversible.rs 初值基线（79 NOCL）+ 新文件需要的签名 seed"
+why = "C3 判据 A 的分类器；与 expected-red 的 9 条取证红配套，先有落点才谈生效。"
+date = "2026-11-01"
