@@ -183,3 +183,34 @@ async fn gate_presence_names_what_is_actually_standing() {
         }
     }
 }
+
+/// GATE_WIRED must not certify itself.
+///
+/// The constant exists so the presence record cannot claim "no door". But a constant is a
+/// DECLARATION; the wiring is the FACT. If someone removes the call at the execution point
+/// and leaves the constant true, the record says a door stands while none does -- the I7
+/// fault mirrored, and worse, because it loses the honest starting point.
+///
+/// So the constant is checked against the source it claims to describe. This is the same
+/// discipline as `expected_red` R3: a claim that cannot be verified mechanically is a
+/// memory, not a fact.
+#[test]
+fn gate_wired_is_derived_from_the_call_site_not_declared() {
+    let src = include_str!("../src/run_cycle/mod.rs");
+    let calls = src.matches("irreversible::refuse_without_hitl").count();
+    if anaphase::irreversible::GATE_WIRED {
+        assert!(
+            calls >= 1,
+            "GATE_WIRED says the execution point consults the gate, but run_cycle/mod.rs \
+             contains no call to irreversible::refuse_without_hitl -- the declaration and \
+             the fact disagree, and the presence record would then say a door stands while \
+             none does"
+        );
+    } else {
+        assert_eq!(
+            calls, 0,
+            "GATE_WIRED is false but the execution point still calls the gate; the flag is \
+             stale"
+        );
+    }
+}
