@@ -144,10 +144,16 @@ impl Pipeline {
 
     /// I7 (§13.3): record whether a gate exists at all — "none" is a fact, not silence.
     /// Presence only; no verdict is produced here and no decision changes.
-    fn gate_presence(&self) -> String {
-        match &self.security_gate {
-            Some(g) => format!("gate={}", std::any::type_name_of_val(g.as_ref())),
-            None => "gate=none".to_string(),
+    pub fn gate_presence(&self) -> String {
+        // I7 ("no gate installed must not look like a gate that passed") is a claim about
+        // honesty, and on 2026-11-01 the fact underneath it moved: the irreversible
+        // families got a real gate at the execution point. A two-valued record would now
+        // lie in the OPPOSITE direction -- `gate=none` while a partial door stands -- and
+        // a reader who believes it installs a second door. So: none / partial / full.
+        match (&self.security_gate, crate::irreversible::GATE_WIRED) {
+            (Some(g), _) => format!("gate=full({})", std::any::type_name_of_val(g.as_ref())),
+            (None, true) => "gate=partial(irreversible-only)".to_string(),
+            (None, false) => "gate=none".to_string(),
         }
     }
 

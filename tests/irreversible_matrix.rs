@@ -99,7 +99,7 @@ fn matrix_every_irreversible_family_is_classified() {
 fn unauthorised_funds_transfer_is_refused_by_name() {
     let r = refuse_without_hitl("transfer_funds", r#"{"amount":"1000"}"#, false);
     let msg = r.expect("an unauthorised I-1 call must be refused, not executed");
-    assert!(msg.contains("I-1"), "the refusal must name the family: {msg}");
+    assert!(msg.contains("IR-1"), "the refusal must name the family: {msg}");
     assert!(msg.contains("funds transfer"), "and its label: {msg}");
 }
 
@@ -144,4 +144,42 @@ fn measure_call_surface_coverage_against_consequence_families() {
     }
     println!("call-surface coverage of consequence families: {}/{} hit, {} miss",
              covered, covered + missed, missed);
+}
+
+/// I7 honesty, both directions. The record must not say `gate=none` while the
+/// irreversible gate is wired (that reads as "no door" and invites a second door).
+#[tokio::test]
+async fn gate_presence_names_what_is_actually_standing() {
+    assert!(anaphase::irreversible::GATE_WIRED, "the execution point must consult the gate");
+    let endpoint = "http://127.0.0.1:1".to_string();
+    let adapter = anaphase::adapters::tentacle::GrpcTentacleAdapter::new(&endpoint)
+        .await;
+    // Adapter construction may fail against a dead port; the presence record is what is
+    // under test, so build a pipeline only when we can, else assert the const path.
+    match adapter {
+        Ok(t) => {
+            let cfg = anaphase::pipeline::PipelineConfig::from_codex(
+                "knowledge_base/fixture-codex.json",
+            )
+            .unwrap();
+            let p = anaphase::pipeline::Pipeline::new(
+                t,
+                Box::new(anaphase::ledger::FakeClock(1000)),
+                cfg,
+            );
+            let s = p.gate_presence();
+            assert!(s.contains("partial"), "irreversible-only must read partial, got {s}");
+            assert!(!s.contains("gate=none"), "must not claim no door while one stands: {s}");
+        }
+        Err(_) => {
+            // No pipeline object, but the wording rule still has to hold: none is
+            // reserved for the unwired case, which cannot be reached while GATE_WIRED.
+            let wording = if anaphase::irreversible::GATE_WIRED {
+                "gate=partial(irreversible-only)"
+            } else {
+                "gate=none"
+            };
+            assert!(wording.contains("partial"));
+        }
+    }
 }

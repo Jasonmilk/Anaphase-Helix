@@ -361,7 +361,8 @@ async fn no_gate_installed_is_recorded_as_absent_not_as_a_pass() {
     );
     assert!(
         is_absence(&presence),
-        "with no gate installed the record must name the absence (`gate=none`); it said \
+        "with no security gate installed the record must name the absence \
+         (`gate=partial(irreversible-only)`); it said \
          {:?} — a record that does not name the absence is the silence this invariant \
          exists to break (a record that says the gate passed is worse: it asserts a gate \
          that was never there)",
@@ -375,7 +376,15 @@ async fn no_gate_installed_is_recorded_as_absent_not_as_a_pass() {
 /// a record that says `gate=passed` when there was no gate also differs from a real
 /// gate's name. The absence has to be **named as absence**, exactly.
 fn is_absence(presence: &[String]) -> bool {
-    !presence.is_empty() && presence.iter().all(|p| p == "gate=none")
+    // 2026-11-01: the fact underneath moved. The irreversible families (IR-1..IR-7) are
+    // now gated at the execution point, so "no security gate" no longer means "no door at
+    // all". The absence that must be named here is the SECURITY gate's absence, and the
+    // honest spelling for it is `partial`. `gate=none` is reserved for the case where
+    // nothing gates "do" — unreachable while GATE_WIRED.
+    !presence.is_empty()
+        && presence
+            .iter()
+            .all(|p| p.starts_with("gate=partial") || p.starts_with("gate=none"))
 }
 
 /// A gate that permits everything is the *same decision* as no gate on a low-risk call —

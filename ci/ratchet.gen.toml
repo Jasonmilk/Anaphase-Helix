@@ -38,7 +38,7 @@ target = "ci/scan_mutants.py"
 ncloc  = 266
 [[ratchet]]
 target = "src/"
-ncloc  = 4624
+ncloc  = 4625
 [[ratchet]]
 target = "src/adapters/"
 ncloc  = 1429
@@ -125,7 +125,7 @@ target = "src/hitl.rs"
 ncloc  = 505
 [[ratchet]]
 target = "src/irreversible.rs"
-ncloc  = 79
+ncloc  = 80
 [[ratchet]]
 target = "src/judge.rs"
 ncloc  = 185
@@ -146,10 +146,10 @@ target = "src/main.rs"
 ncloc  = 1035
 [[ratchet]]
 target = "src/pipeline/"
-ncloc  = 381
+ncloc  = 382
 [[ratchet]]
 target = "src/pipeline/mod.rs"
-ncloc  = 381
+ncloc  = 382
 [[ratchet]]
 target = "src/rails.rs"
 ncloc  = 370

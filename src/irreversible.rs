@@ -17,7 +17,14 @@
 //! authorisation** at the execution point. The family is not "forbidden" — it is
 //! "requires someone to decide".
 
-/// I-1..I-7. The numbers are part of the contract: they are what the list uses.
+/// Prefix is **IR-** (irreversible), not `I-`. Reason measured 2026-11-01:
+/// `docs/helixECO/center/CONVERGENCE-M0-M7.md` §4.2 already owns `I1–I6` for the
+/// invariants (node id unique, append-only, dangling parent ...). Two meanings behind
+/// one prefix across files collide in every `grep`, and this id goes into refusal text,
+/// i.e. into logs and the audit chain. The window to rename it was free while the
+/// criterion was hours old; it is not free after the first row lands on a chain.
+///
+/// ## IR-1..IR-7. The numbers are part of the contract: they are what the list uses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Family {
     FundsTransfer,      // I-1
@@ -32,13 +39,13 @@ pub enum Family {
 impl Family {
     pub fn id(&self) -> &'static str {
         match self {
-            Family::FundsTransfer => "I-1",
-            Family::Purchase => "I-2",
-            Family::CredentialRotate => "I-3",
-            Family::Deletion => "I-4",
-            Family::Publish => "I-5",
-            Family::PhysicalActuation => "I-6",
-            Family::PrivilegeGrant => "I-7",
+            Family::FundsTransfer => "IR-1",
+            Family::Purchase => "IR-2",
+            Family::CredentialRotate => "IR-3",
+            Family::Deletion => "IR-4",
+            Family::Publish => "IR-5",
+            Family::PhysicalActuation => "IR-6",
+            Family::PrivilegeGrant => "IR-7",
         }
     }
 
@@ -108,6 +115,14 @@ pub fn classify(tool: &str, args_json: &str) -> Option<Family> {
 fn has(tool: &str, needles: &[&str]) -> bool {
     needles.iter().any(|n| tool.contains(n))
 }
+
+/// Whether the execution point actually consults this module (2026-11-01).
+///
+/// It exists so that the I7 presence record cannot lie in the other direction. Before
+/// the wiring, `gate=none` was honest ("no door"). After it, `gate=none` became a false
+/// record: it says no door while a partial one is standing. A reader who believes it will
+/// install a second door, and two doors is a second semantics.
+pub const GATE_WIRED: bool = true;
 
 /// The gate: at the execution point, a classified call must carry a human authorisation.
 /// `authorised` is true only when a human decision **for this call** exists.
