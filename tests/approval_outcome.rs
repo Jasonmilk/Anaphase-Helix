@@ -71,3 +71,33 @@ fn the_three_wait_modes_are_distinct() {
         }
     }
 }
+
+/// B2b-1：两条生产路径必须落成**两个不同的值**。
+///
+/// 收窄前：`Err(_)`（应答者存在但失败）与"根本没有批准者"**都**落 `Unavailable`
+/// ⇒ 「没人值班」与「值班的人联系不上」不可区分，而处置相反（加人 / 修链路）。
+///
+/// Mutation：把 `from_bool` 的 `Err(_)` 改回 `Unavailable` ⇒ 本条红。
+#[test]
+fn no_responder_and_responder_failure_are_two_different_facts() {
+    use anaphase::hitl::{from_bool, HITLApprover};
+    use std::sync::Arc;
+
+    // 路径一：根本没有批准者 ⇒ Unavailable（"没人"）
+    let absent = HITLApprover::default();
+    assert_eq!(
+        absent.check_approval("rm -rf /data", &[]),
+        ApprovalOutcome::Unavailable,
+        "没有应答者必须落 Unavailable"
+    );
+
+    // 路径二：有批准者但调用失败 ⇒ Rejected（"联系不上"，它没有批准过）
+    let failing = HITLApprover::new(from_bool(Arc::new(|_c: &str, _a: &[String]| {
+        Err("channel down".to_string())
+    })));
+    assert_eq!(
+        failing.check_approval("rm -rf /data", &[]),
+        ApprovalOutcome::Rejected,
+        "应答者失败不是「没人」，它必须落 Rejected（fail-closed），不许折进 Unavailable"
+    );
+}

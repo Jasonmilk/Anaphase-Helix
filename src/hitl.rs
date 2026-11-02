@@ -184,7 +184,7 @@ fn role_words(roles: &str) -> Vec<&'static str> {
 pub type ApproveFn = Arc<dyn Fn(&str, &[String]) -> ApprovalOutcome + Send + Sync>;
 
 /// 把**旧布尔合同**装进闭集（Cellrix:ADR-0048 §226）:`Ok(true) ⇒ AllowedOnce` · `Ok(false) ⇒ Rejected` ·
-/// `Err(_) ⇒ Unavailable`。旧批准者不必改写,而**新批准者可以表达 `Cancelled`**
+/// `Err(_) ⇒ Rejected`（B2b-1，2026-11-03 收窄）。旧批准者不必改写,而**新批准者可以表达 `Cancelled`**
 /// —— 这是"加宽管子",不是"催工人接线"。
 pub fn from_bool(
     f: Arc<dyn Fn(&str, &[String]) -> Result<bool, String> + Send + Sync>,
@@ -192,7 +192,11 @@ pub fn from_bool(
     Arc::new(move |c, a| match f(c, a) {
         Ok(true) => ApprovalOutcome::AllowedOnce,
         Ok(false) => ApprovalOutcome::Rejected,
-        Err(_) => ApprovalOutcome::Unavailable,
+        // 收窄（B2b-1）：`Err` 是「**应答者存在但失败**」，不是「没人」。
+        // 两者处置相反（修链路 / 加人），所以不许折进同一个值。
+        // 它没有批准 ⇒ fail-closed 判 Rejected；"为什么"由 GloveStatus::Failed 承载，
+        // 不在这里新立变体（决策 (a)：联系的失败不落 ConfirmStatus/ApprovalOutcome）。
+        Err(_) => ApprovalOutcome::Rejected,
     })
 }
 
@@ -430,7 +434,8 @@ pub enum ApprovalOutcome {
     Rejected,
     /// 提问被撤回（超时、回合中止）。**不是**批准。
     Cancelled,
-    /// 没有应答者或应答者失败。fail-closed 的落点，**不是**批准。
+    /// **没有应答者**（B2b-1 收窄：不再包含"应答者存在但失败"）。
+    /// fail-closed 的落点，**不是**批准。两者处置相反：这里是"加人"，失败是"修链路"。
     Unavailable,
 }
 
