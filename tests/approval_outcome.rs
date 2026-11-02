@@ -101,3 +101,25 @@ fn no_responder_and_responder_failure_are_two_different_facts() {
         "应答者失败不是「没人」，它必须落 Rejected（fail-closed），不许折进 Unavailable"
     );
 }
+
+/// B2b-3（接线确认）：生产路径上真的有人在**消费**这个闭集，而不是只有枚举存在。
+///
+/// 「有枚举」≠「有调用者」——Tuck 侧 `HumanConfirmGate` 就是反例（零生产调用者，
+/// 已判废弃）。所以这条判据读源码，要求执行闸对四个值**逐一匹配**。
+///
+/// Mutation：把 `safety_gate.rs` 里任一分支删掉（例如 `Cancelled`）⇒ 本条红；
+/// 把匹配改成 `_ => {}` 通配 ⇒ 本条红（那正是"闭集被折回布尔"的样子）。
+#[test]
+fn the_closed_set_is_consumed_by_the_execution_gate() {
+    let src = include_str!("../src/run_cycle/safety_gate.rs");
+    for value in ["AllowedOnce", "Rejected", "Cancelled", "Unavailable"] {
+        assert!(
+            src.contains(&format!("ApprovalOutcome::{value}")),
+            "执行闸没有匹配 {value} —— 闭集必须逐值消费，不能有通配兜底"
+        );
+    }
+    assert!(
+        !src.contains("ApprovalOutcome::_ =>"),
+        "不许用通配臂把剩余值吞掉：那是把四值闭集折回布尔"
+    );
+}
