@@ -123,3 +123,47 @@ fn the_closed_set_is_consumed_by_the_execution_gate() {
         "不许用通配臂把剩余值吞掉：那是把四值闭集折回布尔"
     );
 }
+
+/// B2 迁移（2026-11-03）：Tuck 侧那四条判据的**语义**在 anaphase 落地。
+///
+/// Tuck 的 `ConfirmStatus::NoResponder` 已随 gate 一起判废弃（B2b-2），因为它有零个生产
+/// 调用者；而 anaphase 的闭集是生产上真的被消费的那一份（`safety_gate.rs` 逐值匹配）。
+/// ⇒ 判据必须跟着**生效的那一侧**走，否则它们守的是形状记录，不是行为。
+///
+/// 四条对应关系：
+///   Tuck `NoResponder`  → anaphase `Unavailable`（没有应答者）
+///   Tuck `Confirmed`    → `AllowedOnce`
+///   Tuck `Rejected`     → `Rejected`
+///   Tuck `TimedOut`     → `Cancelled`（提问被撤回/超时）**且必须 ≠ Unavailable**
+///
+/// Mutation：把 `Unavailable` 与 `Cancelled` 合并成同一个值 ⇒ 下面 den 判据红。
+#[test]
+fn the_four_outcomes_are_reachable_and_pairwise_distinct() {
+    use anaphase::hitl::{from_bool, HITLApprover};
+    use std::sync::Arc;
+
+    let approve = HITLApprover::new(from_bool(Arc::new(|_c: &str, _a: &[String]| Ok(true))));
+    let deny = HITLApprover::new(from_bool(Arc::new(|_c: &str, _a: &[String]| Ok(false))));
+    let withdrew = HITLApprover::new(Arc::new(|_c: &str, _a: &[String]| ApprovalOutcome::Cancelled));
+    let absent = HITLApprover::default();
+
+    let observed = [
+        approve.check_approval("rm -rf /x", &[]),
+        deny.check_approval("rm -rf /x", &[]),
+        withdrew.check_approval("rm -rf /x", &[]),
+        absent.check_approval("rm -rf /x", &[]),
+    ];
+    assert_eq!(
+        observed,
+        [
+            ApprovalOutcome::AllowedOnce,
+            ApprovalOutcome::Rejected,
+            ApprovalOutcome::Cancelled,
+            ApprovalOutcome::Unavailable,
+        ],
+        "四个值必须各自可达：批准 / 拒绝 / 撤回 / 没人"
+    );
+
+    // 「撤回（有人在、但没答成）」与「没人」是两件事，处置相反（重问 / 加人）。
+    assert_ne!(ApprovalOutcome::Cancelled, ApprovalOutcome::Unavailable);
+}
