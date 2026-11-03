@@ -207,6 +207,11 @@ pub fn from_bool(
 /// 装了它，延后才从"推迟"变成"用真实数据准备应答者注册"。
 #[derive(Debug, Default)]
 pub struct HitlCounters {
+    /// `Unavailable` 的分桶：动作类别 → 次数。
+    /// **为什么必须有维度**：全局总数只能回答"撞了几次"，回答不了"哪类动作、撞哪一档"，
+    /// 而后者才是延后期唯一要采集的东西（三个月后要据此决定给哪类动作配人）。
+    /// 键 = 命令的第一个词（本层拿不到 risk_tier：它在 Tuck 的 PFP 里，见 C-046）。
+    unavailable_by_kind: std::sync::Mutex<std::collections::BTreeMap<String, u64>>,
     pub allowed_once: std::sync::atomic::AtomicU64,
     pub rejected: std::sync::atomic::AtomicU64,
     pub cancelled: std::sync::atomic::AtomicU64,
@@ -215,6 +220,17 @@ pub struct HitlCounters {
 
 impl HitlCounters {
     pub fn record(&self, o: ApprovalOutcome) {
+        self.record_for(o, "")
+    }
+
+    /// 带动作类别地记（`Unavailable` 会进分桶）
+    pub fn record_for(&self, o: ApprovalOutcome, kind: &str) {
+        if matches!(o, ApprovalOutcome::Unavailable) {
+            let k = if kind.is_empty() { "(unknown)" } else { kind };
+            if let Ok(mut m) = self.unavailable_by_kind.lock() {
+                *m.entry(k.to_string()).or_insert(0) += 1;
+            }
+        }
         use std::sync::atomic::Ordering::Relaxed;
         match o {
             ApprovalOutcome::AllowedOnce => &self.allowed_once,
@@ -223,6 +239,12 @@ impl HitlCounters {
             ApprovalOutcome::Unavailable => &self.unavailable,
         }
         .fetch_add(1, Relaxed);
+    }
+
+    /// `Unavailable` 的动作类别分桶（稳定排序，便于逐行比对）
+    pub fn unavailable_kinds(&self) -> Vec<(String, u64)> {
+        self.unavailable_by_kind.lock().map(|m| m.iter().map(|(k, v)| (k.clone(), *v)).collect())
+            .unwrap_or_default()
     }
 
     /// 四项读数（顺序固定：批 / 拒 / 撤回 / 没人）
@@ -239,8 +261,9 @@ impl HitlCounters {
 
 pub struct HITLApprover {
     approver: ApproveFn,
-    /// `None` = 未装计数器（老调用方不受影响）
-    counters: Option<std::sync::Arc<HitlCounters>>,
+    /// **永远在**（不用 Option）：Option 意味着"可能忘装"，而生产上忘装就恒 0 ⇒
+    /// 计数器变成装饰品（K-133）。老调用方不受影响是因为它默认就有，而不是因为它是 None。
+    counters: std::sync::Arc<HitlCounters>,
 }
 
 impl Default for HITLApprover {
@@ -250,24 +273,24 @@ impl Default for HITLApprover {
             approver: Arc::new(|_cmd, _args| {
                 ApprovalOutcome::Unavailable
             }),
-            counters: None,
+            counters: std::sync::Arc::new(HitlCounters::default()),
         }
     }
 }
 
 impl HITLApprover {
     pub fn new(approver: ApproveFn) -> Self {
-        Self { approver, counters: None }
+        Self { approver, counters: std::sync::Arc::new(HitlCounters::default()) }
     }
 
     /// 装计数器（地基件）：每个结局都记一次，供"多少动作本该请求批准"这类读数使用。
     pub fn with_counters(mut self, c: std::sync::Arc<HitlCounters>) -> Self {
-        self.counters = Some(c);
+        self.counters = c;
         self
     }
 
-    pub fn counters(&self) -> Option<&std::sync::Arc<HitlCounters>> {
-        self.counters.as_ref()
+    pub fn counters(&self) -> &std::sync::Arc<HitlCounters> {
+        &self.counters
     }
 
     /// 高风险动作判定：写操作 / 网络请求 / 凭证使用
@@ -457,9 +480,8 @@ impl HITLApprover {
     /// HITL 执行闸：低风险 → 直接放行；高风险 → 请求人类确认
     pub fn check_approval(&self, command: &str, args: &[String]) -> ApprovalOutcome {
         let outcome = self.check_approval_uncounted(command, args);
-        if let Some(c) = &self.counters {
-            c.record(outcome);
-        }
+        let kind = command.split_whitespace().next().unwrap_or("(empty)");
+        self.counters.record_for(outcome, kind);
         outcome
     }
 

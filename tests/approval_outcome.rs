@@ -195,5 +195,19 @@ fn the_four_outcomes_are_counted() {
     let _ = absent.check_approval("rm -rf /x", &[]);
 
     assert_eq!(c.snapshot(), [1, 1, 1, 1], "批 / 拒 / 撤回 / 没人 各记一次");
-    assert_eq!(approve.counters().is_some(), true, "计数器必须能被取回");
+
+    // ★ 维度：Unavailable 必须分到「哪类动作」上。全局总数回答不了"该给哪类动作配人"。
+    // 本轮用命令首词作类别（本层拿不到 risk_tier，它在 Tuck 的 PFP 里，见 C-046）。
+    let kinds = c.unavailable_kinds();
+    assert_eq!(kinds, vec![("rm".to_string(), 1)], "Unavailable 要按动作类别分桶：{kinds:?}");
+
+    // ★ 生产路径没有"忘装"这个选项：计数永远在（去掉 Option 的理由）
+    let prod_default = HITLApprover::default();
+    let _ = prod_default.check_approval("scp /x", &[]);
+    assert_eq!(
+        prod_default.counters().snapshot(),
+        [0, 0, 0, 1],
+        "默认构造（生产用的那个）必须自带计数 —— 否则生产恒 0，计数器就是装饰品"
+    );
+    assert_eq!(prod_default.counters().unavailable_kinds(), vec![("scp".to_string(), 1)]);
 }
