@@ -1002,7 +1002,7 @@ impl AgentLoop {
         /* HITL 计数的**生产读者**（每周期一行，进事件环）。
          * 为什么必须有：计数器 always-on 但没人读 = 装饰品（K-133）。延后期唯一要采集的东西
          * 是「哪类动作撞门」，所以它必须落在**可观测的流**里，而不是躺在内存里等人 grep。
-         * 形状：{"batch":n,"rejected":n,"cancelled":n,"unavailable":n,"kinds":{...}} */
+         * 形状：{"allowed_once":n,"rejected":n,"cancelled":n,"unavailable":n,"kinds":{...}} */
         {
             let c = self.hitl.counters();
             let s = c.snapshot();
@@ -1014,7 +1014,7 @@ impl AgentLoop {
             self.emit_cycle(
                 "hitl",
                 &serde_json::json!({
-                    "batch": s[0], "rejected": s[1], "cancelled": s[2], "unavailable": s[3],
+                    "allowed_once": s[0], "rejected": s[1], "cancelled": s[2], "unavailable": s[3],
                     "kinds": kinds,
                 })
                 .to_string(),

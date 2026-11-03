@@ -250,7 +250,7 @@ async fn the_counters_are_emitted_into_the_observable_stream() {
         .collect();
     assert_eq!(hitl_rows.len(), 1, "每个周期必须落一条 hitl 读数行");
     let v: serde_json::Value = serde_json::from_str(&hitl_rows[0]).expect("hitl 行必须是 JSON");
-    for k in ["batch", "rejected", "cancelled", "unavailable", "kinds"] {
+    for k in ["allowed_once", "rejected", "cancelled", "unavailable", "kinds"] {
         assert!(v.get(k).is_some(), "hitl 行缺字段 {k}: {}", hitl_rows[0]);
     }
 }
