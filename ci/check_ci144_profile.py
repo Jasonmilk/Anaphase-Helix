@@ -45,7 +45,10 @@ def parse(text):
 
 
 
-QUEUE_REF = re.compile(r'`((?:\.\./)+[\w./-]+\.(?:rs|py|sh|toml|md|json))(?:::[\w: ]+)?`')
+# 符号必须**捕获**：只匹配路径等于只守"文件还在"，而队列引用要守的是"符号还在"。
+# 旧版 `(?:::[\w: ]+)?` 是非捕获组 ⇒ 符号被丢弃 ⇒ 把 hitl.rs 里 ApprovalOutcome
+# 改名，判据仍然绿（实测洞）。符号形状与台账 evidence 列一致：`path::enum Symbol`。
+QUEUE_REF = re.compile(r'`((?:\.\./)+[\w./-]+\.(?:rs|py|sh|toml|md|json))(?:::([^`]+))?`')
 
 
 def check_queue_refs(root, rel):
@@ -65,10 +68,20 @@ def check_queue_refs(root, rel):
     refs = set(QUEUE_REF.findall(body))
     if not refs:
         return ["读到空：%s 里 0 条 `path::symbol` 引用（不是通过）" % rel]
-    for r in sorted(refs):
+    for r, sym in sorted(refs):
         target = os.path.normpath(os.path.join(base, r))
         if not os.path.exists(target):
             bad.append("断链: %s（相对 %s 解析为 %s）" % (r, rel, target))
+            continue
+        if sym:
+            body = io.open(target, encoding="utf-8", errors="replace").read()
+            # 唯一定义行语义：`enum X` / `struct X` / `trait X` / `fn X` 之一必须出现，
+            # 只有注释里的提及不算（C3：不许把"提到"当成"定义在"）。
+            name = sym.strip().split()[-1].strip('` ')
+            kind = sym.strip().split()[0] if len(sym.strip().split()) > 1 else None
+            pat = (r'^\s*(?:pub )?%s\s+%s\b' % (kind, re.escape(name))) if kind else (r'\b%s\b' % re.escape(name))
+            if not re.search(pat, body, re.M):
+                bad.append("断链: 符号定义不存在 %s::%s" % (r, sym.strip()))
     return bad
 
 
