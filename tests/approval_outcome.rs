@@ -167,3 +167,33 @@ fn the_four_outcomes_are_reachable_and_pairwise_distinct() {
     // 「撤回（有人在、但没答成）」与「没人」是两件事，处置相反（重问 / 加人）。
     assert_ne!(ApprovalOutcome::Cancelled, ApprovalOutcome::Unavailable);
 }
+
+/// 地基件：**四值计数**（C-057 的收尾要求 —— 延后期不许静默）。
+///
+/// 为什么必须有：没有应答者时门一律 fail-closed ⇒ 所有动作得到 `Unavailable`。
+/// 不计数，我们手上永远只有「已拒绝」这一条已知信息，学不到「多少动作本该请求批准」。
+///
+/// 四态齐（只测"批准"会恒绿，这正是 Q-GATE-tuck-verify 与 security_gate_test 那两族的形状）。
+/// Mutation：把 `record` 里某一支删掉 ⇒ 对应读数停在 0 ⇒ 本条红。
+#[test]
+fn the_four_outcomes_are_counted() {
+    use anaphase::hitl::{from_bool, HitlCounters, HITLApprover};
+    use std::sync::Arc;
+
+    let c = Arc::new(HitlCounters::default());
+    let approve = HITLApprover::new(from_bool(Arc::new(|_c: &str, _a: &[String]| Ok(true))))
+        .with_counters(c.clone());
+    let deny = HITLApprover::new(from_bool(Arc::new(|_c: &str, _a: &[String]| Ok(false))))
+        .with_counters(c.clone());
+    let withdrew = HITLApprover::new(Arc::new(|_c: &str, _a: &[String]| ApprovalOutcome::Cancelled))
+        .with_counters(c.clone());
+    let absent = HITLApprover::default().with_counters(c.clone());
+
+    let _ = approve.check_approval("rm -rf /x", &[]);
+    let _ = deny.check_approval("rm -rf /x", &[]);
+    let _ = withdrew.check_approval("rm -rf /x", &[]);
+    let _ = absent.check_approval("rm -rf /x", &[]);
+
+    assert_eq!(c.snapshot(), [1, 1, 1, 1], "批 / 拒 / 撤回 / 没人 各记一次");
+    assert_eq!(approve.counters().is_some(), true, "计数器必须能被取回");
+}

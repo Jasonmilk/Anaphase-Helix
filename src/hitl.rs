@@ -200,8 +200,47 @@ pub fn from_bool(
     })
 }
 
+/// 四值计数（地基件：**延后期不许静默**）。
+///
+/// 为什么必须有它：没有应答者时门一律 fail-closed，于是所有动作都得到 `Unavailable`。
+/// 不计数 ⇒ 我们手上永远只有"已拒绝"这一条已知信息，**学不到"多少动作本该请求批准"**。
+/// 装了它，延后才从"推迟"变成"用真实数据准备应答者注册"。
+#[derive(Debug, Default)]
+pub struct HitlCounters {
+    pub allowed_once: std::sync::atomic::AtomicU64,
+    pub rejected: std::sync::atomic::AtomicU64,
+    pub cancelled: std::sync::atomic::AtomicU64,
+    pub unavailable: std::sync::atomic::AtomicU64,
+}
+
+impl HitlCounters {
+    pub fn record(&self, o: ApprovalOutcome) {
+        use std::sync::atomic::Ordering::Relaxed;
+        match o {
+            ApprovalOutcome::AllowedOnce => &self.allowed_once,
+            ApprovalOutcome::Rejected => &self.rejected,
+            ApprovalOutcome::Cancelled => &self.cancelled,
+            ApprovalOutcome::Unavailable => &self.unavailable,
+        }
+        .fetch_add(1, Relaxed);
+    }
+
+    /// 四项读数（顺序固定：批 / 拒 / 撤回 / 没人）
+    pub fn snapshot(&self) -> [u64; 4] {
+        use std::sync::atomic::Ordering::Relaxed;
+        [
+            self.allowed_once.load(Relaxed),
+            self.rejected.load(Relaxed),
+            self.cancelled.load(Relaxed),
+            self.unavailable.load(Relaxed),
+        ]
+    }
+}
+
 pub struct HITLApprover {
     approver: ApproveFn,
+    /// `None` = 未装计数器（老调用方不受影响）
+    counters: Option<std::sync::Arc<HitlCounters>>,
 }
 
 impl Default for HITLApprover {
@@ -211,13 +250,24 @@ impl Default for HITLApprover {
             approver: Arc::new(|_cmd, _args| {
                 ApprovalOutcome::Unavailable
             }),
+            counters: None,
         }
     }
 }
 
 impl HITLApprover {
     pub fn new(approver: ApproveFn) -> Self {
-        Self { approver }
+        Self { approver, counters: None }
+    }
+
+    /// 装计数器（地基件）：每个结局都记一次，供"多少动作本该请求批准"这类读数使用。
+    pub fn with_counters(mut self, c: std::sync::Arc<HitlCounters>) -> Self {
+        self.counters = Some(c);
+        self
+    }
+
+    pub fn counters(&self) -> Option<&std::sync::Arc<HitlCounters>> {
+        self.counters.as_ref()
     }
 
     /// 高风险动作判定：写操作 / 网络请求 / 凭证使用
@@ -406,6 +456,14 @@ impl HITLApprover {
 
     /// HITL 执行闸：低风险 → 直接放行；高风险 → 请求人类确认
     pub fn check_approval(&self, command: &str, args: &[String]) -> ApprovalOutcome {
+        let outcome = self.check_approval_uncounted(command, args);
+        if let Some(c) = &self.counters {
+            c.record(outcome);
+        }
+        outcome
+    }
+
+    fn check_approval_uncounted(&self, command: &str, args: &[String]) -> ApprovalOutcome {
         /* 不变量(§226 ⑤):`args` 恰好携带一个已序列化的 JSON 值;多余者会被静默忽略。 */
         debug_assert!(args.len() <= 1, "check_approval expects one serialized args value");
         /* THE UNION, NOT THE REPLACEMENT (Cellrix:ADR-0048 §225, corrected). §225 proposed switching this
