@@ -999,6 +999,27 @@ impl AgentLoop {
             .as_ref()
             .map(|p| p.ledger.records().to_vec())
             .unwrap_or_default();
+        /* HITL 计数的**生产读者**（每周期一行，进事件环）。
+         * 为什么必须有：计数器 always-on 但没人读 = 装饰品（K-133）。延后期唯一要采集的东西
+         * 是「哪类动作撞门」，所以它必须落在**可观测的流**里，而不是躺在内存里等人 grep。
+         * 形状：{"batch":n,"rejected":n,"cancelled":n,"unavailable":n,"kinds":{...}} */
+        {
+            let c = self.hitl.counters();
+            let s = c.snapshot();
+            let kinds: serde_json::Map<String, serde_json::Value> = c
+                .unavailable_kinds()
+                .into_iter()
+                .map(|(k, v)| (k, serde_json::json!(v)))
+                .collect();
+            self.emit_cycle(
+                "hitl",
+                &serde_json::json!({
+                    "batch": s[0], "rejected": s[1], "cancelled": s[2], "unavailable": s[3],
+                    "kinds": kinds,
+                })
+                .to_string(),
+            );
+        }
         Ok(outcome)
     }
 

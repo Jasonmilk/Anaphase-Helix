@@ -211,3 +211,46 @@ fn the_four_outcomes_are_counted() {
     );
     assert_eq!(prod_default.counters().unavailable_kinds(), vec![("scp".to_string(), 1)]);
 }
+
+mod common;
+
+/// 生产读者：计数器必须在**可观测流**里出现，而不是躺在内存里等人 grep。
+///
+/// Mutation：把 run_cycle 末尾那段 emit 删掉 ⇒ 环里没有 `hitl` 行 ⇒ 本条红。
+#[tokio::test]
+async fn the_counters_are_emitted_into_the_observable_stream() {
+    use anaphase::adapters::*;
+    use anaphase::events::EventRing;
+    use anaphase::reflex::ReflexArc;
+    use anaphase::run_cycle::AgentLoop;
+    use std::sync::{Arc, Mutex};
+
+    let ring = Arc::new(Mutex::new(EventRing::new(64)));
+    let mut agent = AgentLoop::new(
+        Arc::new(NoopMemoryAdapter),
+        Arc::new(common::StructuredReasoning {
+            output: r#"{"calls":[{"tool":"numbers","args":{},"expect":"numbers"}]}"#.into(),
+        }),
+        Arc::new(NoopToolAdapter),
+        Arc::new(NoopSafetyAdapter),
+        Arc::new(NoopUiAdapter),
+        Arc::new(NoopFearAdapter),
+        ReflexArc { safety_rules: vec![] },
+    )
+    .with_events(ring.clone());
+
+    let _ = agent.run_cycle("please run numbers").await;
+
+    let guard = ring.lock().unwrap();
+    let hitl_rows: Vec<String> = guard
+        .events()
+        .iter()
+        .filter(|e| e.phase == "hitl")
+        .map(|e| e.detail.clone())
+        .collect();
+    assert_eq!(hitl_rows.len(), 1, "每个周期必须落一条 hitl 读数行");
+    let v: serde_json::Value = serde_json::from_str(&hitl_rows[0]).expect("hitl 行必须是 JSON");
+    for k in ["batch", "rejected", "cancelled", "unavailable", "kinds"] {
+        assert!(v.get(k).is_some(), "hitl 行缺字段 {k}: {}", hitl_rows[0]);
+    }
+}
