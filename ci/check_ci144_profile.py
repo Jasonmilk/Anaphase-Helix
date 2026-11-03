@@ -20,6 +20,7 @@ Exit codes: 0 all green / 1 red / 2 malformed table / 3 read nothing
 """
 import io
 import os
+import re
 import sys
 
 STATUSES = {"adopted", "absent", "deviated", "withdrawn", "rejected"}
@@ -41,6 +42,34 @@ def parse(text):
             continue
         rows.append(cells)
     return rows
+
+
+
+QUEUE_REF = re.compile(r'`((?:\.\./)+[\w./-]+\.(?:rs|py|sh|toml|md|json))(?:::[\w: ]+)?`')
+
+
+def check_queue_refs(root, rel):
+    """队列侧的引用也要有消费方（C3）。
+
+    台账 evidence 列一直有消费方（本文件 R2）；队列后来也改用 `path::symbol` 形状，
+    但**没有解析器** ⇒ 符号改名不会有人收到断链信号（"判据在没人调用"第 N 次）。
+    这里复用同一套解析，不为队列新写工具。
+    根锚 = 引用文件自身所在目录（C1），不用 cwd。
+    """
+    bad = []
+    full = os.path.join(root, rel)
+    if not os.path.isfile(full):
+        return ["队列文件不存在: %s" % rel]
+    base = os.path.dirname(full)
+    body = io.open(full, encoding="utf-8", errors="replace").read()
+    refs = set(QUEUE_REF.findall(body))
+    if not refs:
+        return ["读到空：%s 里 0 条 `path::symbol` 引用（不是通过）" % rel]
+    for r in sorted(refs):
+        target = os.path.normpath(os.path.join(base, r))
+        if not os.path.exists(target):
+            bad.append("断链: %s（相对 %s 解析为 %s）" % (r, rel, target))
+    return bad
 
 
 def check(root, rows):
@@ -94,7 +123,7 @@ def check(root, rows):
 DEFAULT_FILE = "docs/ci144-profile.md"
 
 
-def run(root, quiet=False, rel=DEFAULT_FILE):
+def run(root, quiet=False, rel=DEFAULT_FILE, queue=None):
     text = io.open(os.path.join(root, rel), encoding="utf-8").read()
     rows = parse(text)
     if not rows:
@@ -106,6 +135,8 @@ def run(root, quiet=False, rel=DEFAULT_FILE):
             len(rows),
             ", ".join("%s=%d" % (s, sum(1 for r in rows if r[2] == s)) for s in sorted(STATUSES)),
         ))
+    if queue:
+        bad.extend(check_queue_refs(root, queue))
     if bad:
         for b in bad:
             print("RED: " + b)
@@ -177,9 +208,12 @@ def main():
     rel = DEFAULT_FILE
     if "--root" in argv:
         root = argv[argv.index("--root") + 1]
+    qrel = None
+    if "--queue" in argv:
+        qrel = argv[argv.index("--queue") + 1]
     if "--file" in argv:
         rel = argv[argv.index("--file") + 1]
-    return run(root, rel=rel)
+    return run(root, rel=rel, queue=qrel)
 
 
 if __name__ == "__main__":
