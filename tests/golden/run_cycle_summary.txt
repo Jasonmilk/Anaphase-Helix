@@ -2,7 +2,8 @@ done = true
 success = true
 impasse = false
 current_state = Perception
-event_rows = 7
+event_rows = 8
+  {"data":{"allowed_once":0,"cancelled":0,"kinds":{},"phase":"hitl","rejected":0,"unavailable":0},"job_id":"run-35718410f20c6cda","seq":7,"time":"2023-11-14T22:13:20Z","type":"check/status"}
   {"data":{"bypass":null,"chars":78,"model":null,"text":"{\"calls\":[{\"tool\":\"numbers\",\"args\":{\"expression\":\"7**9\"},\"expect\":\"numbers\"}]}"},"job_id":"run-35718410f20c6cda","seq":5,"time":"2023-11-14T22:13:20Z","type":"assistant/reply"}
   {"data":{"bypass":null,"done":true,"impasse":false,"model":null,"reply":"{\"calls\":[{\"tool\":\"numbers\",\"args\":{\"expression\":\"7**9\"},\"expect\":\"numbers\"}]}","success":true,"verdict":null},"job_id":"run-35718410f20c6cda","seq":6,"time":"2023-11-14T22:13:20Z","type":"turn/end"}
   {"data":{"chars":800,"injected_chars":0,"nodes":0},"job_id":"run-35718410f20c6cda","seq":2,"time":"2023-11-14T22:13:20Z","type":"context/inject"}

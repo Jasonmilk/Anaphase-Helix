@@ -726,6 +726,28 @@ impl AgentLoop {
         }
     }
 
+    /// 把本周期末的 HITL 四态计数写进**落盘的** period 流（`{period_id}.events.jsonl`）。
+    /// 与 emit_cycle 的那行同源同值：只是多了一个**会落盘**的去处。
+    /// 无 session_events ⇒ 什么也不做（read-only 构建合法），不制造空文件。
+    fn mirror_hitl_line(&mut self) {
+        let c = self.hitl.counters();
+        let s = c.snapshot();
+        let kinds: serde_json::Map<String, serde_json::Value> = c
+            .unavailable_kinds()
+            .into_iter()
+            .map(|(k, v)| (k, serde_json::json!(v)))
+            .collect();
+        let detail = serde_json::json!({
+            "phase": "hitl",
+            "allowed_once": s[0], "rejected": s[1], "cancelled": s[2], "unavailable": s[3],
+            "kinds": kinds,
+        });
+        if let Some(ev) = self.session_events.as_mut() {
+            let ts = crate::ledger::unix_secs_to_rfc3339(self.clock.now());
+            let _ = ev.emit(&ts, crate::session_events::types_and_stream::EventType::Check, detail);
+        }
+    }
+
 
     /// ⚠️ SUPERSEDED BY §208: this entry is a SECOND NAME for one guard, and the sink into
     /// `run_cycle` itself (with a CACHED probe) is the prescribed shape — measured, `gate_ok` is
@@ -941,7 +963,33 @@ impl AgentLoop {
                         condition,
                     );
                 }
+        /* HITL 计数的**生产读者**（每周期一行，进事件环）。
+         * 为什么必须有：计数器 always-on 但没人读 = 装饰品（K-133）。延后期唯一要采集的东西
+         * 是「哪类动作撞门」，所以它必须落在**可观测的流**里，而不是躺在内存里等人 grep。
+         * 形状：{"allowed_once":n,"rejected":n,"cancelled":n,"unavailable":n,"kinds":{...}} */
+        {
+            let c = self.hitl.counters();
+            let s = c.snapshot();
+            let kinds: serde_json::Map<String, serde_json::Value> = c
+                .unavailable_kinds()
+                .into_iter()
+                .map(|(k, v)| (k, serde_json::json!(v)))
+                .collect();
+            self.emit_cycle(
+                "hitl",
+                &serde_json::json!({
+                    "allowed_once": s[0], "rejected": s[1], "cancelled": s[2], "unavailable": s[3],
+                    "kinds": kinds,
+                })
+                .to_string(),
+            );
+        }
                 self.emit_cycle("end", &verdict.to_string());
+                // ★ 镜像一行 HITL 计数进**落盘的** period 流（C-076）。
+                // 为什么在这里、不在 emit_cycle 里：emit_cycle 是 &self，而
+                // SessionEventStream::emit 需要 &mut；改签名会波及 9 个调用点并让
+                // :1007 的 self.hitl 借用作废。⇒ 换落点，不硬掰签名。
+                // 只解决「重启归零」；环满丢弃（EventRing cap）是另一件事，另记。
                 // Session event: the period ended (back to Perception).
                 if let Some(ev) = self.session_events.as_mut() {
                     let ts = crate::ledger::unix_secs_to_rfc3339(self.clock.now());
@@ -999,27 +1047,7 @@ impl AgentLoop {
             .as_ref()
             .map(|p| p.ledger.records().to_vec())
             .unwrap_or_default();
-        /* HITL 计数的**生产读者**（每周期一行，进事件环）。
-         * 为什么必须有：计数器 always-on 但没人读 = 装饰品（K-133）。延后期唯一要采集的东西
-         * 是「哪类动作撞门」，所以它必须落在**可观测的流**里，而不是躺在内存里等人 grep。
-         * 形状：{"allowed_once":n,"rejected":n,"cancelled":n,"unavailable":n,"kinds":{...}} */
-        {
-            let c = self.hitl.counters();
-            let s = c.snapshot();
-            let kinds: serde_json::Map<String, serde_json::Value> = c
-                .unavailable_kinds()
-                .into_iter()
-                .map(|(k, v)| (k, serde_json::json!(v)))
-                .collect();
-            self.emit_cycle(
-                "hitl",
-                &serde_json::json!({
-                    "allowed_once": s[0], "rejected": s[1], "cancelled": s[2], "unavailable": s[3],
-                    "kinds": kinds,
-                })
-                .to_string(),
-            );
-        }
+        self.mirror_hitl_line();
         Ok(outcome)
     }
 
