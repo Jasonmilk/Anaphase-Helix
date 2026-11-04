@@ -676,3 +676,13 @@ ncloc = 79
 counter = 2
 k_id = "C3-IRREVERSIBLE"
 reason = "consequence classifier behind the execution-point gate; first measured size"
+
+# AG-UI additive 投影（C-083 队列坐标 L2）。这是一条**决策**，不是自动写回：
+# 新文件必须带签名的 seed 才能进基线，否则"改坏仍红"的通道会被静默填平。
+[[seed]]
+target = "src/agui.rs"
+seeded = "2026-11-05"
+ncloc  = 75
+counter = 2
+k_id   = "C-083"
+reason = "AG-UI 1.0 additive 投影：只映射真实骨架（RUN_STARTED/TEXT_MESSAGE_*/RUN_FINISHED），metadata 只挂 verdict；纯函数、可删"
