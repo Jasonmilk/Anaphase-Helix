@@ -1,3 +1,4 @@
+pub mod agui;
 pub mod irreversible;
 pub mod adapters;
 pub mod judge;
