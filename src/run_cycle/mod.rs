@@ -795,6 +795,15 @@ impl AgentLoop {
         )
         .map_err(|e| warn!("[Period] no identity this cycle: {}", e))
         .ok();
+        // ★ 流在**周期入口**就打开（C-080：原本在 Reasoning 才开 ⇒ turn/start 等前半段落盘不到）。
+        // 幂等：Reasoning 侧若已开则不重开；无 dir ⇒ 不开（read-only 构建合法，不造空文件）。
+        if self.session_events.is_none() {
+            if let (Some(dir), Some(pid)) = (self.session_events_dir.clone(), self.context.period_id.clone()) {
+                let job = crate::contract::derive_job_id(user_input);
+                self.session_events = crate::session_events::SessionEventStream::open(
+                    dir, &pid, &job, self.session_events_redact.clone()).ok();
+            }
+        }
         /* THE SINK （原引 ADR-0048 的 §233–§236 在工作区任何 ADR 里都不存在（Cellrix 索引 232→237 跳号），见 DEBTS d-adr0048-233-236）: every path that reaches reasoning asks the judge HERE, so the
          * check cannot be forgotten by a caller — §206 measured that a declaration enforced at two
          * of four call sites is fail-closed only "where someone remembered". The cost model is the

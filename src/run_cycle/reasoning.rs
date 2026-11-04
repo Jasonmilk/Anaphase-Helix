@@ -36,6 +36,8 @@ impl AgentLoop {
              * a fallback would make "missing" indistinguishable from a real value. `job_id` keeps
              * its own job: readable base name + deterministic replay handle (ADR-0041 §7.2). */
             let trace_id = self.context.period_id.clone().unwrap_or_default();
+            // 幂等：周期入口已开过就不重开（C-080：流原本在 Reasoning 才开 ⇒ 前半段落盘不到）。
+            if self.session_events.is_none() {
             self.session_events = self.context.period_id.as_ref().and_then(|period_id| {
                 self.session_events_dir.as_ref().and_then(|dir| {
                     crate::session_events::SessionEventStream::open(
@@ -47,6 +49,7 @@ impl AgentLoop {
                     .ok()
                 })
             });
+            }
             // O-1 (ADR-0016 D1): structured commands never reach the LLM —
             // the plan already exists, assemble the job and go.
             if self.context.structured {
