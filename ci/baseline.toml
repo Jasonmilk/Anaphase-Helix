@@ -686,3 +686,11 @@ ncloc  = 75
 counter = 2
 k_id   = "C-083"
 reason = "AG-UI 1.0 additive 投影：只映射真实骨架（RUN_STARTED/TEXT_MESSAGE_*/RUN_FINISHED），metadata 只挂 verdict；纯函数、可删"
+
+[[seed]]
+target = "src/bin/agui.rs"
+seeded = "2026-11-05"
+ncloc  = 28
+counter = 2
+k_id   = "C-083"
+reason = "AG-UI 投影的唯一真源出口（bin）：读 session-events jsonl 吐标准事件；Cellrix 只消费不复制规则"

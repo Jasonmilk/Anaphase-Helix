@@ -28,10 +28,12 @@ pub fn project(ev: &Value) -> Vec<Value> {
         }
         "turn/end" => {
             // metadata 只挂 verdict：它不是"标准事件的替代品"，而是这条事件自己的注解。
-            let verdict = data.get("verdict").cloned().unwrap_or(Value::Null);
+            // verdict 非 null 才挂键；null ⇒ metadata 空对象（不伪造事实）。
+            let v = data.get("verdict").cloned().unwrap_or(Value::Null);
+            let meta = if v.is_null() { json!({}) } else { json!({"verdict": v}) };
             vec![json!({
                 "type": "RUN_FINISHED", "threadId": thread, "runId": run,
-                "metadata": {"verdict": verdict}
+                "metadata": meta
             })]
         }
         _ => vec![],
