@@ -14,7 +14,7 @@
 counter = 2
 [[ratchet]]
 target = "ci/"
-ncloc  = 2164
+ncloc  = 2169
 [[ratchet]]
 target = "ci/allowances.py"
 ncloc  = 382
@@ -29,7 +29,7 @@ target = "ci/check_guards.py"
 ncloc  = 386
 [[ratchet]]
 target = "ci/check_line_budget.py"
-ncloc  = 704
+ncloc  = 709
 [[ratchet]]
 target = "ci/n_runs.sh"
 ncloc  = 49
@@ -38,7 +38,7 @@ target = "ci/scan_mutants.py"
 ncloc  = 266
 [[ratchet]]
 target = "src/"
-ncloc  = 4758
+ncloc  = 4759
 [[ratchet]]
 target = "src/adapters/"
 ncloc  = 1429
@@ -65,10 +65,13 @@ target = "src/adapters/usage.rs"
 ncloc  = 119
 [[ratchet]]
 target = "src/agui.rs"
-ncloc  = 75
+ncloc  = 76
 [[ratchet]]
 target = "src/bin/"
-ncloc  = 545
+ncloc  = 573
+[[ratchet]]
+target = "src/bin/agui.rs"
+ncloc  = 28
 [[ratchet]]
 target = "src/bin/up.rs"
 ncloc  = 545

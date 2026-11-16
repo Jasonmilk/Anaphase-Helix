@@ -435,7 +435,7 @@ def is_test_path(rel):
     return base == "tests.rs" or base.endswith("_tests.rs")
 
 
-def run(root, budget, branch_budget, max_line, check, line_mode='warn', ratchet=True, emit=False, override=None):
+def run(root, budget, branch_budget, max_line, check, line_mode='warn', ratchet=True, emit=False, override=None, budget_mode='report'):
     today = date.today()
     iso = os.environ.get("CI_TODAY")
     if iso:
@@ -664,8 +664,11 @@ def run(root, budget, branch_budget, max_line, check, line_mode='warn', ratchet=
         limit = ratchet_base[dk] + allow + fix_allow
         if v > limit:
             dir_grown.append((k, ratchet_base[dk], v, split_windows.get(dk, 0), fix_allow))
-    blocking = marker_failures or expired_note or grown or dir_grown or unseeded or oversigned
-    if not split_window_open:
+    blocking = (
+        marker_failures or grown or dir_grown or unseeded or oversigned
+        or ((expired_note or over_budget) and budget_mode != "report")
+    )
+    if not split_window_open and budget_mode != "report":
         blocking = blocking or bool(over_budget)
     if line_mode == "fail":
         blocking = blocking or long_lines
@@ -895,7 +898,7 @@ def run(root, budget, branch_budget, max_line, check, line_mode='warn', ratchet=
         return 0
 
     if over_budget:
-        tag = "WARN" if split_window_open else "FAIL"
+        tag = "WARN" if (split_window_open or budget_mode == "report") else "FAIL"
         note = (
             "  (advisory during a split window: these are the segments being carved out)"
             if split_window_open
@@ -952,7 +955,7 @@ def run(root, budget, branch_budget, max_line, check, line_mode='warn', ratchet=
         for rel, i, n in long_lines[:20]:
             print(f"        {rel}:{i}  {n}")
     for note in expired_note:
-        print(f"FAIL  {note}")
+        print(f"{'WARN' if budget_mode == 'report' else 'FAIL'}  {note}")
     return 1
 
 
@@ -964,6 +967,10 @@ def main():
     ap.add_argument("--max-line", type=int, default=120)
     ap.add_argument("--check", default="CI-6")
     ap.add_argument("--line-mode", choices=("warn", "fail"), default="warn")
+    # 口径（ADR-0042 S.7 / phyt-DNA position.md:50-54）：绝对行数是**人的注意力尺度**，
+    # 三无（无 ADR 来源 / 无校准 / 无所有者）⇒ 机器只报数，不判红。
+    # 增长仍由 ratchet 拦（那是"变坏"的机械事实，与阈值无关）。
+    ap.add_argument("--budget-mode", choices=("report", "fail"), default="report")
     ap.add_argument("--no-ratchet", action="store_true")
     # Test-only: force a baseline value, so a test can prove that a WRONG
     # baseline is caught rather than silently trusted. A checker that can
@@ -1006,7 +1013,8 @@ def main():
         with open(ratchet_file, "rb") as fh:
             before = fh.read()
     code = run(args.root, args.budget, args.branch_budget, args.max_line, args.check,
-               args.line_mode, not args.no_ratchet, args.emit_ratchet, override)
+               args.line_mode, not args.no_ratchet, args.emit_ratchet, override,
+               budget_mode=args.budget_mode)
     if before is not None and not args.emit_ratchet:
         with open(ratchet_file, "rb") as fh:
             after = fh.read()
