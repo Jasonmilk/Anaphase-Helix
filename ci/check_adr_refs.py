@@ -155,8 +155,15 @@ def judge(hits, repos, census=False):
 
 
 def selftest():
-    """三形：造样本 ⇒ 必须红；真文档 ⇒ 必须绿。不依赖真实源码现状。"""
+    """三形：造样本 ⇒ 必须红；真文档 ⇒ 必须绿。不依赖真实源码现状。
+
+    例外：样本①/①反 用 **Cellrix 的真 ADR-0048** 当参照物 ⇒ 单仓检出（CI）里没有它，
+    这些 case **不可量**（不是失败）。此时具名跳过，其余样本照跑。
+    """
     ok = True
+    sibling_cellrix = os.path.isdir(os.path.join(WS, "Cellrix"))
+    if not sibling_cellrix:
+        print("UNMEASURABLE: selftest 中 3 例需要 Cellrix 仓（单仓检出不可验）⇒ 具名跳过")
 
     def chk(name, cond):
         nonlocal ok
@@ -164,15 +171,17 @@ def selftest():
         ok = ok and cond
 
     # ① 悬空节号必须判红（用真实缺口：Cellrix:ADR-0048 §233 不存在）
-    cel = adr_files(os.path.join(WS, "Cellrix"), "0048")
-    chk("样本①：Cellrix:ADR-0048 §233 不可解析（该节号不存在）", not resolves(cel, "233"))
-    chk("样本①反：Cellrix:ADR-0048 §208 可解析（真节号）", resolves(cel, "208"))
-    chk("样本①反：Cellrix:ADR-0048 §296 可解析（索引表行形状）", resolves(cel, "296"))
+    if sibling_cellrix:
+        cel = adr_files(os.path.join(WS, "Cellrix"), "0048")
+        chk("样本①：Cellrix:ADR-0048 §233 不可解析（该节号不存在）", not resolves(cel, "233"))
+        chk("样本①反：Cellrix:ADR-0048 §208 可解析（真节号）", resolves(cel, "208"))
+        chk("样本①反：Cellrix:ADR-0048 §296 可解析（索引表行形状）", resolves(cel, "296"))
     # ② 本仓无此号 ⇒ 裸引用必须红；本仓有此号 ⇒ 不应判 bare
     chk("样本②：本仓有 ADR-0042（裸引用合法）", bool(adr_files(ROOT, "0042")))
     chk("样本②反：本仓无 ADR-0014（裸引用必须带仓名）", not adr_files(ROOT, "0014"))
     # ③ §32 不得被 §325 命中（前缀误配）
-    chk("样本③：Cellrix:ADR-0048 §32 不因 §325 而误判可解析", not resolves(cel, "32") or resolves(cel, "32"))
+    if sibling_cellrix:
+        chk("样本③：Cellrix:ADR-0048 §32 不因 §325 而误判可解析", not resolves(cel, "32") or resolves(cel, "32"))
     print("SELFTEST:", "OK" if ok else "FAILED")
     return 0 if ok else 1
 
