@@ -614,6 +614,66 @@ pub fn skeleton_for_prompt(
     Some(skeleton(&rows, cfg.skeleton_max_lines, cfg.gist_max_chars))
 }
 
+/// **I5 切片**（`Cellrix:ADR-0047` §33）：从选中根出发的**可达子图**，沿 `parent` 边做闭包。
+///
+/// 与两种"看起来像"的东西严格区分：
+/// * `chain_of` = 从根到某个叶子的**一条祖先链**（`lineage_path`，上下文加载专用）；
+/// * 整棵子树 BFS = A4 的旧错误（`chainJobIds` 从根把**所有分支**扫进同一窗口）。
+///
+/// 本函数只回答一个问题：**这些 period 里，哪些的祖先链真的连到 `root`**。
+/// 返回 `(切片成员, 截断说明)`：成员按 (first_ts, period_id) 升序；
+/// 若窗口里有行的 `parent` 指向未加载的 id（`conversation_id == None` 是同一事实的既有表达），
+/// 第二个元素给出**具名截断说明**——切片可能不完整，但不许假装完整（I6 同族）。
+pub fn slice_of<'a>(
+    list: &'a [PeriodSummary],
+    root: &str,
+) -> (Vec<&'a PeriodSummary>, Option<String>) {
+    use std::collections::{HashMap, HashSet};
+    let by_id: HashMap<&str, &PeriodSummary> =
+        list.iter().map(|p| (p.period_id.as_str(), p)).collect();
+    if !by_id.contains_key(root) {
+        return (Vec::new(), Some(format!("root {root} 不在窗口内 ⇒ 切片不可量（不猜）")));
+    }
+    // 子边：parent -> [child]（只认 id 父指针；人类可读摘要不可能出现在这里）
+    let mut children: HashMap<&str, Vec<&PeriodSummary>> = HashMap::new();
+    let mut dangling_parents: HashSet<&str> = HashSet::new();
+    for p in list {
+        match p.parent.as_deref() {
+            Some(par) if by_id.contains_key(par) => children.entry(par).or_default().push(p),
+            Some(par) => {
+                dangling_parents.insert(par);
+            }
+            None => {}
+        }
+    }
+    let mut seen: HashSet<&str> = HashSet::new();
+    let mut stack = vec![root];
+    let mut out: Vec<&PeriodSummary> = Vec::new();
+    while let Some(id) = stack.pop() {
+        if !seen.insert(id) {
+            continue;
+        }
+        if let Some(p) = by_id.get(id) {
+            out.push(*p);
+        }
+        if let Some(kids) = children.get(id) {
+            for k in kids {
+                stack.push(k.period_id.as_str());
+            }
+        }
+    }
+    out.sort_by(|a, b| (a.first_ts.as_str(), a.period_id.as_str()).cmp(&(b.first_ts.as_str(), b.period_id.as_str())));
+    let trunc = if dangling_parents.is_empty() {
+        None
+    } else {
+        Some(format!(
+            "窗口里有 {} 个父 id 未被加载 ⇒ 切片可能不完整（具名，不假装完整）",
+            dangling_parents.len()
+        ))
+    };
+    (out, trunc)
+}
+
 /// The chain from the ROOT down to `leaf`, oldest first. Walks `parent` links only
 /// (ADR-0047's `lineage_path`) — never expands into branches.
 pub fn chain_of<'a>(list: &'a [PeriodSummary], leaf: &str) -> Vec<&'a PeriodSummary> {
@@ -634,4 +694,64 @@ pub fn chain_of<'a>(list: &'a [PeriodSummary], leaf: &str) -> Vec<&'a PeriodSumm
     }
     path.reverse();
     path
+}
+
+#[cfg(test)]
+mod slice_tests {
+    use super::*;
+
+    fn row(pid: &str, parent: Option<&str>, first: &str) -> PeriodSummary {
+        PeriodSummary {
+            period_id: pid.to_string(),
+            job_id: format!("job-{pid}"),
+            first_ts: first.to_string(),
+            last_ts: first.to_string(),
+            count: 1,
+            preview: String::new(),
+            reply: String::new(),
+            parent: parent.map(|s| s.to_string()),
+            conversation_id: parent.map(|_| "root").map(|s: &str| s.to_string()),
+            model: None,
+            name: None,
+            status: None,
+            gist: None,
+            rejection_log: Vec::new(),
+            rejected: false,
+        }
+    }
+
+    /// I5 正样本：从根出发只收**祖先链连到根**的节点（含分叉），不含别的树。
+    #[test]
+    fn slice_is_the_reachable_subgraph_not_the_whole_subtree() {
+        let rows = vec![
+            row("r", None, "t1"),
+            row("a", Some("r"), "t2"),
+            row("b", Some("r"), "t3"),
+            row("a1", Some("a"), "t4"),
+            row("other", None, "t5"),
+            row("other1", Some("other"), "t6"),
+        ];
+        let (slice, trunc) = slice_of(&rows, "r");
+        let ids: Vec<&str> = slice.iter().map(|p| p.period_id.as_str()).collect();
+        assert_eq!(ids, vec!["r", "a", "b", "a1"], "只收 r 的可达闭包，按时间升序");
+        assert!(trunc.is_none(), "没有悬空父 ⇒ 不报截断");
+    }
+
+    /// 反样本①：根不在窗口 ⇒ 空切片 + 具名（不许猜成"根没有子节点"）。
+    #[test]
+    fn a_root_outside_the_window_is_named_not_empty_silently() {
+        let rows = vec![row("a", Some("r"), "t1")];
+        let (slice, trunc) = slice_of(&rows, "r");
+        assert!(slice.is_empty());
+        assert!(trunc.unwrap_or_default().contains("不在窗口内"));
+    }
+
+    /// 反样本②：窗口截断了父 ⇒ 切片照给，但必须带具名截断说明（I6 同族）。
+    #[test]
+    fn a_truncated_window_is_reported_by_name() {
+        let rows = vec![row("b", Some("missing-parent"), "t1"), row("a", None, "t2")];
+        let (slice, trunc) = slice_of(&rows, "a");
+        assert_eq!(slice.len(), 1);
+        assert!(trunc.unwrap_or_default().contains("未被加载"));
+    }
 }
