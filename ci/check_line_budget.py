@@ -33,7 +33,7 @@ that. It also makes writing a file-header contract summary free, which is the
 outcome we want.
 
 Usage:
-    python3 ci/check_line_budget.py [--root DIR] [--budget N] [--branch-budget N]
+    python3 ci/check_line_budget.py [--root DIR] [--branch-budget N]   # 无行数阈值：只报数 + ratchet
                                     [--max-line N] [--json]
 """
 
