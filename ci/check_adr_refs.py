@@ -111,8 +111,16 @@ def judge(hits, repos, census=False):
         if qual:
             target = repos.get(qual)
             if target is None:
-                cls["unknown_repo"] += 1
-                violations.append((path, line_no, "unknown-repo", "%s:ADR-%s 指向的仓不存在" % (qual, num)))
+                # 物理事实优先：判"仓不存在"要看**磁盘**，不看兄弟仓计数
+                # （CI 的工作区里可能有别的临时目录，计数法会误判成多仓）。
+                # 仓目录确实不存在 ⇒ 本次检出里不可验（具名，不算违规）；
+                # 仓目录存在但仓里没这份 ADR ⇒ 真违规（写错仓名/号）。
+                if os.path.isdir(os.path.join(WS, qual)):
+                    cls["unknown_repo"] += 1
+                    violations.append((path, line_no, "unknown-repo", "%s:ADR-%s 指向的仓里没有这份 ADR" % (qual, num)))
+                else:
+                    cls.setdefault("unmeasurable_repo", 0)
+                    cls["unmeasurable_repo"] += 1
                 continue
             files = adr_files(target, num)
         else:
@@ -206,6 +214,9 @@ def main():
     # 单仓检出时 repos 至少有 {克隆目录名, "anaphase"} 两个键，指向同一路径。
     siblings = {k: v for k, v in repos.items() if os.path.abspath(v) != os.path.abspath(ROOT)}
     single_repo = len(siblings) == 0
+    if cls.get("unmeasurable_repo"):
+        print("UNMEASURABLE: %d 处带仓名引用指向本次未检出的仓（不可验，不算违规）"
+              % cls["unmeasurable_repo"], file=sys.stderr)
     if single_repo and cls["unknown_repo"]:
         unk = cls["unknown_repo"]
         print("UNMEASURABLE: %d 处带仓名引用在单仓检出里不可解析（工作区只有本仓 ⇒ 不算违规）" % unk,

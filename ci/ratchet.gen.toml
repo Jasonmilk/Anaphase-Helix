@@ -14,13 +14,13 @@
 counter = 2
 [[ratchet]]
 target = "ci/"
-ncloc  = 2184
+ncloc  = 2191
 [[ratchet]]
 target = "ci/allowances.py"
 ncloc  = 382
 [[ratchet]]
 target = "ci/check_adr_refs.py"
-ncloc  = 199
+ncloc  = 206
 [[ratchet]]
 target = "ci/check_ci144_profile.py"
 ncloc  = 195
