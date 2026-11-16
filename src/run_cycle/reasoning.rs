@@ -398,6 +398,24 @@ impl AgentLoop {
                                         sig.calls.clone(),
                                     ));
                                     p.emit_event(&job_id, 2, "end", "job=assembled");
+                                } else {
+                                    // ★ 静默丢弃的洞（2026-11-16 实测）：模型给了 tool_calls，
+                                    // 但 pipeline 未接线（缺 tentacle_endpoint ⇒ Unbound）时，
+                                    // 这段原来**一个字都不说** ⇒ job 不组装 ⇒ 执行点收不到 ⇒
+                                    // tool/call 恒 0，而日志里既没有 refusal 也没有警告。
+                                    // 与 C-053「读到空=伪证」同族：不是判据错，是对象没了没人出声。
+                                    warn!(
+                                        "[Reasoning] {} tool call(s) parsed but pipeline UNBOUND \
+                                         (tentacle_endpoint missing) ⇒ job NOT assembled; \
+                                         these calls will not be executed and no tool/call event \
+                                         will be emitted (fail-closed, but named)",
+                                        sig.calls.len()
+                                    );
+                                    eprintln!(
+                                        "⛔ tool calls parsed (n={}) but execution pipeline is unbound \
+                                         (no tentacle_endpoint) ⇒ not executed, no tool/call event",
+                                        sig.calls.len()
+                                    );
                                 }
                                 Ok(TransitionCondition::NeedsTool)
                             } else if sig.impasse {
