@@ -190,6 +190,19 @@ def main():
         print("DEAD: src/ 与 tests/ 里一个 ADR 引用都没扫到 ⇒ 不可量（不是干净）", file=sys.stderr)
         return 3
     violations, cls = judge(hits, repos)
+    # 物理事实：CI 只 checkout 本仓 ⇒ 带仓名的引用（如 `Cellrix:ADR-0048 §319`）无法解析。
+    # 规则：**工作区只有本仓**时，"指向的仓不存在" = 不可量（具名剔除，不判红）；
+    #       工作区有多仓时 = 真违规（拼写错/仓被删）。
+    # 注意 repo_dirs() 总会注入 self alias（"anaphase" -> ROOT）⇒ 不能直接 len(repos)：
+    # 单仓检出时 repos 至少有 {克隆目录名, "anaphase"} 两个键，指向同一路径。
+    siblings = {k: v for k, v in repos.items() if os.path.abspath(v) != os.path.abspath(ROOT)}
+    single_repo = len(siblings) == 0
+    if single_repo and cls["unknown_repo"]:
+        unk = cls["unknown_repo"]
+        print("UNMEASURABLE: %d 处带仓名引用在单仓检出里不可解析（工作区只有本仓 ⇒ 不算违规）" % unk,
+              file=sys.stderr)
+        violations = [v for v in violations if v[2] != "unknown-repo"]
+        cls["unknown_repo"] = 0
     print("扫描引用 %d 处：本仓直接解析 %d / 带仓名解析 %d / 裸跨仓 %d / 悬空节号 %d / 未知仓 %d"
           % (len(hits), cls["self_ok"], cls["qualified_ok"], cls["bare_cross"], cls["dangling"], cls["unknown_repo"]))
     if "--census" in args:
