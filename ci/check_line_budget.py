@@ -435,7 +435,7 @@ def is_test_path(rel):
     return base == "tests.rs" or base.endswith("_tests.rs")
 
 
-def run(root, budget, branch_budget, max_line, check, line_mode='warn', ratchet=True, emit=False, override=None, budget_mode='report'):
+def run(root, budget, branch_budget, max_line, check, line_mode='warn', ratchet=True, emit=False, override=None):
     today = date.today()
     iso = os.environ.get("CI_TODAY")
     if iso:
@@ -556,6 +556,7 @@ def run(root, budget, branch_budget, max_line, check, line_mode='warn', ratchet=
     split_window_open = bool(split_windows)
 
     violations, marker_failures, long_lines, over_budget = [], [], [], []
+    sizes = []
     tooling = load_tooling(waivers_path) if ratchet else {}
     hot_data_only = []
     named = []
@@ -613,12 +614,13 @@ def run(root, budget, branch_budget, max_line, check, line_mode='warn', ratchet=
         # The tooling tier replaces the module budget for `ci/`. Not a waiver: a
         # waiver is a debt with a due date, and these files are not borrowing against
         # the rule — they are a different kind of file.
+        # S.7（2026-11-16）：本仓**无行数政策阈值**。budget 恒为 None ⇒ 不再产生"超标"判定，
+        # 只把原始 NOCL 记入 sizes 供报告；增长由 ratchet 判（那是"变坏"的机械事实）。
         eff_budget = budget
         for prefix, (tb, _adr) in tooling.items():
             if rel.replace(os.sep, "/").startswith(prefix):
                 eff_budget = tb
-        if not data_only and n > eff_budget and rel not in waived and rel.replace(os.sep, "/") not in waived:
-            over_budget.append((rel, n, eff_budget))
+        sizes.append((rel, n, eff_budget))
 
         if data_only:
             b = branch_count(text)
@@ -664,12 +666,8 @@ def run(root, budget, branch_budget, max_line, check, line_mode='warn', ratchet=
         limit = ratchet_base[dk] + allow + fix_allow
         if v > limit:
             dir_grown.append((k, ratchet_base[dk], v, split_windows.get(dk, 0), fix_allow))
-    blocking = (
-        marker_failures or grown or dir_grown or unseeded or oversigned
-        or ((expired_note or over_budget) and budget_mode != "report")
-    )
-    if not split_window_open and budget_mode != "report":
-        blocking = blocking or bool(over_budget)
+    # 阈值不参与阻塞（S.7）：只剩增长类事实（ratchet / 未签名 seed / 超签）与 marker 维度。
+    blocking = marker_failures or grown or dir_grown or unseeded or oversigned
     if line_mode == "fail":
         blocking = blocking or long_lines
     # Monotone write-back: the new baseline is min(old, current). Auto-taking the
@@ -724,9 +722,10 @@ def run(root, budget, branch_budget, max_line, check, line_mode='warn', ratchet=
     # and it holds a slot that reads as "this file is a known problem". The existing
     # stale check only catches a target that no longer EXISTS; this catches one that
     # exists and no longer needs the exemption.
+    # 无政策阈值时（budget is None）这条"豁免无效"检查没有判据对象 ⇒ 跳过，并具名说明。
     idle = sorted(
         t for t in waived
-        if t in current and current[t] <= budget
+        if budget is not None and t in current and current[t] <= budget
     )
     if idle:
         print(f"CHECKER ERROR: {len(idle)} waiver(s) exempt nothing — the target is inside "
@@ -897,8 +896,14 @@ def run(root, budget, branch_budget, max_line, check, line_mode='warn', ratchet=
               f"a deliberate re-base, not a check. Plain runs remain read-only.")
         return 0
 
+    if sizes:
+        top = sorted(sizes, key=lambda x: -x[1])[:15]
+        print(f"REPORT  NOCL by file (no policy threshold; top {len(top)} of {len(sizes)}) — 阈值归人，机器只报数:")
+        for rel, n, eff in top:
+            label = "" if eff is None else f"  (class {eff})"
+            print(f"        {rel} · {n} NOCL{label}")
     if over_budget:
-        tag = "WARN" if (split_window_open or budget_mode == "report") else "FAIL"
+        tag = "WARN" if (split_window_open or True) else "FAIL"
         note = (
             "  (advisory during a split window: these are the segments being carved out)"
             if split_window_open
@@ -925,7 +930,7 @@ def run(root, budget, branch_budget, max_line, check, line_mode='warn', ratchet=
         extra = ""
         if long_lines:
             extra = f"  ({len(long_lines)} long line(s), advisory)"
-        print(f"PASS  NCLOC <= {budget}  DATA-ONLY branches <= {branch_budget}"
+        print(f"PASS  ratchet held (no policy threshold)  DATA-ONLY branches <= {branch_budget}"
               f"  lines <= {max_line}{extra}")
         return 0
 
@@ -955,22 +960,17 @@ def run(root, budget, branch_budget, max_line, check, line_mode='warn', ratchet=
         for rel, i, n in long_lines[:20]:
             print(f"        {rel}:{i}  {n}")
     for note in expired_note:
-        print(f"{'WARN' if budget_mode == 'report' else 'FAIL'}  {note}")
+        print(f"WARN  {note}")
     return 1
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--root", default=".")
-    ap.add_argument("--budget", type=int, default=300)
     ap.add_argument("--branch-budget", type=int, default=10)
     ap.add_argument("--max-line", type=int, default=120)
     ap.add_argument("--check", default="CI-6")
     ap.add_argument("--line-mode", choices=("warn", "fail"), default="warn")
-    # 口径（ADR-0042 S.7 / phyt-DNA position.md:50-54）：绝对行数是**人的注意力尺度**，
-    # 三无（无 ADR 来源 / 无校准 / 无所有者）⇒ 机器只报数，不判红。
-    # 增长仍由 ratchet 拦（那是"变坏"的机械事实，与阈值无关）。
-    ap.add_argument("--budget-mode", choices=("report", "fail"), default="report")
     ap.add_argument("--no-ratchet", action="store_true")
     # Test-only: force a baseline value, so a test can prove that a WRONG
     # baseline is caught rather than silently trusted. A checker that can
@@ -1012,9 +1012,8 @@ def main():
     if os.path.exists(ratchet_file):
         with open(ratchet_file, "rb") as fh:
             before = fh.read()
-    code = run(args.root, args.budget, args.branch_budget, args.max_line, args.check,
-               args.line_mode, not args.no_ratchet, args.emit_ratchet, override,
-               budget_mode=args.budget_mode)
+    code = run(args.root, None, args.branch_budget, args.max_line, args.check,
+               args.line_mode, not args.no_ratchet, args.emit_ratchet, override)
     if before is not None and not args.emit_ratchet:
         with open(ratchet_file, "rb") as fh:
             after = fh.read()
