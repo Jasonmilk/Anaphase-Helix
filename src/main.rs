@@ -1,6 +1,5 @@
 
 use anaphase::adapters::*;
-use anaphase::adapters::flowmodus::{FlowModusAdapter, GrpcFlowModusAdapter};
 // New: Add direct import for HttpReasoningAdapter
 use anaphase::adapters::http_reasoning::HttpReasoningAdapter;
 use anaphase::run_cycle::AgentLoop;
@@ -941,30 +940,18 @@ async fn build_agent(config: &config::Config) -> BuiltAgent {
                 Arc::new(HttpReasoningAdapter::new(&config.anaphase, Some(identity_system)))
             }
         }
-        // Priority 2: Fallback to original FlowModus
+        // M5（console:CONVERGENCE M5）：**FlowModus gRPC 转发面已退役**。
+        // 它曾是"优先级 2 的回退通道"，但调度面已由 FlowModus 侧承担（五层纯函数、零 IO），
+        // 本仓再留一条转发通道 = 同一件事两个入口。退役后：
+        //   · 配了 `flowmodus_endpoint` ⇒ **具名提示**（不静默），仍回落 Noop；
+        //   · 不配 ⇒ 同样 Noop（与原来一致）。
         else if let Some(endpoint) = &config.anaphase.flowmodus_endpoint {
-            if endpoint.is_empty() {
-                Arc::new(NoopReasoningAdapter)
-            } else if !endpoint.starts_with("http://") {
-                // gRPC is the real channel: `grpc://` and a bare `host:port` both
-                // select it (`http://` is the deprecated legacy path below).
-                // Dispatch by scheme is legitimate — the scheme names the channel
-                // — but **parsing** is shared (ADR-0045). The `&endpoint[7..]`
-                // hardcoded prefix length is gone: it encoded `len("grpc://")`
-                // in a second place, next to the parser that already knew it.
-                match /* The identity block was assembled above and previously went nowhere on this channel: the
-                 * gRPC constructor had no slot for it. It is passed here exactly as the HTTP adapter
-                 * receives it, so both channels carry the same identity (2026-10-09). */
-                GrpcFlowModusAdapter::new(endpoint, config.anaphase.reasoning_model.as_deref().unwrap_or(""), Some(identity_system.clone())).await {
-                    Ok(adapter) => Arc::new(adapter),
-                    Err(e) => {
-                        eprintln!("Warning: Failed to connect to FlowModus at {}: {}. Falling back to Noop reasoning.", endpoint, e);
-                        Arc::new(NoopReasoningAdapter)
-                    }
-                }
-            } else {
-                Arc::new(FlowModusAdapter::new(endpoint))
-            }
+            eprintln!(
+                "⛔ flowmodus 转发面已退役（M5）：忽略 flowmodus_endpoint={} ⇒ reasoning=Noop；\
+                 需要上游请配 reasoning_endpoint",
+                if endpoint.is_empty() { "<empty>" } else { endpoint }
+            );
+            Arc::new(NoopReasoningAdapter)
         } else {
             Arc::new(NoopReasoningAdapter)
         };
