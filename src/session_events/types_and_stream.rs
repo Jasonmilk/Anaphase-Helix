@@ -153,7 +153,7 @@ impl SessionEventStream {
         /* ★ 追加而非覆盖（C-082）：同一 period 在一个周期里会被打开多次（周期入口 + Reasoning
          * 兜底），而 `write(true)` 从 offset 0 起写 ⇒ 后开的句柄**覆盖**先写下的行，文件最后只剩
          * 「最后一次 open 之后」的 3 行（turn/start… 被吃掉）。`open_append` 早就存在且文档写明
-         * 了同一事故（ADR-0048 §319）——这里是同一事故的第二处。
+         * 了同一事故（Cellrix:ADR-0048 §319）——这里是同一事故的第二处。
          * 用 append 保留已写行；seq 仍从 0 起（同进程单句柄），不重排既有行。 */
         let file = fs::OpenOptions::new()
             .create(true)
@@ -173,7 +173,7 @@ impl SessionEventStream {
         })
     }
 
-    /// Append-mode open for a stream that ALREADY EXISTS (Cellrix:ADR-0048 §319).
+    /// Append-mode open for a stream that ALREADY EXISTS (Cellrix:Cellrix:ADR-0048 §319).
     ///
     /// `open` carries `seq` from 0 and writes at offset 0, so a second handle OVERWROTE a period's
     /// history (caught by the criterion "every byte stays on disk"). This opens with `append` and
