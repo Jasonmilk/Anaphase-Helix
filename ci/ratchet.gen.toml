@@ -38,7 +38,7 @@ target = "ci/scan_mutants.py"
 ncloc  = 266
 [[ratchet]]
 target = "src/"
-ncloc  = 4759
+ncloc  = 4775
 [[ratchet]]
 target = "src/adapters/"
 ncloc  = 1429
@@ -149,7 +149,7 @@ target = "src/lifecycle.rs"
 ncloc  = 148
 [[ratchet]]
 target = "src/main.rs"
-ncloc  = 1035
+ncloc  = 1051
 [[ratchet]]
 target = "src/pipeline/"
 ncloc  = 382
@@ -191,10 +191,10 @@ target = "src/security.rs"
 ncloc  = 68
 [[ratchet]]
 target = "src/session_events/"
-ncloc  = 2346
+ncloc  = 2398
 [[ratchet]]
 target = "src/session_events/convergence.rs"
-ncloc  = 589
+ncloc  = 641
 [[ratchet]]
 target = "src/session_events/crystallize.rs"
 ncloc  = 107

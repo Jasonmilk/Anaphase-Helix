@@ -674,6 +674,43 @@ pub fn slice_of<'a>(
     (out, trunc)
 }
 
+/// **I4**：血缘时间戳单调（父 < 子）。纯函数、只报案，不改数据（append-only 的前置事实）。
+///
+/// 返回**具名违规**列表：`孩子 ← 父`（父的 first_ts >= 孩子的 first_ts）。
+/// 空列表 = 单调。窗口里的悬空父不参与（那不是违规，是没加载 —— I6 同族）。
+pub fn lineage_monotonic_violations(list: &[PeriodSummary]) -> Vec<String> {
+    use std::collections::HashMap;
+    let by_id: HashMap<&str, &PeriodSummary> =
+        list.iter().map(|p| (p.period_id.as_str(), p)).collect();
+    let mut bad = Vec::new();
+    for p in list {
+        if let Some(par) = p.parent.as_deref() {
+            if let Some(parent) = by_id.get(par) {
+                if parent.first_ts >= p.first_ts {
+                    bad.push(format!(
+                        "{} ← {}（父 first_ts={} >= 子 first_ts={}）",
+                        p.period_id, parent.period_id, parent.first_ts, p.first_ts
+                    ));
+                }
+            }
+        }
+    }
+    bad.sort();
+    bad
+}
+
+/// `slice_of` 的 IO 包装：读盘（`list_periods`）→ 交纯函数判闭包。
+/// 刻意做成**一层薄包装**：判据留在纯函数里，IO 只负责取数（可单测）。
+pub fn slice_from(
+    dir: &std::path::Path,
+    root: &str,
+    limit: usize,
+) -> std::io::Result<(Vec<PeriodSummary>, Option<String>)> {
+    let list = super::query::list_periods(dir, limit)?;
+    let (slice, trunc) = slice_of(&list, root);
+    Ok((slice.into_iter().cloned().collect(), trunc))
+}
+
 /// The chain from the ROOT down to `leaf`, oldest first. Walks `parent` links only
 /// (ADR-0047's `lineage_path`) — never expands into branches.
 pub fn chain_of<'a>(list: &'a [PeriodSummary], leaf: &str) -> Vec<&'a PeriodSummary> {
@@ -744,6 +781,34 @@ mod slice_tests {
         let (slice, trunc) = slice_of(&rows, "r");
         assert!(slice.is_empty());
         assert!(trunc.unwrap_or_default().contains("不在窗口内"));
+    }
+
+    /// **I2**：父指针槽里若混进人类可读摘要（历史脏数据），读者必须当"悬空"处理并具名，
+    /// 不能把它当成一个节点 id（那会把摘要当周期）。
+    #[test]
+    fn prose_in_the_parent_slot_is_not_a_node() {
+        let rows = vec![
+            row("r", None, "t1"),
+            row("c", Some("the user asked about caching"), "t2"),
+        ];
+        let (slice, trunc) = slice_of(&rows, "r");
+        let ids: Vec<&str> = slice.iter().map(|p| p.period_id.as_str()).collect();
+        assert_eq!(ids, vec!["r"], "根 r 没有 id 子节点；摘要是脏数据，不是子节点");
+        assert!(
+            trunc.unwrap_or_default().contains("未被加载"),
+            "摘要父必须落进具名截断说明，而不是被当成 id"
+        );
+    }
+
+    /// **I4**：父先于子（时间戳单调）。违规必须**具名**报出来，不是静默排序。
+    #[test]
+    fn a_parent_that_starts_after_its_child_is_named() {
+        let rows = vec![row("r", None, "t5"), row("c", Some("r"), "t1")];
+        let bad = lineage_monotonic_violations(&rows);
+        assert_eq!(bad.len(), 1);
+        assert!(bad[0].contains("c ← r"));
+        let ok = vec![row("r", None, "t1"), row("c", Some("r"), "t2")];
+        assert!(lineage_monotonic_violations(&ok).is_empty());
     }
 
     /// 反样本②：窗口截断了父 ⇒ 切片照给，但必须带具名截断说明（I6 同族）。

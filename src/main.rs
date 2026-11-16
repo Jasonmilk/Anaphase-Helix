@@ -170,6 +170,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .get("limit")
                         .and_then(|v| v.parse().ok())
                         .unwrap_or(50);
+                    // I5 切片（`Cellrix:ADR-0047` §33）：`?root=<period_id>` ⇒ 只回**从该根
+                    // 出发的可达闭包**（展示+继续），不是最近 50 条的列表。
+                    // 默认行为（无 root）完全不变 —— 这是加法，不是替换。
+                    if let Some(root) = params.get("root").filter(|r| !r.is_empty()) {
+                        return match anaphase::session_events::convergence::slice_from(
+                            std::path::Path::new(dir),
+                            root,
+                            usize::MAX,
+                        ) {
+                            Ok((periods, trunc)) => Json(serde_json::json!({
+                                "configured": true, "root": root,
+                                "periods": periods, "truncated": trunc
+                            })),
+                            Err(e) => Json(serde_json::json!({
+                                "configured": true, "root": root, "periods": [],
+                                "error": e.to_string()
+                            })),
+                        };
+                    }
                     match anaphase::session_events::list_periods(
                         std::path::Path::new(dir),
                         limit,
