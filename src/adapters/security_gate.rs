@@ -3,7 +3,7 @@
 //! `SecurityGate` is Anaphase's **local** contract (`src/security.rs`), deliberately
 //! free of any door-keeper's types (`ADR-0008 D2`). The decision itself is made by the
 //! door-keeper and reached over the wire the way every other organ is reached: a
-//! configured endpoint plus an adapter. Anaphase already carries `flowmodus_endpoint`
+//! configured endpoint plus an adapter. Anaphase（M5 之前）曾携带 `flowmodus_endpoint`（该转发面已退役）
 //! / `judge_endpoint` and health-checks them (`src/health.rs`), so the peer side is an
 //! endpoint on that existing serve face — not a new surface in another organ.
 //!

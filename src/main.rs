@@ -940,19 +940,10 @@ async fn build_agent(config: &config::Config) -> BuiltAgent {
                 Arc::new(HttpReasoningAdapter::new(&config.anaphase, Some(identity_system)))
             }
         }
-        // M5（console:CONVERGENCE M5）：**FlowModus gRPC 转发面已退役**。
-        // 它曾是"优先级 2 的回退通道"，但调度面已由 FlowModus 侧承担（五层纯函数、零 IO），
-        // 本仓再留一条转发通道 = 同一件事两个入口。退役后：
-        //   · 配了 `flowmodus_endpoint` ⇒ **具名提示**（不静默），仍回落 Noop；
-        //   · 不配 ⇒ 同样 Noop（与原来一致）。
-        else if let Some(endpoint) = &config.anaphase.flowmodus_endpoint {
-            eprintln!(
-                "⛔ flowmodus 转发面已退役（M5）：忽略 flowmodus_endpoint={} ⇒ reasoning=Noop；\
-                 需要上游请配 reasoning_endpoint",
-                if endpoint.is_empty() { "<empty>" } else { endpoint }
-            );
-            Arc::new(NoopReasoningAdapter)
-        } else {
+        // M5（center:CONVERGENCE M5）：FlowModus gRPC 转发面已**整体退役** —— 适配器、
+        // 配置键、health 探测、proto 生成一并移除。旧配置里若仍写 `flowmodus_endpoint`，
+        // 由 config 的"退役键提示"具名告知（不静默）。
+        else {
             Arc::new(NoopReasoningAdapter)
         };
 
@@ -1418,7 +1409,6 @@ When you need a tool, end your reply with ONLY: {{\"calls\":[{{\"tool\":\"NAME\"
     let mut svc: Vec<String> = Vec::new();
     for (name, ep) in [
         ("mind", &config.anaphase.mind_endpoint),
-        ("flowmodus", &config.anaphase.flowmodus_endpoint),
         ("tentacle", &config.anaphase.tentacle_endpoint),
         ("tuck", &config.anaphase.tuck_endpoint),
         ("cellrix", &config.anaphase.cellrix_endpoint),

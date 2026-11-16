@@ -6,7 +6,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .compile(
             &[
                 "proto/helix_mind.proto",
-                "proto/flowmodus.proto",
                 "proto/tentacle.proto",
             ],
             &["proto"],

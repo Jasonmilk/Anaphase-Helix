@@ -134,7 +134,6 @@ pub async fn probe_ecosystem(cfg: &crate::config::AnaphaseConfig) -> EcosystemGl
         ("tentacle", cfg.tentacle_endpoint.as_deref()),
         ("mind", cfg.mind_endpoint.as_deref()),
         ("tuck", cfg.tuck_endpoint.as_deref()),
-        ("flowmodus", cfg.flowmodus_endpoint.as_deref()),
     ] {
         match ep {
             Some(e) if !e.is_empty() => g.register(name, GloveTier::Standard, probe_endpoint(e)),
@@ -291,7 +290,6 @@ mod tests {
         cfg.tentacle_endpoint = Some(String::new());
         cfg.mind_endpoint = Some(String::new());
         cfg.tuck_endpoint = Some(String::new());
-        cfg.flowmodus_endpoint = Some(String::new());
         cfg.cap_http_enabled = false;
         let g = probe_ecosystem(&cfg).await;
         assert_eq!(g.status("cellrix"), None, "empty cellrix endpoint + cap_http off -> not registered");

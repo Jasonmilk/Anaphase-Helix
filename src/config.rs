@@ -94,7 +94,6 @@ fn default_converge_gist_max_chars() -> usize { DEFAULT_CONVERGE_GIST_MAX_CHARS 
 #[derive(Debug, Clone, Deserialize)]
 pub struct AnaphaseConfig {
     pub mind_endpoint: Option<String>,
-    pub flowmodus_endpoint: Option<String>,
     pub tentacle_endpoint: Option<String>,
     pub tuck_endpoint: Option<String>,
     pub cellrix_endpoint: Option<String>,
@@ -379,7 +378,6 @@ impl Default for AnaphaseConfig {
     fn default() -> Self {
         Self {
             mind_endpoint: None,
-            flowmodus_endpoint: None,
             tentacle_endpoint: None,
             tuck_endpoint: None,
             bind_state_path: None,
@@ -427,6 +425,14 @@ pub fn load_config() -> Result<Config, Box<dyn std::error::Error>> {
         .unwrap_or_else(|_| "config.toml".to_string());
     match std::fs::read_to_string(&path) {
         Ok(content) => {
+            // 退役键的**具名提示**（不静默）：M5 移除了 FlowModus 转发面，
+            // 旧配置里若仍写 `flowmodus_endpoint`，这里说清楚它不会生效。
+            if content.contains("flowmodus_endpoint") {
+                eprintln!(
+                    "⛔ 配置里有 `flowmodus_endpoint`，但该转发面已于 M5 退役 ⇒ 该键被忽略；\
+                     需要上游请配 reasoning_endpoint"
+                );
+            }
             let config: Config = toml::from_str(&content)?;
             Ok(apply_env_overrides(config))
         }
@@ -467,7 +473,6 @@ fn apply_env_overrides(mut config: Config) -> Config {
     take(&mut cfg.reasoning_endpoint, "ANAPHASE_REASONING_ENDPOINT");
     take(&mut cfg.mind_endpoint, "ANAPHASE_MIND_ENDPOINT");
     take(&mut cfg.tuck_endpoint, "ANAPHASE_TUCK_ENDPOINT");
-    take(&mut cfg.flowmodus_endpoint, "ANAPHASE_FLOWMODUS_ENDPOINT");
     take(&mut cfg.cellrix_endpoint, "ANAPHASE_CELLRIX_ENDPOINT");
     // The white-box trail (ADR-0023 ProveTrack timeline). Without it every
     // period produces no event stream, so the panel's trajectory has nothing to
@@ -490,8 +495,7 @@ mod tests {
         Config {
             anaphase: AnaphaseConfig {
                 mind_endpoint: None,
-                flowmodus_endpoint: None,
-                tentacle_endpoint: None,
+                    tentacle_endpoint: None,
                 tuck_endpoint: None,
                 bind_state_path: None,
                 cellrix_endpoint: None,

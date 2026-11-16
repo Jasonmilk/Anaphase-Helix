@@ -215,7 +215,7 @@ fn every_option_config_field_is_classified() {
         // Organ endpoints that B17 does not name. Whether they *should* be
         // preconditions is a B17 question, not this test's; what this test forbids
         // is adding one without deciding.
-        "cellrix_endpoint", "flowmodus_endpoint", "mind_endpoint", "tentacle_endpoint",
+        "cellrix_endpoint", "mind_endpoint", "tentacle_endpoint",
         // Reasoning configuration: a model choice, not a guarantee.
         "reasoning_api_key", "reasoning_endpoint", "reasoning_max_tokens", "reasoning_model",
         "reasoning_redact_patterns", "reasoning_route_tier", "reasoning_trace_max_chars",

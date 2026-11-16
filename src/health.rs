@@ -107,7 +107,6 @@ pub fn checks(cfg: &AnaphaseConfig) -> Value {
         check_path("session_notes", cfg.session_notes_path.as_ref()),
         check_endpoint("tentacle", cfg.tentacle_endpoint.as_ref()),
         check_endpoint("mind", cfg.mind_endpoint.as_ref()),
-        check_endpoint("flowmodus", cfg.flowmodus_endpoint.as_ref()),
         check_endpoint("tuck", cfg.tuck_endpoint.as_ref()),
         check_endpoint("cellrix", cfg.cellrix_endpoint.as_ref()),
         check_endpoint("reasoning", cfg.reasoning_endpoint.as_ref()),
