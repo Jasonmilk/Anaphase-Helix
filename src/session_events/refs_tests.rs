@@ -366,3 +366,43 @@ fn appending_to_a_file_without_a_trailing_newline_does_not_concatenate_rows() {
     assert_eq!(body.lines().count(), 2, "one row per line, never concatenated");
     let _ = fs::remove_dir_all(&dir);
 }
+
+/// **I3（append-only）store 级断言**：历史行**永不被改写**。
+///
+/// 三个事实一起验，缺一不可：
+///   ① 追加前后，**前 N 行的字节前缀完全一致**（不是"内容相等"，是字节相等）；
+///   ② 追加后行数严格增加；
+///   ③ seq 严格递增且无重复（重写会把 seq 倒退，这一条能抓到）。
+#[test]
+fn appending_never_rewrites_history_bytes() {
+    let dir = test_support::tmp_dir("i3_append_only");
+    let pid = "run-bbbbbbbbbbbbbbbb-p0000000002000001";
+    let path = dir.join(format!("{pid}.events.jsonl"));
+
+    {
+        let mut s = SessionEventStream::open(dir.clone(), pid, "job-i3", Redaction::default()).unwrap();
+        s.emit("2026-11-16T00:00:00Z", EventType::TurnStart, json!({})).unwrap();
+        s.emit("2026-11-16T00:00:01Z", EventType::UserMessage, json!({ "text": "hi" })).unwrap();
+    }
+    let before = fs::read(&path).unwrap();
+    let before_lines = String::from_utf8_lossy(&before).lines().count();
+
+    {
+        // 重新打开 = 追加模式（open_append 语义）；历史行必须原样留在前面
+        let mut s = SessionEventStream::open_append(dir.clone(), pid, "job-i3", Redaction::default()).unwrap();
+        s.emit("2026-11-16T00:00:02Z", EventType::TurnEnd, json!({})).unwrap();
+    }
+    let after = fs::read(&path).unwrap();
+    assert!(after.starts_with(&before), "追加不得改写已有字节（append-only 的字面含义）");
+
+    let text = String::from_utf8_lossy(&after).to_string();
+    let lines: Vec<&str> = text.lines().collect();
+    assert_eq!(lines.len(), before_lines + 1, "只多一行");
+    let seqs: Vec<u64> = lines
+        .iter()
+        .map(|l| serde_json::from_str::<serde_json::Value>(l).unwrap()["seq"].as_u64().unwrap())
+        .collect();
+    assert!(seqs.windows(2).all(|w| w[0] < w[1]), "seq 必须严格递增（重写会让它倒退）：{seqs:?}");
+    let uniq: std::collections::HashSet<_> = seqs.iter().collect();
+    assert_eq!(uniq.len(), seqs.len(), "seq 不得重复：{seqs:?}");
+}
