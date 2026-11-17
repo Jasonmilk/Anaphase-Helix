@@ -293,7 +293,7 @@ mod tests {
         cfg.cap_http_enabled = false;
         let g = probe_ecosystem(&cfg).await;
         assert_eq!(g.status("cellrix"), None, "empty cellrix endpoint + cap_http off -> not registered");
-        for name in ["tentacle", "mind", "tuck", "flowmodus"] {
+        for name in ["tentacle", "mind", "tuck"] {
             assert_eq!(
                 g.status(name),
                 Some(GloveStatus::Unavailable),

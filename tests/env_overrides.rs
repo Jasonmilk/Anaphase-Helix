@@ -56,11 +56,8 @@ fn endpoints_are_declarable_from_outside_the_config_file() {
         Some("http://127.0.0.1:60052"),
         "the audit leg + fail-closed gate must be declarable from outside the file"
     );
-    assert_eq!(
-        c.anaphase.flowmodus_endpoint.as_deref(),
-        Some("grpc://127.0.0.1:60054"),
-        "the reasoning entry must accept the scheme the adapter requires"
-    );
+    // M5：FlowModus 转发面已退役 ⇒ 该字段不再存在于结构体里。
+    // 旧配置/环境变量里若仍写它，由 load_config 的"退役键提示"具名告知（不静默）。
     assert_eq!(c.anaphase.cellrix_endpoint.as_deref(), Some("http://127.0.0.1:8080"));
     assert_eq!(c.anaphase.mind_endpoint.as_deref(), Some("http://127.0.0.1:50052"));
 

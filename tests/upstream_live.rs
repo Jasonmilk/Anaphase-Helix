@@ -12,14 +12,16 @@
 use anaphase::config::AnaphaseConfig;
 use anaphase::health::checks;
 
+// M5 之后 FlowModus 转发面退役 ⇒ 端点表从 5 个减为 4 个（tentacle/mind/tuck/reasoning）。
+// reasoning 仍走 flowmodus 侧的网关，但本仓不再有独立的 flowmodus 端点。
+const NAMES: [&str; 4] = ["tentacle", "mind", "tuck", "reasoning"];
+
 fn ports() -> Vec<(String, u16)> {
     let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("ecosystem/chain.json");
     let txt = match std::fs::read_to_string(p) { Ok(t) => t, Err(_) => return vec![] };
     let v: serde_json::Value = match serde_json::from_str(&txt) { Ok(v) => v, Err(_) => return vec![] };
     // 端点名一律取自 health.rs 的 check_endpoint 声明（边普查 tools/edges-census.py 会核对）。
-    // 与组件名不同的两处靠 chain.json 的 alias 归一（flowmodus→flowmodus-serve, reasoning→flowmodus-reason），
     // 端口仍只写在 chain.json 一处。
-    const NAMES: [&str; 5] = ["tentacle", "mind", "tuck", "flowmodus", "reasoning"];
     NAMES.iter().filter_map(|name| {
         let list = v.get("components")?.as_array()?;
         let hit = list.iter().find(|c| {
@@ -43,8 +45,8 @@ async fn upstream_live_links() {
         .filter(|(n, _)| only.as_ref().map(|o| o == n).unwrap_or(true)).collect();
     // ★ 端点缺失必须判红，不许被 filter_map 静默丢掉（丢掉的边永远绿 = 假覆盖）
     let all: Vec<String> = ports().into_iter().map(|(n, _)| n).collect();
-    assert!(all.len() == 5,
-        "chain.json 只解析到 {} 个端点 {:?}（期望 5：tentacle/mind/tuck/flowmodus/reasoning）⇒ 缺输入，绝不猜端口，也绝不静默跳过",
+    assert!(all.len() == 4,
+        "chain.json 只解析到 {} 个端点 {:?}（M5 后期望 4：tentacle/mind/tuck/reasoning）⇒ 缺输入，绝不猜端口，也绝不静默跳过",
         all.len(), all);
     let mut missing: Vec<String> = vec![];
     for (name, port) in &ps {
@@ -54,7 +56,6 @@ async fn upstream_live_links() {
             "tentacle" => cfg.tentacle_endpoint = Some(ep.clone()),
             "mind" => cfg.mind_endpoint = Some(ep.clone()),
             "tuck" => cfg.tuck_endpoint = Some(ep.clone()),
-            "flowmodus" => cfg.flowmodus_endpoint = Some(ep.clone()),
             "reasoning" => cfg.reasoning_endpoint = Some(ep.clone()),
             _ => panic!("判据不认识端点 {name} ⇒ 判据自身坏了，不得静默跳过（否则这条边永远绿）"),
         }
