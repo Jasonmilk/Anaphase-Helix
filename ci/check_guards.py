@@ -234,7 +234,16 @@ def recover(root):
         pass
 
 
+def _cargo_available() -> bool:
+    """工具缺失 = **不可量**，不是"判据红"，也不该是 traceback（C-058 同族）。"""
+    from shutil import which
+    return which("cargo") is not None
+
+
 def main():
+    if not _cargo_available():
+        print("UNMEASURABLE: 找不到 cargo ⇒ guard 校验跑不了（不可量，不是通过也不是红）", file=sys.stderr)
+        return 4
     root = os.getcwd()
     recover(root)
     argv = sys.argv[1:]
