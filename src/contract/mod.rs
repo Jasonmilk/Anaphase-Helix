@@ -107,7 +107,9 @@ pub fn parse_reasoning_output(response: &str) -> Result<ReasoningSignal, String>
     // Fence fallback: the LLM sometimes emits a ```tool block instead of the
     // strict JSON protocol. Deterministic parse of `name(args)` / `name({json})`
     // / `name("value")` — tolerant, never guessed.
-    parse_tool_fence(response).ok_or_else(|| format!("invalid JSON from LLM: {json_err}"))
+    parse_tool_fence(response)
+        .or_else(|| parse_json_fence(response))
+        .ok_or_else(|| format!("invalid JSON from LLM: {json_err}"))
 }
 
 /// Does this text ASK FOR A TOOL, in any of the shapes the model emits?
@@ -240,6 +242,32 @@ pub fn contradicts_evidence(tool_return: &str, reply: &str) -> Option<String> {
     } else {
         Some(authoritative)
     }
+}
+
+/// 解析 ```json 围栏里包着的**计划对象**（`{"calls":[...]}` 或数组）。
+///
+/// 为什么需要（2026-11-18 真上游实测）：本地 `coder-3b` 被要求"只回一个围栏块"时，
+/// 稳定地回 ```json 围栏包着的计划 —— 而 `parse_tool_fence` 只认 ```tool + `name(args)`
+/// ⇒ 计划在眼前却没被解析，`attempt` 记成「no calls planned」，与"模型没给计划"不可分。
+/// 这里只**多认一种围栏**，不放宽 calls 的 schema（仍是 `Call` 的严格反序列化）。
+fn parse_json_fence(response: &str) -> Option<ReasoningSignal> {
+    for tag in ["```json", "```JSON"] {
+        if let Some(start) = response.find(tag) {
+            let after = &response[start + tag.len()..];
+            let end = after.find("```").unwrap_or(after.len());
+            let body = after[..end].trim();
+            if let Ok(value) = serde_json::from_str::<serde_json::Value>(body) {
+                let impasse = value.get("impasse").and_then(|v| v.as_bool()).unwrap_or(false);
+                let calls = match value.get("calls") {
+                    Some(arr) => serde_json::from_value(arr.clone()).ok()?,
+                    None if value.is_array() => serde_json::from_value(value).ok()?,
+                    None => return None, // 围栏里不是计划 ⇒ 交给别的路径，不猜
+                };
+                return Some(ReasoningSignal { calls, impasse });
+            }
+        }
+    }
+    None
 }
 
 /// Parse a ```tool fence into a single planned call (fence fallback).
@@ -444,6 +472,24 @@ mod tests {
         assert_eq!(sig.calls.len(), 1);
         assert_eq!(sig.calls[0].tool, "calc");
         assert_eq!(sig.calls[0].args.get("expr").unwrap().as_str().unwrap(), "7**9");
+    }
+
+    /// 真上游实测的两种形状（2026-11-18）：
+    ///  · ```json 围栏里的计划 ⇒ 现在必须解析（否则"计划在眼前却没被认"，
+    ///    与"模型没给计划"在读数上不可分 —— coder-3b 正是这个形状）
+    ///  · 反样本：```tool 围栏里塞的是**答案**（数字），不是调用 ⇒ 不许被当成计划
+    #[test]
+    fn json_fence_plan_is_parsed_and_answer_inside_a_fence_is_not() {
+        let plan = "```json\n{\"calls\":[{\"tool\":\"numbers\",\"args\":{\"expression\":\"9**9\"}}]}\n```";
+        let sig = parse_reasoning_output(plan).expect("json-fenced plan must parse");
+        assert_eq!(sig.calls.len(), 1);
+        assert_eq!(sig.calls[0].tool, "numbers");
+
+        let answer_not_plan = "```tool\n130767436800000\n```";
+        assert!(
+            parse_reasoning_output(answer_not_plan).is_err(),
+            "fence 里只有答案（没有 name(args)）不能被当成计划"
+        );
     }
 
     #[test]

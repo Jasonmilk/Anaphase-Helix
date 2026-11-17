@@ -351,6 +351,12 @@ impl AgentLoop {
                     };
                     if let Some(ev) = self.session_events.as_mut() {
                         let ts = crate::ledger::unix_secs_to_rfc3339(self.clock.now());
+                        // 诊断（仅日志，不进事件契约）：解析出 0 个调用时，把 output 的头露出来 ——
+                        // 否则"模型给了计划但没被解析"和"模型根本没给计划"在读数上不可分。
+                        if planned.is_empty() {
+                            let head: String = output.chars().take(160).collect();
+                            eprintln!("🔎 reasoning output head (planned empty): {:?}", head);
+                        }
                         let attempted = if planned.is_empty() {
                             "no calls planned — answered directly".to_string()
                         } else {

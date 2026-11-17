@@ -92,10 +92,10 @@ target = "src/config.rs"
 ncloc  = 406
 [[ratchet]]
 target = "src/contract/"
-ncloc  = 502
+ncloc  = 535
 [[ratchet]]
 target = "src/contract/mod.rs"
-ncloc  = 502
+ncloc  = 535
 [[ratchet]]
 target = "src/criteria/"
 ncloc  = 291
@@ -161,7 +161,7 @@ target = "src/reflex.rs"
 ncloc  = 22
 [[ratchet]]
 target = "src/run_cycle/"
-ncloc  = 1570
+ncloc  = 1574
 [[ratchet]]
 target = "src/run_cycle/memory_retrieval.rs"
 ncloc  = 81
@@ -170,7 +170,7 @@ target = "src/run_cycle/mod.rs"
 ncloc  = 821
 [[ratchet]]
 target = "src/run_cycle/reasoning.rs"
-ncloc  = 273
+ncloc  = 277
 [[ratchet]]
 target = "src/run_cycle/reflection.rs"
 ncloc  = 218
