@@ -61,6 +61,17 @@ fn endpoints_are_declarable_from_outside_the_config_file() {
     assert_eq!(c.anaphase.cellrix_endpoint.as_deref(), Some("http://127.0.0.1:8080"));
     assert_eq!(c.anaphase.mind_endpoint.as_deref(), Some("http://127.0.0.1:50052"));
 
+    // Half 2b — `gene_lock_path`（d-machine-absolute-paths 的最后一条活配置绝对路径）
+    // 可从环境声明：换机时不必改提交进仓的 config.toml。
+    std::env::set_var("ANAPHASE_GENE_LOCK_PATH", "/tmp/other-machine/gene_lock.md");
+    let c = anaphase::config::load_config().expect("config loads");
+    assert_eq!(
+        c.anaphase.gene_lock_path.as_deref(),
+        Some("/tmp/other-machine/gene_lock.md"),
+        "gene lock path must be declarable from the environment"
+    );
+    std::env::remove_var("ANAPHASE_GENE_LOCK_PATH");
+
     // Half 3 — a file value is overridden, and an empty env value is ignored.
     let path2 = write_config(
         "b",
@@ -81,3 +92,6 @@ fn endpoints_are_declarable_from_outside_the_config_file() {
     std::env::remove_var("ANAPHASE_MIND_ENDPOINT");
     std::env::remove_var("ANAPHASE_CONFIG");
 }
+
+// `d-machine-absolute-paths` 的一半：`gene_lock_path` 也必须可从环境声明。
+// 并入**同一个测试**（env 是进程全局，另起一个测试会与上面的 set/remove 竞态 —— 文件头已写明）。

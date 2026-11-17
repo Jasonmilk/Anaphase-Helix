@@ -478,6 +478,10 @@ fn apply_env_overrides(mut config: Config) -> Config {
     // period produces no event stream, so the panel's trajectory has nothing to
     // show and the two event-replay suites have no fixtures to read.
     take(&mut cfg.session_events_path, "ANAPHASE_SESSION_EVENTS_PATH");
+    // d-machine-absolute-paths：`gene_lock_path` 是最后一条**活配置里的绝对路径**。
+    // 给它一个 env 通道，换机时不必改提交进仓的 config.toml（12-factor 的做法：
+    // 环境相关的值从环境来，仓里的值只是本机默认）。
+    take(&mut cfg.gene_lock_path, "ANAPHASE_GENE_LOCK_PATH");
     // The model is a CONFIG field, not a request field — measured 2026-09-24: a
     // turn driven with `{"model":"mock-chat-1"}` ignored it and ran with
     // `model: null`, which impasses BEFORE any upstream call. So the model needs
