@@ -38,7 +38,7 @@ target = "ci/scan_mutants.py"
 ncloc  = 266
 [[ratchet]]
 target = "src/"
-ncloc  = 4755
+ncloc  = 4792
 [[ratchet]]
 target = "src/adapters/"
 ncloc  = 1347
@@ -62,7 +62,7 @@ target = "src/adapters/usage.rs"
 ncloc  = 119
 [[ratchet]]
 target = "src/agui.rs"
-ncloc  = 76
+ncloc  = 113
 [[ratchet]]
 target = "src/bin/"
 ncloc  = 573

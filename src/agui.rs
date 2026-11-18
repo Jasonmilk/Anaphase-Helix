@@ -36,6 +36,30 @@ pub fn project(ev: &Value) -> Vec<Value> {
                 "metadata": meta
             })]
         }
+        // ★ B1（2026-11-19 真跑撞到）：`tool/call` / `tool/result` 是**真实存在**的事件类型
+        // （本仓已有带 tool/call 的真跑 tape），而投影此前直接落到 `_ => vec![]` ⇒ 工具段在
+        // AG-UI 出口里**整段消失**。此前的延后条件（"等真走工具段的周期再长"）现已满足。
+        // 只映射到 AG-UI 1.0 已有的标准类型，不新造语义、不改协议。
+        "tool/call" => {
+            let idx = data.get("index").and_then(|v| v.as_u64()).unwrap_or(0);
+            let name = data.get("tool").and_then(|v| v.as_str()).unwrap_or("");
+            let id = format!("{run}#{idx}");
+            vec![json!({
+                "type": "TOOL_CALL_START", "threadId": thread, "runId": run,
+                "toolCallId": id, "toolCallName": name
+            })]
+        }
+        "tool/result" => {
+            let idx = data.get("index").and_then(|v| v.as_u64()).unwrap_or(0);
+            let id = format!("{run}#{idx}");
+            let content = data.get("outcome").cloned().unwrap_or(Value::Null);
+            let ok = data.get("ok").cloned().unwrap_or(Value::Bool(false));
+            vec![
+                json!({"type":"TOOL_CALL_END","threadId":thread,"runId":run,"toolCallId":id}),
+                json!({"type":"TOOL_CALL_RESULT","threadId":thread,"runId":run,
+                       "toolCallId":id,"content":content,"metadata":{"ok":ok}}),
+            ]
+        }
         _ => vec![],
     }
 }
@@ -87,6 +111,27 @@ mod tests {
     #[test]
     fn an_unknown_event_projects_to_nothing() {
         assert!(project(&ev("made/up", json!({}))).is_empty());
+    }
+
+    /// ★ B1（2026-11-19）：真跑里存在 `tool/call`/`tool/result` ⇒ 必须投影成标准工具事件；
+    /// 反向（原本的守卫）：没有工具段 ⇒ 不得出现 TOOL_CALL_*（防伪造）。
+    #[test]
+    fn tool_events_are_projected_and_not_invented() {
+        let with_tool = vec![
+            ev("turn/start", json!({})),
+            ev("tool/call", json!({"tool":"calc","index":0,"expect":"ok"})),
+            ev("tool/result", json!({"tool":"calc","index":0,"ok":true,"outcome":"{\"ok\":true}"})),
+            ev("turn/end", json!({})),
+        ];
+        let out = project_all(&with_tool);
+        let types: Vec<&str> = out.iter().filter_map(|e| e["type"].as_str()).collect();
+        assert!(types.contains(&"TOOL_CALL_START"), "{types:?}");
+        assert!(types.contains(&"TOOL_CALL_END"), "{types:?}");
+        assert!(types.contains(&"TOOL_CALL_RESULT"), "{types:?}");
+
+        let without = vec![ev("turn/start", json!({})), ev("turn/end", json!({}))];
+        let out2 = project_all(&without);
+        assert!(!out2.iter().any(|e| e["type"].as_str().unwrap_or("").starts_with("TOOL_CALL")));
     }
 
     /// 形 4：metadata 只挂 verdict —— criteria/trace 不许出现在这里。
