@@ -102,6 +102,25 @@ impl AgentLoop {
                 self.context.reasoning_output = answer;
                 self.context.calls.clear();
                 info!("[Reasoning] rail citation answer (0 tokens, LLM bypassed)");
+                /* B1（2026-11-19）：这条早退**跳过了下面的 `emit_period_start`**（只有走到
+                 * 左脑推理才会写 `turn/start` + `user/message`），于是 rail 轮的 tape 只有 3 行、
+                 * 首条是 `assistant/reply` ⇒ D1 判「首条不是 RUN_STARTED」红（实测 rc=1）。
+                 * 生命周期行是「这一轮发生过」的证据，不因**谁**回答而缺席 ⇒ 早退前补写同一行。
+                 * `injected_chars` 传 `None`：本路径尚未组装 prompt，**不测量 ≠ 0**。 */
+                let ts = crate::ledger::unix_secs_to_rfc3339(self.clock.now());
+                let detail = self.memory_choice_detail();
+                if let Some(ev) = self.session_events.as_mut() {
+                    let _ = ev.emit_period_start(
+                        &ts,
+                        &self.context.user_input,
+                        self.context.memory_nodes.len(),
+                        self.memory_inject_chars,
+                        self.context.resume_period.as_deref(),
+                        detail.as_ref(),
+                        None,
+                        crate::session_events::mode_wire_opt(self.context.declared_mode),
+                    );
+                }
                 return Ok(TransitionCondition::NoToolNeeded);
             }
             info!("[Reasoning] Left-brain reasoning...");
