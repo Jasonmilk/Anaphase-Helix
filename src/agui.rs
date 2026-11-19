@@ -6,7 +6,25 @@
 //! - **metadata 只挂 `verdict`**：`criteria`/`trace` 本轮不落（队尾 revisit；不派去标准事件或 CUSTOM）。
 //! - **纯函数、无状态、无写入**：删掉整个模块，TUI/Web 与账本不受影响（additive）。
 //! - `threadId` / `runId` 取自已有的 `period_id` / `job_id`；不解析其结构（协议要求 opaque）。
+//!
+//! ★ 章 B 对齐（2026-11-20，按官方副本 sha256_16=4b5c93226838a0e7）：
+//!   - 只保留**官方定义里声明过的键**：`TEXT_MESSAGE_*` 去掉 threadId/runId（官方 required 只有 messageId），
+//!     `TOOL_CALL_*` 同理；`TOOL_CALL_RESULT` **补 messageId**（官方 required）；
+//!     `RUN_FINISHED` 去掉非官方 `metadata`（verdict 暂无诚实的官方落点 ⇒ 记「未覆盖」，不猜进 result/outcome）。
+//!   - 官方有而我们**不映射**的类型列在 `UNCOVERED`，显式「未覆盖」而不是假装没有位置。
 use serde_json::{json, Value};
+
+/// 官方 AG-UI 1.0 里**存在、但我们不投影**的类型（显式「未覆盖」，不是"协议没位置"）。
+pub const UNCOVERED: &[&str] = &[
+    "STEP_STARTED", "STEP_FINISHED", "RUN_ERROR",
+    "TOOL_CALL_ARGS", "TOOL_CALL_CHUNK",
+    "REASONING_START", "REASONING_END", "REASONING_MESSAGE_START",
+    "REASONING_MESSAGE_CONTENT", "REASONING_MESSAGE_END", "REASONING_MESSAGE_CHUNK",
+    "REASONING_ENCRYPTED_VALUE",
+    "STATE_SNAPSHOT", "STATE_DELTA", "MESSAGES_SNAPSHOT",
+    "ACTIVITY_SNAPSHOT", "ACTIVITY_DELTA",
+    "TEXT_MESSAGE_CHUNK", "RAW", "CUSTOM", "META_EVENT",
+];
 
 /// 一条 session event → 0..n 条 AG-UI 1.0 事件。认不出的类型返回**空**（不静默造事件）。
 pub fn project(ev: &Value) -> Vec<Value> {
@@ -21,19 +39,18 @@ pub fn project(ev: &Value) -> Vec<Value> {
         "assistant/reply" => {
             let text = data.get("text").and_then(|v| v.as_str()).unwrap_or("");
             vec![
-                json!({"type":"TEXT_MESSAGE_START","threadId":thread,"runId":run,"messageId":run,"role":"assistant"}),
-                json!({"type":"TEXT_MESSAGE_CONTENT","threadId":thread,"runId":run,"messageId":run,"delta":text}),
-                json!({"type":"TEXT_MESSAGE_END","threadId":thread,"runId":run,"messageId":run}),
+                json!({"type":"TEXT_MESSAGE_START","messageId":run,"role":"assistant"}),
+                json!({"type":"TEXT_MESSAGE_CONTENT","messageId":run,"delta":text}),
+                json!({"type":"TEXT_MESSAGE_END","messageId":run}),
             ]
         }
         "turn/end" => {
-            // metadata 只挂 verdict：它不是"标准事件的替代品"，而是这条事件自己的注解。
-            // verdict 非 null 才挂键；null ⇒ metadata 空对象（不伪造事实）。
-            let v = data.get("verdict").cloned().unwrap_or(Value::Null);
-            let meta = if v.is_null() { json!({}) } else { json!({"verdict": v}) };
+            // 章 B：官方 RUN_FINISHED 的键是 type/threadId/runId/(result|outcome|usage)。
+            // 我们手上只有 verdict（Met/Unmet/null），它**不是** return value，也不是
+            // success/interrupt/cancelled 三态之一 ⇒ **不猜进 result/outcome**，记「未覆盖」。
+            let _verdict = data.get("verdict").cloned().unwrap_or(Value::Null);
             vec![json!({
-                "type": "RUN_FINISHED", "threadId": thread, "runId": run,
-                "metadata": meta
+                "type": "RUN_FINISHED", "threadId": thread, "runId": run
             })]
         }
         // ★ B1（2026-11-19 真跑撞到）：`tool/call` / `tool/result` 是**真实存在**的事件类型
@@ -45,7 +62,7 @@ pub fn project(ev: &Value) -> Vec<Value> {
             let name = data.get("tool").and_then(|v| v.as_str()).unwrap_or("");
             let id = format!("{run}#{idx}");
             vec![json!({
-                "type": "TOOL_CALL_START", "threadId": thread, "runId": run,
+                "type": "TOOL_CALL_START",
                 "toolCallId": id, "toolCallName": name
             })]
         }
@@ -54,10 +71,13 @@ pub fn project(ev: &Value) -> Vec<Value> {
             let id = format!("{run}#{idx}");
             let content = data.get("outcome").cloned().unwrap_or(Value::Null);
             let ok = data.get("ok").cloned().unwrap_or(Value::Bool(false));
+            // 官方 TOOL_CALL_RESULT 必填 [type,messageId,toolCallId,content] ⇒ 补 messageId（本条结果成为的消息）
+            let msg_id = format!("{run}#tool{idx}");
+            let _ok = ok;
             vec![
-                json!({"type":"TOOL_CALL_END","threadId":thread,"runId":run,"toolCallId":id}),
-                json!({"type":"TOOL_CALL_RESULT","threadId":thread,"runId":run,
-                       "toolCallId":id,"content":content,"metadata":{"ok":ok}}),
+                json!({"type":"TOOL_CALL_END","toolCallId":id}),
+                json!({"type":"TOOL_CALL_RESULT","messageId":msg_id,
+                       "toolCallId":id,"content":content}),
             ]
         }
         _ => vec![],
@@ -92,7 +112,11 @@ mod tests {
         let out = project_all(&rows);
         let types: Vec<&str> = out.iter().filter_map(|e| e["type"].as_str()).collect();
         assert_eq!(types, vec!["RUN_STARTED", "TEXT_MESSAGE_START", "TEXT_MESSAGE_CONTENT", "TEXT_MESSAGE_END", "RUN_FINISHED"]);
-        assert_eq!(out[4]["metadata"]["verdict"], "MET");
+        // 章 B（2026-11-20）：RUN_FINISHED 只保留官方键（type/threadId/runId）；
+        // verdict 暂无诚实的官方落点 ⇒ **不挂 metadata、也不猜进 result/outcome**（记「未覆盖」）。
+        assert_eq!(out[4]["type"], "RUN_FINISHED");
+        assert!(out[4].get("metadata").is_none(), "官方 RUN_FINISHED 没有 metadata 键");
+        assert!(out[4].get("result").is_none() && out[4].get("outcome").is_none(), "不猜 verdict 的落点");
     }
 
     /// 形 2：`NoToolNeeded` 周期**不得**产出任何 `TOOL_CALL_*`（不预画骨架）。
@@ -134,12 +158,27 @@ mod tests {
         assert!(!out2.iter().any(|e| e["type"].as_str().unwrap_or("").starts_with("TOOL_CALL")));
     }
 
-    /// 形 4：metadata 只挂 verdict —— criteria/trace 不许出现在这里。
+    /// 形 4（章 B 改写）：`turn/end` 里即便带 verdict/criteria/trace，投影也**只**输出官方键。
     #[test]
-    fn metadata_carries_verdict_and_nothing_else() {
+    fn run_finished_carries_only_official_keys() {
         let out = project(&ev("turn/end", json!({"verdict": "UNMET", "criteria": [1], "trace": "t"})));
-        let md = out[0]["metadata"].as_object().expect("metadata object").clone();
-        assert_eq!(md.len(), 1);
-        assert!(md.contains_key("verdict"));
+        let mut keys: Vec<&str> = out[0].as_object().expect("object").keys().map(|k| k.as_str()).collect();
+        keys.sort();
+        assert_eq!(keys, vec!["runId", "threadId", "type"]);
+    }
+
+    /// 形 5（章 B）：官方必填键 —— TEXT_MESSAGE_* 只带 messageId（+START 的 role），
+    /// TOOL_CALL_RESULT 必须带 messageId。用官方副本的 required 当尺。
+    #[test]
+    fn text_and_tool_result_carry_official_required_keys() {
+        let t = project(&ev("assistant/reply", json!({"text": "hi"})));
+        for e in &t {
+            assert!(e.get("messageId").is_some(), "TEXT_MESSAGE_* 缺 messageId: {e}");
+            assert!(e.get("threadId").is_none() && e.get("runId").is_none(), "官方 TEXT_MESSAGE_* 没有 threadId/runId: {e}");
+        }
+        let r = project(&ev("tool/result", json!({"tool":"calc","index":0,"ok":true,"outcome":"ok"})));
+        let res = r.iter().find(|e| e["type"] == "TOOL_CALL_RESULT").expect("result");
+        assert!(res.get("messageId").is_some(), "官方 TOOL_CALL_RESULT 必填 messageId: {res}");
+        assert!(res.get("metadata").is_none(), "官方 TOOL_CALL_RESULT 没有 metadata 键");
     }
 }

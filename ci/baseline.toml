@@ -685,3 +685,12 @@ ncloc  = 28
 counter = 2
 k_id   = "C-083"
 reason = "AG-UI 投影的唯一真源出口（bin）：读 session-events jsonl 吐标准事件；Cellrix 只消费不复制规则"
+
+# 章 B（AG-UI 官方薄适配层）对齐：+24 ncloc 的定向豁免（gardener 2026-11-20 签）。
+# 不用 seed 抬基线（check_line_budget.py:510-527：已有基线的 key 不许被 seed 抬高），
+# 用既有 fix_window 机制；cap 24 ≤ FIX_CAP_FLOOR(=36)；坑已先记（ci/pits.toml id=C-083）。
+[[fix_window]]
+target = "src/agui.rs"
+cap    = 24
+k_id   = "C-083"
+reason = "章 B 第一步：按官方 AG-UI 1.0 副本（sha256_16=4b5c93226838a0e7）去掉非官方键 runId/threadId/metadata、补 TOOL_CALL_RESULT.messageId、新增 UNCOVERED 具名清单；agui.rs 仍为纯函数薄投影（无状态/无写入/认不出返回空）。读数：官方副本校验 tool 轮 1/8→8/8、rail 轮 1/5→5/5；自家 D1/D2 因旧快照仍红 12 条（连带未裁）。"
