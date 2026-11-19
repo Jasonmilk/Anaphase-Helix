@@ -193,3 +193,8 @@ k_id = "C3-IRREVERSIBLE"
 what = "src/irreversible.rs 初值基线（79 NOCL）+ 新文件需要的签名 seed"
 why = "C3 判据 A 的分类器；与 expected-red 的 9 条取证红配套，先有落点才谈生效。"
 date = "2026-11-01"
+
+[[pit]]
+id       = "C-083"
+recorded = "2026-11-20"
+summary  = "AG-UI 投影曾同时犯三件事：① 工具段整体消失（真实 tape 有 tool/call 而出口不发 TOOL_CALL_*）② TOOL_CALL_RESULT 缺官方必填 messageId ③ TEXT_MESSAGE_*/TOOL_CALL_*/RUN_FINISHED 多挂官方未声明的键（runId/threadId/metadata，被官方 unevaluatedProperties:false 明文拒）。坑在'名字与内容脱钩'这一族：投影自称 AG-UI 1.0，却一直在用自有最小子集自证。"
