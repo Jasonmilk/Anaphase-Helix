@@ -1366,6 +1366,19 @@ impl AgentLoop {
             }
             Err(e) => {
                 warn!("[Execution] Pipeline execution failed: {}", e);
+                /* B1-zf（2026-11-20 · gardener 授权令）：执行段失败原**不写 tape** = 证轨静默
+                 * （现场：工具不在清单 ⇒ 日志 NotFound、tape 无 tool/result）。只做一件事：
+                 * 把"计划过的调用 + 它的失败"按既有类型写进 tape，标来源、不猜 verdict、失败不写成 ok=true。 */
+                let calls: Vec<(usize, String)> =
+                    self.context.calls.iter().enumerate().map(|(i, c)| (i, c.tool.clone())).collect();
+                let out = serde_json::json!({"ok": false, "error": e.to_string(), "source": "execution-pipeline"}).to_string();
+                if let Some(ev) = self.session_events.as_mut() {
+                    let ts = crate::ledger::unix_secs_to_rfc3339(self.clock.now());
+                    for (i, tool) in calls {
+                        let _ = ev.emit(&ts, crate::session_events::EventType::ToolCall, serde_json::json!({"tool": tool, "index": i}));
+                        let _ = ev.emit(&ts, crate::session_events::EventType::ToolResult, serde_json::json!({"tool": tool, "index": i, "ok": false, "outcome": out, "outcome_sha": crate::trace::short_sha(&out), "source": "execution-pipeline"}));
+                    }
+                }
                 Ok(TransitionCondition::Failure)
             }
         }
