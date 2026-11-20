@@ -15,15 +15,20 @@
 use serde_json::{json, Value};
 
 /// 官方 AG-UI 1.0 里**存在、但我们不投影**的类型（显式「未覆盖」，不是"协议没位置"）。
+///
+/// 生成口径（2026-11-20 裁 d-uncovered-list-drift-vs-official）：**由真源生成，不手写**——
+/// `$defs.EventType.enum`（refs/ag-ui-1.0-schema.json · sha256_16=4b5c93226838a0e7）减去已映射的 8 类 = **23** 项。
+/// `META_EVENT` **不在此列**：它只在 `EventType.java` 侧存在、1.0 schema enum 里没有（两工件不同步，
+/// 见 Cellrix .../agui-1.0-min.schema.json 的 `not_in_schema_enum`）。
 pub const UNCOVERED: &[&str] = &[
-    "STEP_STARTED", "STEP_FINISHED", "RUN_ERROR",
-    "TOOL_CALL_ARGS", "TOOL_CALL_CHUNK",
-    "REASONING_START", "REASONING_END", "REASONING_MESSAGE_START",
-    "REASONING_MESSAGE_CONTENT", "REASONING_MESSAGE_END", "REASONING_MESSAGE_CHUNK",
-    "REASONING_ENCRYPTED_VALUE",
+    "TEXT_MESSAGE_CHUNK", "TOOL_CALL_ARGS", "TOOL_CALL_CHUNK",
     "STATE_SNAPSHOT", "STATE_DELTA", "MESSAGES_SNAPSHOT",
-    "ACTIVITY_SNAPSHOT", "ACTIVITY_DELTA",
-    "TEXT_MESSAGE_CHUNK", "RAW", "CUSTOM", "META_EVENT",
+    "ACTIVITY_SNAPSHOT", "ACTIVITY_DELTA", "RAW",
+    "CUSTOM", "RUN_ERROR", "STEP_STARTED",
+    "STEP_FINISHED", "REASONING_START", "REASONING_MESSAGE_START",
+    "REASONING_MESSAGE_CONTENT", "REASONING_MESSAGE_END", "REASONING_MESSAGE_CHUNK",
+    "REASONING_END", "REASONING_ENCRYPTED_VALUE", "SUBAGENT_STARTED",
+    "SUBAGENT_FINISHED", "SUBAGENT_ERROR",
 ];
 
 /// 一条 session event → 0..n 条 AG-UI 1.0 事件。认不出的类型返回**空**（不静默造事件）。
